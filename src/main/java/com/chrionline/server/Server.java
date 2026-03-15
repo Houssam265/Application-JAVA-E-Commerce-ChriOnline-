@@ -10,7 +10,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class Server {
-    public static final int PORT = 8080;
+    public static final int PORT = 8081;
     private static final Logger LOG = Logger.getLogger(Server.class.getName());
 
     public static void main(String[] args) {
