@@ -43,6 +43,31 @@ Elle permet aux utilisateurs de consulter des produits, gérer leur panier et ef
 
 ---
 
+## Architecture
+
+```
+┌─────────────────────┐         TCP (port 8080)        ┌──────────────────────┐
+│                     │ ─────────────────────────────► │                      │
+│    Client Java      │                                 │    Serveur Java      │
+│    (UI JavaFX)      │ ◄───────────────────────────── │    (Multi-threads)   │
+│                     │                                 │                      │
+└─────────────────────┘                                 └──────────────────────┘
+         │                  UDP (port 9090)                       │
+         │ ◄──────────────────────────────────────────────────── │
+         │               Notifications                            │
+         │                                                        │
+         │                                              ┌─────────▼────────┐
+         │                                              │   Base de données │
+         │                                              │   MySQL           │
+         │                                              └──────────────────┘
+```
+
+- Le **client** envoie des commandes texte via TCP et écoute les notifications via UDP
+- Le **serveur** gère chaque client dans un thread indépendant (`ClientHandler`)
+- Les **notifications** de commande sont envoyées par UDP après chaque checkout
+
+---
+
 ## Technologies utilisées
 
 | Technologie | Utilisation |
@@ -50,6 +75,7 @@ Elle permet aux utilisateurs de consulter des produits, gérer leur panier et ef
 | Java 17+ | Langage principal |
 | JavaFX / Swing | Interface graphique |
 | TCP Sockets | Communication principale client-serveur |
+| UDP DatagramSocket | Notifications temps réel |
 | MySQL | Base de données |
 | JDBC | Accès à la base de données |
 | Git / GitHub | Gestion de versions |
@@ -61,46 +87,94 @@ Elle permet aux utilisateurs de consulter des produits, gérer leur panier et ef
 ```
 ChriOnline/
 │
-├── server/
-│   ├── Server.java                 # Point d'entrée serveur
-│   ├── ClientHandler.java          # Gestion d'un client (1 thread / client)
-│   └── UDPNotificationService.java # Envoi des notifications UDP
+├── server/                          
+│   ├── Server.java                  
+│   ├── ClientHandler.java           
+│   ├── SessionManager.java          
+│   └── UDPNotificationService.java  
 │
 ├── client/
-│   └── Client.java                 # Connexion TCP + écoute UDP
+│   └── Client.java                  ← Couche réseau (partagée)
 │
-├── model/
-│   ├── User.java
-│   ├── Product.java
-│   ├── Category.java
-│   ├── Cart.java
-│   ├── CartItem.java
-│   ├── Order.java
-│   ├── OrderItem.java
-│   ├── Payment.java
-│   └── Notification.java
+├── protocol/
+│   ├── Request.java
+│   └── Response.java
 │
-├── ui/
-│   ├── LoginScreen.java
-│   ├── RegisterScreen.java
-│   ├── ProductScreen.java
-│   ├── CartScreen.java
-│   ├── CheckoutScreen.java
-│   ├── OrderHistoryScreen.java
-│   └── admin/
-│       ├── AdminDashboard.java
-│       ├── ProductManager.java
-│       ├── OrderManager.java
-│       └── UserManager.java
+│
+│   ╔══════════════════════════════╗
+│   ║         MVC CLIENT           ║
+│   ╚══════════════════════════════╝
+│
+├── model/                           ← ① MODEL
+│   ├── User.java                    │  Données pures
+│   ├── Product.java                 │  (pas de logique réseau
+│   ├── Category.java                │   ni d'accès DB ici)
+│   ├── Cart.java                    │
+│   ├── CartItem.java                │
+│   ├── Order.java                   │
+│   ├── OrderItem.java               │
+│   ├── OrderStatus.java             │
+│   ├── Payment.java                 │
+│   └── Notification.java            │
+│
+├── dao/                             ← ① MODEL (persistance)
+│   ├── UserDAO.java                 │  Accès base de données
+│   ├── ProductDAO.java              │  JDBC uniquement
+│   ├── CartDAO.java                 │
+│   └── OrderDAO.java                │
+│
+├── service/                         ← ① MODEL (logique métier)
+│   ├── AuthService.java             │  Règles business
+│   ├── ProductService.java          │  (stock, UUID, statuts...)
+│   ├── CartService.java             │
+│   ├── OrderService.java            │
+│   └── PaymentService.java          │
 │
 ├── database/
-│   └── DatabaseConnection.java     # Singleton de connexion MySQL
+│   └── DatabaseConnection.java      ← ① MODEL (infrastructure)
+│
+│
+├── ui/
+│   ├── MainApp.java                 ← Point d'entrée JavaFX
+│   │
+│   ├── controller/                  ← ③ CONTROLLER
+│   │   ├── LoginController.java     │  Gère événements UI
+│   │   ├── RegisterController.java  │  Appelle les services
+│   │   ├── ProductController.java   │  Met à jour la vue
+│   │   ├── CartController.java      │  NE contient PAS
+│   │   ├── CheckoutController.java  │  de logique métier
+│   │   ├── ProfileController.java   │
+│   │   ├── OrderHistoryController   │
+│   │   └── admin/                   │
+│   │       ├── AdminDashboardController.java
+│   │       ├── ProductManagerController.java
+│   │       ├── OrderManagerController.java
+│   │       └── UserManagerController.java
+│   │
+│   └── resources/
+│       ├── fxml/                    ← ② VIEW
+│       │   ├── Login.fxml           │  Affichage pur
+│       │   ├── Register.fxml        │  Aucune logique
+│       │   ├── Product.fxml         │
+│       │   ├── Cart.fxml            │
+│       │   ├── Checkout.fxml        │
+│       │   ├── Profile.fxml         │
+│       │   ├── OrderHistory.fxml    │
+│       │   └── admin/               │
+│       │       ├── AdminDashboard.fxml
+│       │       ├── ProductManager.fxml
+│       │       ├── OrderManager.fxml
+│       │       └── UserManager.fxml
+│       │
+│       └── css/
+│           └── style.css            ← ② VIEW (style)
 │
 ├── docs/
-│   ├── protocole_chrionline.md     # Document protocole TCP/UDP
-│   ├── chrionline_schema.sql       # Schéma de la base de données
-│   └── diagramme_classes.puml      # Diagramme UML
+│   ├── protocole_chrionline.md
+│   ├── chrionline_schema.sql
+│   └── diagramme_classes.puml
 │
+├── pom.xml
 └── README.md
 ```
 
@@ -115,8 +189,8 @@ ChriOnline/
 
 ### 1. Cloner le dépôt
 ```bash
-git clone https://github.com/Houssam265/Application-JAVA-E-Commerce-ChriOnline-.git
-cd Application-JAVA-E-Commerce-ChriOnline-
+git clone https://github.com/votre-equipe/chrionline.git
+cd chrionline
 ```
 
 ### 2. Configurer la base de données
@@ -143,32 +217,3 @@ java server.Server
 javac client/Client.java
 java client.Client
 ```
-
----
-
-## Protocole TCP
-
-Toutes les communications client-serveur suivent le format :
-```
-COMMANDE|param1|param2|...
-```
-
-Exemple de conversation complète :
-```
-Client  →  LOGIN|ali|secret123
-Serveur →  OK|LOGIN_SUCCESS|1|CLIENT
-
-Client  →  GET_PRODUCTS
-Serveur →  OK|PRODUCTS|1,Laptop,12999.99,10,1;2,Mouse,299.00,50,1
-
-Client  →  ADD_TO_CART|1|2
-Serveur →  OK|CART_UPDATED
-
-Client  →  CHECKOUT|SIMULATED
-Serveur →  OK|ORDER_CREATED|ORD-550e8400|26298.00
-
-UDP     ←  ORDER_CONFIRMED|ORD-550e8400|26298.00
-```
-
-> Consulter [`docs/protocole_chrionline.md`](docs/protocole_chrionline.md) pour la référence complète.
-
