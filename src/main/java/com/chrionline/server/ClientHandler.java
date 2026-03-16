@@ -24,6 +24,9 @@ public class ClientHandler implements Runnable {
         try (Socket s = socket;
              BufferedReader in = new BufferedReader(
                  new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8)
+             );
+             java.io.BufferedWriter out = new java.io.BufferedWriter(
+                 new java.io.OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8)
              )) {
 
             String line;
@@ -32,7 +35,16 @@ public class ClientHandler implements Runnable {
                 if (msg.isEmpty()) {
                     continue;
                 }
-                LOG.info("[" + clientId + "] " + msg);
+                LOG.info("[" + clientId + "] Reçu: " + msg);
+                
+                // Simulation d'une réponse de succès du serveur
+                org.json.JSONObject responseJson = new org.json.JSONObject();
+                responseJson.put("success", true);
+                responseJson.put("message", "Opération réussie (Mock Serveur)");
+                responseJson.put("token", "fake-jwt-token-1234");
+                
+                out.write(responseJson.toString() + "\n");
+                out.flush();
             }
         } catch (IOException e) {
             LOG.log(Level.INFO, "Connexion terminee avec " + clientId + ": " + e.getMessage());

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.geometry.Insets?>
+
+<BorderPane xmlns="http://javafx.com/javafx/17"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.chrionline.ui.controller.HomeController"
+            styleClass="root-pane">
+
+    <top>
+        <VBox spacing="20" styleClass="app-container">
+            <!-- Header -->
+            <HBox alignment="CENTER_LEFT" spacing="20">
+                <Label text="ChriOnline | Catalogue" styleClass="brand-title" style="-fx-font-size: 32px;"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label text="Connecté" styleClass="badge-instock" style="-fx-font-size: 14px; -fx-padding: 8px 16px;"/>
+            </HBox>
+
+            <!-- Barre de recherche et Filtre -->
+            <HBox spacing="16" alignment="CENTER_LEFT">
+                <TextField fx:id="searchField"
+                           promptText="Rechercher un produit par nom..."
+                           styleClass="search-bar"
+                           HBox.hgrow="ALWAYS"/>
+                
+                <ComboBox fx:id="categoryCombo"
+                          styleClass="combo-box-premium"
+                          promptText="Catégories"
+                          prefWidth="220"/>
+            </HBox>
+        </VBox>
+    </top>
+
+    <center>
+        <!-- ScrollPane transparent pour la grille de produits -->
+        <ScrollPane fitToWidth="true" style="-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;">
+            <content>
+                <FlowPane fx:id="productsGrid" hgap="24" vgap="24" style="-fx-padding: 0 30px 40px 30px;">
+                    <!-- Les cartes produits seront injectées ici par le contrôleur -->
+                </FlowPane>
+            </content>
+        </ScrollPane>
+    </center>
+
+</BorderPane>
