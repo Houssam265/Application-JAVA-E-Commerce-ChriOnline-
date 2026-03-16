@@ -187,6 +187,35 @@ public class UserDAO {
         }
     }
 
+    // ── SELECT by role (admin dashboard) ─────────────────────────────────────
+
+    /**
+     * Returns all users with the given role.
+     * <p>
+     * Binds via {@link User.Role#name()} so the string matches the DB ENUM
+     * exactly (e.g. {@code "CLIENT"} or {@code "ADMIN"}).
+     *
+     * @param role the role to filter by
+     * @return list of matching users, empty if none
+     */
+    public List<User> findByRole(User.Role role) {
+        final String sql = "SELECT * FROM users WHERE role = ? ORDER BY user_id ASC";
+        List<User> result = new ArrayList<>();
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, role.name());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(mapRow(rs));
+                }
+            }
+            return result;
+
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.findByRole failed for role=" + role + ": " + e.getMessage(), e);
+        }
+    }
+
     // ── Row mapper ───────────────────────────────────────────────────────────
 
     /** Maps one ResultSet row to a {@link User}. Column names match the schema exactly. */
