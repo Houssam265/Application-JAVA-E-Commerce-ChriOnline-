@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.text.*?>
+<?import javafx.geometry.*?>
+<?import javafx.scene.image.*?>
+
+<StackPane xmlns="http://javafx.com/javafx/17"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.chrionline.ui.controller.LoginController"
+           styleClass="root-pane">
+
+    <!-- Fond dégradé (appliqué via CSS sur .root-pane) -->
+
+    <!-- Carte de connexion centrée -->
+    <VBox styleClass="auth-card" maxWidth="440" maxHeight="580" alignment="CENTER">
+        <padding><Insets top="48" right="48" bottom="48" left="48"/></padding>
+        <spacing>0</spacing>
+
+        <!-- Logo / Titre -->
+        <VBox alignment="CENTER" spacing="6">
+            <Label text="ChriOnline" styleClass="brand-title"/>
+            <Label text="Connectez-vous à votre compte" styleClass="brand-subtitle"/>
+        </VBox>
+
+        <Region prefHeight="32"/>
+
+        <!-- Champ Email -->
+        <VBox spacing="6">
+            <Label text="Adresse email" styleClass="field-label"/>
+            <TextField fx:id="emailField"
+                       promptText="exemple@email.com"
+                       styleClass="auth-field"/>
+            <Label fx:id="emailError" styleClass="error-label" visible="false" managed="false"/>
+        </VBox>
+
+        <Region prefHeight="18"/>
+
+        <!-- Champ Mot de passe -->
+        <VBox spacing="6">
+            <Label text="Mot de passe" styleClass="field-label"/>
+            <PasswordField fx:id="passwordField"
+                           promptText="Minimum 8 caractères"
+                           styleClass="auth-field"/>
+            <Label fx:id="passwordError" styleClass="error-label" visible="false" managed="false"/>
+        </VBox>
+
+        <Region prefHeight="10"/>
+
+        <!-- Message d'erreur global (serveur) -->
+        <Label fx:id="globalError"
+               styleClass="global-error"
+               wrapText="true"
+               visible="false"
+               managed="false"/>
+
+        <Region prefHeight="24"/>
+
+        <!-- Bouton Se connecter -->
+        <Button fx:id="loginButton"
+                text="Se connecter"
+                styleClass="btn-primary"
+                maxWidth="Infinity"
+                onAction="#handleLogin"/>
+
+        <Region prefHeight="16"/>
+
+        <!-- Lien vers inscription -->
+        <HBox alignment="CENTER" spacing="6">
+            <Label text="Pas encore de compte ?" styleClass="link-text"/>
+            <Hyperlink text="Créer un compte"
+                       styleClass="link-action"
+                       onAction="#goToRegister"/>
+        </HBox>
+
+        <!-- Indicateur de chargement -->
+        <ProgressIndicator fx:id="loadingIndicator"
+                           visible="false"
+                           managed="false"
+                           styleClass="loading-spinner"
+                           prefWidth="32"
+                           prefHeight="32"/>
+        <VBox.margin>
+            <Insets top="8"/>
+        </VBox.margin>
+
+    </VBox>
+</StackPane>
