@@ -10,8 +10,11 @@ import com.chrionline.ui.SceneManager;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.geometry.Rectangle2D;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -225,6 +228,44 @@ public class HomeController {
         HBox header = new HBox(10, categoryLabel, headerSpacer, stockLabel);
         header.getStyleClass().add("product-card__header");
 
+        // Media (image)
+        StackPane media = new StackPane();
+        media.getStyleClass().add("product-media");
+        media.setPrefHeight(120);
+
+        ImageView img = new ImageView();
+        img.getStyleClass().add("product-image");
+        // Fixed box for consistent UI (cover crop)
+        img.setPreserveRatio(true);
+        img.setFitWidth(280 - 48); // card width minus padding (~24*2)
+        img.setFitHeight(120);
+        img.setSmooth(true);
+        img.setCache(true);
+
+        Label placeholder = new Label("Aucune image");
+        placeholder.getStyleClass().add("image-placeholder");
+
+        String url = p.getImageUrl();
+        if (url != null) url = url.trim();
+        if (url != null && !url.isBlank() && !"null".equalsIgnoreCase(url)) {
+            try {
+                // background loading
+                Image image = new Image(url, true);
+                img.setImage(image);
+                // Apply center-crop once image is loaded
+                image.progressProperty().addListener((obs, ov, nv) -> {
+                    if (nv != null && nv.doubleValue() >= 1.0) {
+                        Platform.runLater(() -> applyCoverViewport(img, image, img.getFitWidth(), img.getFitHeight()));
+                    }
+                });
+                placeholder.setVisible(false);
+                placeholder.setManaged(false);
+            } catch (Exception ignored) {
+                // keep placeholder
+            }
+        }
+        media.getChildren().addAll(img, placeholder);
+
         // Title + short description
         Label nameLabel = new Label(p.getName());
         nameLabel.getStyleClass().add("product-title");
@@ -236,7 +277,7 @@ public class HomeController {
         descLabel.setMaxHeight(44); // ~2 lignes
 
         // Footer: prix + CTA
-        Label priceLabel = new Label(String.format("%.2f €", p.getPrice()));
+        Label priceLabel = new Label(String.format("%.2f Dhs", p.getPrice()));
         priceLabel.getStyleClass().add("product-price");
 
         Button detailButton = new Button("Voir détail →");
@@ -250,8 +291,37 @@ public class HomeController {
         footer.getStyleClass().add("product-card__footer");
         footer.setFillHeight(true);
 
-        card.getChildren().addAll(header, nameLabel, descLabel, footer);
+        card.getChildren().addAll(header, media, nameLabel, descLabel, footer);
         return card;
+    }
+
+    /**
+     * Crops the image to fill the target box (like CSS background-size: cover).
+     */
+    private static void applyCoverViewport(ImageView view, Image image, double targetW, double targetH) {
+        if (view == null || image == null) return;
+        double iw = image.getWidth();
+        double ih = image.getHeight();
+        if (iw <= 0 || ih <= 0 || targetW <= 0 || targetH <= 0) return;
+
+        double targetRatio = targetW / targetH;
+        double imageRatio = iw / ih;
+
+        double vw, vh, vx, vy;
+        if (imageRatio > targetRatio) {
+            // image is wider → crop left/right
+            vh = ih;
+            vw = ih * targetRatio;
+            vx = (iw - vw) / 2.0;
+            vy = 0;
+        } else {
+            // image is taller → crop top/bottom
+            vw = iw;
+            vh = iw / targetRatio;
+            vx = 0;
+            vy = (ih - vh) / 2.0;
+        }
+        view.setViewport(new Rectangle2D(vx, vy, vw, vh));
     }
 
     /**

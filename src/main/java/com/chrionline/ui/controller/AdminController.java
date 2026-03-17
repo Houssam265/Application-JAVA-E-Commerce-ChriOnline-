@@ -124,7 +124,7 @@ public class AdminController {
         colProdId.setCellValueFactory(cd -> cd.getValue().productId);
         colProdName.setCellValueFactory(cd -> cd.getValue().name);
         colProdCategory.setCellValueFactory(cd -> cd.getValue().categoryId);
-        colProdPrice.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f €", cd.getValue().price.get())));
+        colProdPrice.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f Dhs", cd.getValue().price.get())));
         colProdStock.setCellValueFactory(cd -> cd.getValue().stock);
 
         productsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldV, row) -> {
@@ -276,7 +276,7 @@ public class AdminController {
         ordersTable.setItems(orderRows);
         colOrderId.setCellValueFactory(cd -> cd.getValue().orderId);
         colOrderUser.setCellValueFactory(cd -> cd.getValue().userId);
-        colOrderTotal.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f €", cd.getValue().total.get())));
+        colOrderTotal.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f Dhs", cd.getValue().total.get())));
         colOrderStatus.setCellValueFactory(cd -> cd.getValue().status);
 
         colOrderAction.setCellFactory(tc -> new TableCell<>() {

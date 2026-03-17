@@ -8,6 +8,9 @@ import com.chrionline.protocol.Response;
 import com.chrionline.ui.SceneManager;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
+import javafx.geometry.Rectangle2D;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.control.*;
 import org.json.JSONObject;
 
@@ -21,24 +24,60 @@ public class ProductDetailController {
     @FXML private Spinner<Integer> quantitySpinner;
     @FXML private Button addToCartButton;
     @FXML private Label messageLabel;
+    @FXML private ImageView productImageView;
+    @FXML private Label imagePlaceholderLabel;
 
     private Product product;
 
     @FXML
     public void initialize() {
-        // Initialization if needed
+        // Make the spinner editor show the current value clearly.
+        // (A TCP client/UI theme can hide the editor text if the spinner isn't editable.)
+        if (quantitySpinner != null) {
+            quantitySpinner.getStyleClass().add("premium-spinner");
+            quantitySpinner.setEditable(true);
+        }
     }
 
     public void setProduct(Product product) {
         this.product = product;
         productNameLabel.setText(product.getName());
-        productPriceLabel.setText(String.format("%.2f €", product.getPrice()));
+        productPriceLabel.setText(String.format("%.2f Dhs", product.getPrice()));
         
         // Mock description if empty
         String desc = product.getDescription();
         productDescriptionLabel.setText((desc != null && !desc.isEmpty()) ? desc : "Aucune description disponible pour ce produit.");
         
         productCategoryLabel.setText(getCategoryName(product.getCategoryId()));
+
+        // Image (URL stored in products.image_url)
+        if (productImageView != null && imagePlaceholderLabel != null) {
+            String url = product.getImageUrl();
+            if (url != null) url = url.trim();
+            boolean hasUrl = url != null && !url.isBlank() && !"null".equalsIgnoreCase(url);
+            if (hasUrl) {
+                try {
+                    Image image = new Image(url, true); // background loading
+                    productImageView.setImage(image);
+                    image.progressProperty().addListener((obs, ov, nv) -> {
+                        if (nv != null && nv.doubleValue() >= 1.0) {
+                            javafx.application.Platform.runLater(() ->
+                                    applyCoverViewport(productImageView, image, productImageView.getFitWidth(), productImageView.getFitHeight()));
+                        }
+                    });
+                    imagePlaceholderLabel.setVisible(false);
+                    imagePlaceholderLabel.setManaged(false);
+                } catch (Exception ignored) {
+                    productImageView.setImage(null);
+                    imagePlaceholderLabel.setVisible(true);
+                    imagePlaceholderLabel.setManaged(true);
+                }
+            } else {
+                productImageView.setImage(null);
+                imagePlaceholderLabel.setVisible(true);
+                imagePlaceholderLabel.setManaged(true);
+            }
+        }
 
         if (product.getStock() > 0) {
             stockStatusLabel.setText("En stock (" + product.getStock() + ")");
@@ -79,7 +118,6 @@ public class ProductDetailController {
                     JSONObject payload = new JSONObject();
                     payload.put("product_id", product.getProductId());
                     payload.put("quantity", quantity);
-                    payload.put("unit_price", product.getPrice());
                     return client.send(new Request(MessageProtocol.ACTION_ADD_TO_CART, payload, client.getSessionToken()));
                 }
             };
@@ -118,5 +156,32 @@ public class ProductDetailController {
             case 3: return "Accessoires";
             default: return "Autre";
         }
+    }
+
+    /**
+     * Crops the image to fill the target box (like CSS background-size: cover).
+     */
+    private static void applyCoverViewport(ImageView view, Image image, double targetW, double targetH) {
+        if (view == null || image == null) return;
+        double iw = image.getWidth();
+        double ih = image.getHeight();
+        if (iw <= 0 || ih <= 0 || targetW <= 0 || targetH <= 0) return;
+
+        double targetRatio = targetW / targetH;
+        double imageRatio = iw / ih;
+
+        double vw, vh, vx, vy;
+        if (imageRatio > targetRatio) {
+            vh = ih;
+            vw = ih * targetRatio;
+            vx = (iw - vw) / 2.0;
+            vy = 0;
+        } else {
+            vw = iw;
+            vh = iw / targetRatio;
+            vx = 0;
+            vy = (ih - vh) / 2.0;
+        }
+        view.setViewport(new Rectangle2D(vx, vy, vw, vh));
     }
 }

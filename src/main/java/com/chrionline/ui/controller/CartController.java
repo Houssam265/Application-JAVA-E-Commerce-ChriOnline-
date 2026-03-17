@@ -5,7 +5,6 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.SceneManager;
-import javafx.application.Platform;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -15,8 +14,6 @@ import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
 import org.json.JSONArray;
 import org.json.JSONObject;
-
-import java.io.IOException;
 
 /**
  * KAN-28 — Cart screen (Panier).
@@ -63,8 +60,8 @@ public class CartController {
         cartTable.setItems(rows);
 
         colProduct.setCellValueFactory(cd -> cd.getValue().nameProperty());
-        colUnitPrice.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f €", cd.getValue().getUnitPrice())));
-        colSubtotal.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f €", cd.getValue().getSubtotal())));
+        colUnitPrice.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f Dhs", cd.getValue().getUnitPrice())));
+        colSubtotal.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f Dhs", cd.getValue().getSubtotal())));
 
         // Quantity column uses a Spinner per row
         colQuantity.setCellValueFactory(cd -> cd.getValue().quantityProperty());
@@ -281,7 +278,7 @@ public class CartController {
 
     private void updateTotals() {
         double total = rows.stream().mapToDouble(CartRow::getSubtotal).sum();
-        totalLabel.setText(String.format("%.2f €", total));
+        totalLabel.setText(String.format("%.2f Dhs", total));
         checkoutButton.setDisable(rows.isEmpty());
     }
 

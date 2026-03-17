@@ -4,7 +4,9 @@
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.Spinner?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.layout.Region?>
 
@@ -30,9 +32,15 @@
         
         <!-- Price & Stock -->
         <HBox alignment="CENTER_LEFT" spacing="15">
-            <Label fx:id="productPriceLabel" text="0.00 €" styleClass="product-price" style="-fx-font-size: 24px;"/>
+            <Label fx:id="productPriceLabel" text="0.00 Dhs" styleClass="product-price" style="-fx-font-size: 24px;"/>
             <Label fx:id="stockStatusLabel" text="En stock (0)" styleClass="badge-instock" style="-fx-font-size: 14px; -fx-padding: 6 12;"/>
         </HBox>
+
+        <!-- Product image -->
+        <StackPane styleClass="product-media" prefHeight="220">
+            <ImageView fx:id="productImageView" fitHeight="220" preserveRatio="true" smooth="true" styleClass="product-image"/>
+            <Label fx:id="imagePlaceholderLabel" text="Aucune image" styleClass="image-placeholder"/>
+        </StackPane>
 
         <!-- Description -->
         <Label fx:id="productDescriptionLabel" text="Description du produit..." wrapText="true" 
@@ -48,7 +56,7 @@
             </padding>
             <Label text="Quantité :" styleClass="field-label" style="-fx-font-size: 16px;"/>
             
-            <Spinner fx:id="quantitySpinner" prefWidth="90" styleClass="auth-field" style="-fx-font-size: 14px;"/>
+            <Spinner fx:id="quantitySpinner" prefWidth="110" styleClass="premium-spinner" style="-fx-font-size: 14px;"/>
             
             <Region HBox.hgrow="ALWAYS" />
             <Button fx:id="addToCartButton" text="🛒 Ajouter au panier" onAction="#handleAddToCart" 

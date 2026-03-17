@@ -24,10 +24,12 @@ public class AdminService {
 
     // Products CRUD
     public Product createProduct(Product p) {
+        validateProduct(p, false);
         return productDAO.save(p);
     }
 
     public void updateProduct(Product p) {
+        validateProduct(p, true);
         productDAO.update(p);
     }
 
@@ -47,6 +49,29 @@ public class AdminService {
 
     public void setUserSuspended(int userId, boolean suspended) {
         userDAO.setSuspended(userId, suspended);
+    }
+
+    // ── Validation helpers (KAN-37) ──────────────────────────────────────────
+
+    private void validateProduct(Product p, boolean requireId) {
+        if (p == null) {
+            throw new IllegalArgumentException("Produit invalide.");
+        }
+        if (requireId && p.getProductId() <= 0) {
+            throw new IllegalArgumentException("product_id invalide.");
+        }
+        if (p.getCategoryId() <= 0) {
+            throw new IllegalArgumentException("category_id invalide.");
+        }
+        if (p.getName() == null || p.getName().isBlank()) {
+            throw new IllegalArgumentException("Le nom du produit est requis.");
+        }
+        if (p.getPrice() <= 0) {
+            throw new IllegalArgumentException("Le prix doit être > 0.");
+        }
+        if (p.getStock() < 0) {
+            throw new IllegalArgumentException("Le stock doit être >= 0.");
+        }
     }
 }
 

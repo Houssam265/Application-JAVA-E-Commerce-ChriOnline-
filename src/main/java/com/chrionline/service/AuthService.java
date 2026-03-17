@@ -115,6 +115,9 @@ public class AuthService {
      * @throws IllegalArgumentException with "Invalid credentials" on any failure
      */
     public User login(String email, String plainPassword) {
+        // Advanced-level validation: reject malformed emails at the service layer
+        // (even if the UI validates, a TCP client can bypass it).
+        validateEmail(email);
 
         User user = userDAO.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException(INVALID_CREDENTIALS));

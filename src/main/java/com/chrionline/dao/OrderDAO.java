@@ -118,7 +118,7 @@ public class OrderDAO {
             // Compute total from cart snapshot prices (server wrote them when adding to cart)
             double total = 0.0;
             for (OrderItem it : items) {
-                if (it.getUnitPrice() < 0) {
+                if (it.getUnitPrice() <= 0) {
                     throw new IllegalArgumentException("Prix invalide dans le panier.");
                 }
                 total += it.getUnitPrice() * it.getQuantity();

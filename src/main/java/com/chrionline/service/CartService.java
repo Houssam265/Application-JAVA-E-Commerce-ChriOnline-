@@ -34,6 +34,9 @@ public class CartService {
 
         Product product = productDAO.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("Produit introuvable (id=" + productId + ")."));
+        if (product.getPrice() <= 0) {
+            throw new IllegalArgumentException("Prix du produit invalide (id=" + productId + ").");
+        }
 
         int alreadyInCart = cart.getItems().stream()
                 .filter(it -> it.getProductId() == productId)
