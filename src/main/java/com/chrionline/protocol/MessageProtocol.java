@@ -44,4 +44,5 @@ public final class MessageProtocol {
     public static final String ACTION_ADMIN_DELETE_PRODUCT     = "ADMIN_DELETE_PRODUCT";
     public static final String ACTION_ADMIN_LIST_USERS         = "ADMIN_LIST_USERS";
     public static final String ACTION_ADMIN_UPDATE_USER_ROLE   = "ADMIN_UPDATE_USER_ROLE";
+    public static final String ACTION_ADMIN_SET_USER_SUSPENDED = "ADMIN_SET_USER_SUSPENDED";
 }

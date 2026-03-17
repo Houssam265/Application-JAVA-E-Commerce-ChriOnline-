@@ -4,6 +4,7 @@ import com.chrionline.client.Client;
 import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
+import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.SceneManager;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
@@ -145,8 +146,19 @@ public class LoginController {
             Response response = loginTask.getValue();
 
             if (response.isSuccess()) {
-                // ④ Connexion réussie → redirection HomeScreen
-                javafx.application.Platform.runLater(SceneManager::showHome);
+                // ④ Connexion réussie → cache identité (userId/role) + redirection HomeScreen
+                try {
+                    JSONObject payload = response.getPayloadAsJsonObject();
+                    ClientSession session = ClientSession.getInstance();
+                    session.setUserId(payload.has("userId") ? payload.getInt("userId") : null);
+                    session.setUsername(payload.optString("username", ""));
+                    session.setEmail(payload.optString("email", ""));
+                    String role = payload.optString("role", "CLIENT");
+                    session.setRole(com.chrionline.model.User.Role.valueOf(role));
+                } catch (Exception ignored) {
+                    // If payload is missing or malformed, still navigate; screens will guard as needed.
+                }
+                Platform.runLater(SceneManager::showHome);
             } else {
                 // ⑤ Erreur métier renvoyée par le serveur
                 showError(globalError, response.getMessage().isEmpty()

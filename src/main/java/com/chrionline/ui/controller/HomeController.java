@@ -1,11 +1,24 @@
 package com.chrionline.ui.controller;
 
+import com.chrionline.client.Client;
 import com.chrionline.model.Product;
+import com.chrionline.protocol.MessageProtocol;
+import com.chrionline.protocol.Request;
+import com.chrionline.protocol.Response;
+import com.chrionline.ui.ClientSession;
+import com.chrionline.ui.SceneManager;
+import javafx.application.Platform;
+import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -22,32 +35,46 @@ public class HomeController {
     @FXML private TextField searchField;
     @FXML private ComboBox<String> categoryCombo;
     @FXML private FlowPane productsGrid;
+    @FXML private Button adminButton;
+    @FXML private Label connectedLabel;
 
     // TODO: A remplacer par un fetch via Socket/TCP au serveur lors du lien backend complet
     private List<Product> allProducts;
+    private final Map<Integer, String> categoryNameById = new HashMap<>();
+    private final Map<String, Integer> categoryIdByName = new HashMap<>();
 
     @FXML
     public void initialize() {
-        // Initialisation de la ComboBox des catégories
-        categoryCombo.getItems().addAll("Toutes", "PC Portables", "Smartphones", "Accessoires");
-        categoryCombo.setValue("Toutes");
+        ClientSession session = ClientSession.getInstance();
+        if (session.isAdmin() && adminButton != null) {
+            adminButton.setVisible(true);
+            adminButton.setManaged(true);
+        }
+        if (connectedLabel != null && session.getUsername() != null && !session.getUsername().isBlank()) {
+            connectedLabel.setText("Connecté · " + session.getUsername());
+        }
 
-        // Alimentation des produits simulés (Mocks) pour tester l'UI KAN-6
+        // Init collections (DB-driven)
         allProducts = new ArrayList<>();
-        allProducts.add(new Product(1, 1, "MacBook Pro M3", "Puce M3 Max, 32Go RAM, 1To SSD.", 2499.00, 15, ""));
-        allProducts.add(new Product(2, 2, "iPhone 15 Pro", "Titane naturel, 256Go.", 1199.00, 0, ""));
-        allProducts.add(new Product(3, 1, "Dell XPS 13 Plus", "Écran OLED, 16Go RAM, 512Go SSD.", 1499.00, 5, ""));
-        allProducts.add(new Product(4, 3, "AirPods Pro 2", "Réduction de bruit active, USB-C.", 279.00, 20, ""));
-        allProducts.add(new Product(5, 2, "Samsung Galaxy S24 Ultra", "Caméra 200MP, S-Pen inclu.", 1299.00, 10, ""));
-        allProducts.add(new Product(6, 3, "Souris Logitech MX Master 3S", "Ergonomique et silencieuse.", 99.00, 0, ""));
-        allProducts.add(new Product(7, 1, "Asus ROG Zephyrus G14", "PC Gamer portable, RTX 4060.", 1799.00, 3, ""));
-
-        // Affichage initial de tous les produits
-        displayProducts(allProducts);
+        categoryCombo.getItems().setAll("Toutes");
+        categoryCombo.setValue("Toutes");
 
         // Ajout des écouteurs pour la barre de recherche et filtres de catégorie en temps réel
         searchField.textProperty().addListener((observable, oldValue, newValue) -> filterProducts());
         categoryCombo.valueProperty().addListener((observable, oldValue, newValue) -> filterProducts());
+
+        // Load categories + products from server (DB)
+        loadCatalogueFromServer();
+    }
+
+    @FXML
+    private void handleOpenCart() {
+        SceneManager.showCart();
+    }
+
+    @FXML
+    private void handleOpenAdmin() {
+        SceneManager.showAdmin();
     }
 
     /**
@@ -58,9 +85,9 @@ public class HomeController {
         String selectedCategory = categoryCombo.getValue();
 
         int targetCategoryId = -1; // -1 = Tous
-        if ("PC Portables".equals(selectedCategory)) targetCategoryId = 1;
-        else if ("Smartphones".equals(selectedCategory)) targetCategoryId = 2;
-        else if ("Accessoires".equals(selectedCategory)) targetCategoryId = 3;
+        if (selectedCategory != null && !"Toutes".equals(selectedCategory)) {
+            targetCategoryId = categoryIdByName.getOrDefault(selectedCategory, -1);
+        }
 
         int finalTargetId = targetCategoryId;
         List<Product> filteredList = allProducts.stream()
@@ -71,6 +98,86 @@ public class HomeController {
         displayProducts(filteredList);
     }
 
+    private void loadCatalogueFromServer() {
+        Task<Void> t = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+
+                Response catResp = client.send(new Request(MessageProtocol.ACTION_GET_CATEGORIES, new JSONObject(), client.getSessionToken()));
+                if (catResp.isSuccess()) {
+                    applyCategories(catResp.getPayload());
+                }
+
+                Response prodResp = client.send(new Request(MessageProtocol.ACTION_GET_PRODUCTS, new JSONObject(), client.getSessionToken()));
+                if (prodResp.isSuccess()) {
+                    applyProducts(prodResp.getPayload());
+                } else {
+                    Platform.runLater(() -> displayProducts(List.of()));
+                }
+                return null;
+            }
+        };
+        Thread th = new Thread(t);
+        th.setDaemon(true);
+        th.start();
+    }
+
+    private void applyCategories(Object payload) {
+        try {
+            JSONArray arr = payload instanceof JSONArray ? (JSONArray) payload : new JSONArray(String.valueOf(payload));
+
+            Map<Integer, String> byId = new HashMap<>();
+            Map<String, Integer> byName = new HashMap<>();
+            List<String> names = new ArrayList<>();
+
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject c = arr.getJSONObject(i);
+                int id = c.optInt("categoryId", c.optInt("category_id", 0));
+                String name = c.optString("name", "");
+                if (id <= 0 || name.isBlank()) continue;
+                byId.put(id, name);
+                byName.put(name, id);
+                names.add(name);
+            }
+
+            Platform.runLater(() -> {
+                categoryNameById.clear();
+                categoryIdByName.clear();
+                categoryNameById.putAll(byId);
+                categoryIdByName.putAll(byName);
+
+                categoryCombo.getItems().setAll("Toutes");
+                categoryCombo.getItems().addAll(names);
+                if (categoryCombo.getValue() == null) categoryCombo.setValue("Toutes");
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void applyProducts(Object payload) {
+        try {
+            JSONArray arr = payload instanceof JSONArray ? (JSONArray) payload : new JSONArray(String.valueOf(payload));
+            List<Product> list = new ArrayList<>();
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject p = arr.getJSONObject(i);
+                Product pr = new Product();
+                pr.setProductId(p.optInt("productId", p.optInt("product_id", 0)));
+                pr.setCategoryId(p.optInt("categoryId", p.optInt("category_id", 0)));
+                pr.setName(p.optString("name", "Produit"));
+                pr.setDescription(p.optString("description", ""));
+                pr.setPrice(p.optDouble("price", 0.0));
+                pr.setStock(p.optInt("stock", 0));
+                pr.setImageUrl(p.optString("imageUrl", p.optString("image_url", "")));
+                list.add(pr);
+            }
+            Platform.runLater(() -> {
+                allProducts = list;
+                filterProducts();
+            });
+        } catch (Exception ignored) {}
+    }
+
     /**
      * Rafraichit la grille des produits.
      */
@@ -79,7 +186,7 @@ public class HomeController {
 
         if (products.isEmpty()) {
             Label noResults = new Label("Aucun produit ne correspond à votre recherche.");
-            noResults.setStyle("-fx-text-fill: white; -fx-font-size: 16px;");
+            noResults.getStyleClass().addAll("body-text", "empty-state");
             productsGrid.getChildren().add(noResults);
             return;
         }
@@ -93,51 +200,57 @@ public class HomeController {
      * Construit dynamiquement la "Carte Produit" pour l'UI.
      */
     private VBox createProductCard(Product p) {
-        VBox card = new VBox(12);
-        card.getStyleClass().add("product-card");
-        card.setPrefWidth(260); // Largeur de chaque carte produit
-        card.setPrefHeight(220); // Hauteur pour l'uniformité
+        VBox card = new VBox(14);
+        card.getStyleClass().addAll("product-card", "product-card--rich");
+        card.setPrefWidth(280);
+        card.setPrefHeight(250);
 
-        // Catégorie
+        // Header: catégorie + stock (pill)
         Label categoryLabel = new Label(getCategoryName(p.getCategoryId()));
         categoryLabel.getStyleClass().add("product-category");
 
-        // Titre produit
+        Label stockLabel = new Label();
+        boolean isAvailable = p.getStock() > 0;
+        if (isAvailable) {
+            stockLabel.setText("En stock · " + p.getStock());
+            stockLabel.getStyleClass().add("badge-instock");
+        } else {
+            stockLabel.setText("Rupture");
+            stockLabel.getStyleClass().add("badge-outstock");
+        }
+
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+
+        HBox header = new HBox(10, categoryLabel, headerSpacer, stockLabel);
+        header.getStyleClass().add("product-card__header");
+
+        // Title + short description
         Label nameLabel = new Label(p.getName());
         nameLabel.getStyleClass().add("product-title");
         nameLabel.setWrapText(true);
 
-        // Prix
-        Label priceLabel = new Label(p.getPrice() + " €");
+        Label descLabel = new Label(p.getDescription() == null ? "" : p.getDescription());
+        descLabel.getStyleClass().addAll("product-desc", "body-text");
+        descLabel.setWrapText(true);
+        descLabel.setMaxHeight(44); // ~2 lignes
+
+        // Footer: prix + CTA
+        Label priceLabel = new Label(String.format("%.2f €", p.getPrice()));
         priceLabel.getStyleClass().add("product-price");
 
-        // Disponibilité
-        Label stockLabel = new Label();
-        boolean isAvailable = p.getStock() > 0;
-        
-        if (isAvailable) {
-            stockLabel.setText("En stock (" + p.getStock() + ")");
-            stockLabel.getStyleClass().add("badge-instock");
-        } else {
-            stockLabel.setText("Indisponible");
-            stockLabel.getStyleClass().add("badge-outstock");
-        }
+        Button detailButton = new Button("Voir détail →");
+        detailButton.getStyleClass().add("btn-outline");
+        detailButton.setOnAction(event -> com.chrionline.ui.SceneManager.showProductDetail(p));
 
-        // Pousseur pour forcer le bouton en bas de la carte
-        Region spacer = new Region();
-        VBox.setVgrow(spacer, Priority.ALWAYS);
+        Region footerSpacer = new Region();
+        HBox.setHgrow(footerSpacer, Priority.ALWAYS);
 
-        // Bouton détail
-        Button detailButton = new Button("Voir détail");
-        detailButton.getStyleClass().add("btn-secondary");
-        detailButton.setMaxWidth(Double.MAX_VALUE);
-        
-        detailButton.setOnAction(event -> {
-            // TODO: Rediriger vers l'écran de détail du Produit (ProductController)
-            System.out.println("Clic sur Produit : " + p.getName());
-        });
+        HBox footer = new HBox(12, priceLabel, footerSpacer, detailButton);
+        footer.getStyleClass().add("product-card__footer");
+        footer.setFillHeight(true);
 
-        card.getChildren().addAll(categoryLabel, nameLabel, priceLabel, stockLabel, spacer, detailButton);
+        card.getChildren().addAll(header, nameLabel, descLabel, footer);
         return card;
     }
 
@@ -145,11 +258,6 @@ public class HomeController {
      * Convertit l'ID Catégorie en Texte (mock simple).
      */
     private String getCategoryName(int categoryId) {
-        return switch (categoryId) {
-            case 1 -> "PC Portables";
-            case 2 -> "Smartphones";
-            case 3 -> "Accessoires";
-            default -> "Autre";
-        };
+        return categoryNameById.getOrDefault(categoryId, "Autre");
     }
 }

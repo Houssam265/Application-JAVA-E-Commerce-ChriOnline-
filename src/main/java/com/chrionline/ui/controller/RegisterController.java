@@ -4,6 +4,7 @@ import com.chrionline.client.Client;
 import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
+import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.SceneManager;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
@@ -144,6 +145,17 @@ public class RegisterController {
             Response response = registerTask.getValue();
 
             if (response.isSuccess()) {
+                // Cache identité côté client (le serveur crée aussi une session)
+                try {
+                    JSONObject payload = response.getPayloadAsJsonObject();
+                    ClientSession session = ClientSession.getInstance();
+                    session.setUserId(payload.has("userId") ? payload.getInt("userId") : null);
+                    session.setUsername(payload.optString("username", ""));
+                    session.setEmail(payload.optString("email", ""));
+                    String role = payload.optString("role", "CLIENT");
+                    session.setRole(com.chrionline.model.User.Role.valueOf(role));
+                } catch (Exception ignored) {}
+
                 // ④ Inscription réussie : message de succès, puis redirige vers Login
                 showSuccess("Compte créé avec succès ! Redirection vers la connexion...");
 

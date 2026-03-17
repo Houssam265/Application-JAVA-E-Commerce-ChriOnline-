@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.Spinner?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.Region?>
+
+<VBox styleClass="root-pane" alignment="CENTER" spacing="20" 
+      xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.chrionline.ui.controller.ProductDetailController">
+
+    <!-- Card Container -->
+    <VBox styleClass="auth-card" spacing="25" maxWidth="600" alignment="TOP_LEFT">
+        <padding>
+            <Insets top="40" right="40" bottom="40" left="40"/>
+        </padding>
+
+        <!-- Header: Category & Back Button -->
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label fx:id="productCategoryLabel" text="Catégorie" styleClass="product-category"/>
+            <Region HBox.hgrow="ALWAYS" />
+            <Button text="← Retour au catalogue" onAction="#handleBackToCatalog" styleClass="link-action" style="-fx-background-color: transparent;"/>
+        </HBox>
+
+        <!-- Title -->
+        <Label fx:id="productNameLabel" text="Nom du Produit" styleClass="brand-title" wrapText="true" style="-fx-font-size: 32px;"/>
+        
+        <!-- Price & Stock -->
+        <HBox alignment="CENTER_LEFT" spacing="15">
+            <Label fx:id="productPriceLabel" text="0.00 €" styleClass="product-price" style="-fx-font-size: 24px;"/>
+            <Label fx:id="stockStatusLabel" text="En stock (0)" styleClass="badge-instock" style="-fx-font-size: 14px; -fx-padding: 6 12;"/>
+        </HBox>
+
+        <!-- Description -->
+        <Label fx:id="productDescriptionLabel" text="Description du produit..." wrapText="true" 
+               style="-fx-text-fill: #475569; -fx-font-size: 16px;"/>
+
+        <!-- Separator visual -->
+        <Region style="-fx-background-color: #cbd5e1; -fx-pref-height: 1px;" />
+
+        <!-- Quantity & Add to Cart -->
+        <HBox alignment="CENTER_LEFT" spacing="20">
+            <padding>
+                <Insets top="10" />
+            </padding>
+            <Label text="Quantité :" styleClass="field-label" style="-fx-font-size: 16px;"/>
+            
+            <Spinner fx:id="quantitySpinner" prefWidth="90" styleClass="auth-field" style="-fx-font-size: 14px;"/>
+            
+            <Region HBox.hgrow="ALWAYS" />
+            <Button fx:id="addToCartButton" text="🛒 Ajouter au panier" onAction="#handleAddToCart" 
+                    styleClass="btn-primary" prefWidth="200" />
+        </HBox>
+
+        <!-- Missing stock message / Success message -->
+        <Label fx:id="messageLabel" visible="false" managed="true" wrapText="true" maxWidth="Infinity" />
+        
+    </VBox>
+</VBox>

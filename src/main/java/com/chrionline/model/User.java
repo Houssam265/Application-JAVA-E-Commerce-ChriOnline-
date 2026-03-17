@@ -15,6 +15,7 @@ public class User {
     private String        email;
     private String        passwordHash;
     private Role          role;          // enum — see nested type below
+    private boolean       suspended;     // admin moderation flag
     private LocalDateTime createdAt;
 
     // ── Nested enum matching schema ENUM('CLIENT','ADMIN') exactly ─────────
@@ -56,6 +57,9 @@ public class User {
     public Role          getRole()          { return role; }
     public void          setRole(Role v)    { this.role = v; }
 
+    public boolean       isSuspended()          { return suspended; }
+    public void          setSuspended(boolean v) { this.suspended = v; }
+
     public LocalDateTime getCreatedAt()          { return createdAt; }
     public void          setCreatedAt(LocalDateTime v) { this.createdAt = v; }
 
@@ -68,6 +72,7 @@ public class User {
                ", username='"  + username     + '\'' +
                ", email='"     + email        + '\'' +
                ", role="       + role         +
+               ", suspended="  + suspended    +
                ", createdAt="  + createdAt    +
                '}';
     }

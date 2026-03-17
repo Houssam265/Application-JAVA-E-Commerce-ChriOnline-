@@ -13,9 +13,11 @@
         <VBox spacing="20" styleClass="app-container">
             <!-- Header -->
             <HBox alignment="CENTER_LEFT" spacing="20">
-                <Label text="ChriOnline | Catalogue" styleClass="brand-title" style="-fx-font-size: 32px;"/>
+                <Label text="ChriOnline | Catalogue" styleClass="brand-title page-title"/>
                 <Region HBox.hgrow="ALWAYS"/>
-                <Label text="Connecté" styleClass="badge-instock" style="-fx-font-size: 14px; -fx-padding: 8px 16px;"/>
+                <Button fx:id="adminButton" text="Admin" onAction="#handleOpenAdmin" styleClass="btn-outline" visible="false" managed="false"/>
+                <Button fx:id="cartButton" text="Panier" onAction="#handleOpenCart" styleClass="btn-outline"/>
+                <Label fx:id="connectedLabel" text="Connecté" styleClass="status-pill"/>
             </HBox>
 
             <!-- Barre de recherche et Filtre -->
@@ -35,9 +37,9 @@
 
     <center>
         <!-- ScrollPane transparent pour la grille de produits -->
-        <ScrollPane fitToWidth="true" style="-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;">
+        <ScrollPane fitToWidth="true" styleClass="content-scroll">
             <content>
-                <FlowPane fx:id="productsGrid" hgap="24" vgap="24" style="-fx-padding: 0 30px 40px 30px;">
+                <FlowPane fx:id="productsGrid" hgap="24" vgap="24" styleClass="products-grid">
                     <!-- Les cartes produits seront injectées ici par le contrôleur -->
                 </FlowPane>
             </content>

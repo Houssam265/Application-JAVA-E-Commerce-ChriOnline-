@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns="http://javafx.com/javafx/17"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.chrionline.ui.controller.AdminController"
+      styleClass="root-pane"
+      spacing="18">
+
+    <padding>
+        <Insets top="24" right="28" bottom="24" left="28"/>
+    </padding>
+
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <Label text="Administration" styleClass="brand-title page-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="← Retour catalogue" onAction="#handleBackToHome" styleClass="btn-outline"/>
+    </HBox>
+
+    <VBox styleClass="auth-card" spacing="14" VBox.vgrow="ALWAYS">
+        <padding>
+            <Insets top="18" right="18" bottom="18" left="18"/>
+        </padding>
+
+        <TabPane fx:id="tabPane" tabClosingPolicy="UNAVAILABLE" styleClass="tab-premium" VBox.vgrow="ALWAYS">
+            <tabs>
+                <Tab text="Produits">
+                    <BorderPane>
+                        <center>
+                            <TableView fx:id="productsTable" styleClass="table-premium" prefHeight="360">
+                                <columns>
+                                    <TableColumn fx:id="colProdId" text="ID" prefWidth="70"/>
+                                    <TableColumn fx:id="colProdName" text="Nom" prefWidth="220"/>
+                                    <TableColumn fx:id="colProdCategory" text="Cat." prefWidth="90"/>
+                                    <TableColumn fx:id="colProdPrice" text="Prix" prefWidth="110"/>
+                                    <TableColumn fx:id="colProdStock" text="Stock" prefWidth="90"/>
+                                </columns>
+                            </TableView>
+                        </center>
+                        <bottom>
+                            <VBox spacing="10">
+                                <Separator/>
+                                <HBox spacing="10">
+                                    <TextField fx:id="prodNameField" promptText="Nom" styleClass="auth-field" HBox.hgrow="ALWAYS"/>
+                                    <TextField fx:id="prodCategoryField" promptText="Catégorie ID" styleClass="auth-field" prefWidth="160"/>
+                                </HBox>
+                                <HBox spacing="10">
+                                    <TextField fx:id="prodPriceField" promptText="Prix" styleClass="auth-field" prefWidth="160"/>
+                                    <TextField fx:id="prodStockField" promptText="Stock" styleClass="auth-field" prefWidth="160"/>
+                                    <TextField fx:id="prodImageField" promptText="Image URL (optionnel)" styleClass="auth-field" HBox.hgrow="ALWAYS"/>
+                                </HBox>
+                                <TextArea fx:id="prodDescField" promptText="Description" prefRowCount="2" wrapText="true"/>
+                                <HBox spacing="10" alignment="CENTER_RIGHT">
+                                    <Button text="Nouveau" onAction="#handleNewProduct" styleClass="btn-secondary"/>
+                                    <Button text="Enregistrer" onAction="#handleSaveProduct" styleClass="btn-primary" prefWidth="160"/>
+                                    <Button text="Supprimer" onAction="#handleDeleteProduct" styleClass="btn-secondary"/>
+                                </HBox>
+                            </VBox>
+                        </bottom>
+                    </BorderPane>
+                </Tab>
+
+                <Tab text="Commandes">
+                    <VBox spacing="12">
+                        <HBox alignment="CENTER_LEFT" spacing="10">
+                            <Label text="Liste des commandes" styleClass="field-label" style="-fx-font-size: 15px;"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button text="Rafraîchir" onAction="#handleRefreshOrders" styleClass="btn-outline"/>
+                        </HBox>
+                        <TableView fx:id="ordersTable" styleClass="table-premium" prefHeight="360">
+                            <columns>
+                                <TableColumn fx:id="colOrderId" text="Order ID" prefWidth="230"/>
+                                <TableColumn fx:id="colOrderUser" text="User" prefWidth="80"/>
+                                <TableColumn fx:id="colOrderTotal" text="Total" prefWidth="110"/>
+                                <TableColumn fx:id="colOrderStatus" text="Statut" prefWidth="140"/>
+                                <TableColumn fx:id="colOrderAction" text="" prefWidth="150"/>
+                            </columns>
+                        </TableView>
+                    </VBox>
+                </Tab>
+
+                <Tab text="Utilisateurs">
+                    <VBox spacing="12">
+                        <HBox alignment="CENTER_LEFT" spacing="10">
+                            <Label text="Liste des utilisateurs" styleClass="field-label" style="-fx-font-size: 15px;"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button text="Rafraîchir" onAction="#handleRefreshUsers" styleClass="btn-outline"/>
+                        </HBox>
+                        <TableView fx:id="usersTable" styleClass="table-premium" prefHeight="360">
+                            <columns>
+                                <TableColumn fx:id="colUserId" text="ID" prefWidth="70"/>
+                                <TableColumn fx:id="colUsername" text="Username" prefWidth="170"/>
+                                <TableColumn fx:id="colEmail" text="Email" prefWidth="220"/>
+                                <TableColumn fx:id="colRole" text="Rôle" prefWidth="90"/>
+                                <TableColumn fx:id="colSuspended" text="Suspendu" prefWidth="100"/>
+                                <TableColumn fx:id="colUserAction" text="" prefWidth="160"/>
+                            </columns>
+                        </TableView>
+                    </VBox>
+                </Tab>
+            </tabs>
+        </TabPane>
+
+        <Label fx:id="messageLabel" visible="false" managed="false" wrapText="true" maxWidth="Infinity"/>
+    </VBox>
+</VBox>
+

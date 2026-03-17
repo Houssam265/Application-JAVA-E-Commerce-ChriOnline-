@@ -104,20 +104,24 @@ public class AuthService {
     }
 
     /**
-     * Authenticates a user by username and password.
+     * Authenticates a user by email and password.
      * <p>
-     * Always throws the same message for wrong username or wrong password to
+     * Always throws the same message for wrong email or wrong password to
      * prevent user-enumeration attacks.
      *
-     * @param username      the account username
+     * @param email         the account email
      * @param plainPassword the candidate plain-text password
      * @return the authenticated {@link User}
      * @throws IllegalArgumentException with "Invalid credentials" on any failure
      */
-    public User login(String username, String plainPassword) {
+    public User login(String email, String plainPassword) {
 
-        User user = userDAO.findByUsername(username)
+        User user = userDAO.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException(INVALID_CREDENTIALS));
+
+        if (user.isSuspended()) {
+            throw new IllegalArgumentException("Compte suspendu. Contactez l'administrateur.");
+        }
 
         if (!PasswordUtils.verify(plainPassword, user.getPasswordHash())) {
             throw new IllegalArgumentException(INVALID_CREDENTIALS);
