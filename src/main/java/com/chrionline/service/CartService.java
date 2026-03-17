@@ -20,7 +20,13 @@ public class CartService {
         return cartDAO.findByUserId(userId).orElseGet(() -> cartDAO.createForUser(userId));
     }
 
-    public void addToCart(int userId, int productId, int quantity, double unitPrice) {
+    /**
+     * Adds a product to the user's cart.
+     *
+     * Important: unit price is ALWAYS sourced from the database (products.price),
+     * never trusted from the client payload.
+     */
+    public void addToCart(int userId, int productId, int quantity) {
         if (quantity <= 0) throw new IllegalArgumentException("La quantité doit être > 0");
         Cart cart = getOrCreateCart(userId);
         // Ensure we have the latest items to compute existing quantity
@@ -41,15 +47,33 @@ public class CartService {
                     "Stock insuffisant pour ce produit. Stock=" + product.getStock() + ", demandé=" + requestedTotal + ".");
         }
 
-        cartDAO.addItem(cart.getCartId(), productId, quantity, unitPrice);
+        cartDAO.addItem(cart.getCartId(), productId, quantity, product.getPrice());
     }
 
-    public void updateCartItemQuantity(int cartItemId, int newQuantity) {
+    /**
+     * Updates quantity for a cart item, ensuring the item belongs to the user and
+     * that product stock is sufficient for the new requested quantity.
+     */
+    public void updateCartItemQuantity(int userId, int cartItemId, int newQuantity) {
         if (newQuantity <= 0) throw new IllegalArgumentException("La quantité doit être > 0");
+        CartItem item = cartDAO.findItemForUser(userId, cartItemId)
+                .orElseThrow(() -> new IllegalArgumentException("Article du panier introuvable."));
+
+        Product product = productDAO.findById(item.getProductId())
+                .orElseThrow(() -> new IllegalArgumentException("Produit introuvable (id=" + item.getProductId() + ")."));
+
+        if (product.getStock() < newQuantity) {
+            throw new IllegalArgumentException(
+                    "Stock insuffisant pour ce produit. Stock=" + product.getStock() + ", demandé=" + newQuantity + ".");
+        }
+
         cartDAO.updateItemQuantity(cartItemId, newQuantity);
     }
 
-    public void removeCartItem(int cartItemId) {
+    /** Removes one cart item, ensuring it belongs to the user. */
+    public void removeCartItem(int userId, int cartItemId) {
+        cartDAO.findItemForUser(userId, cartItemId)
+                .orElseThrow(() -> new IllegalArgumentException("Article du panier introuvable."));
         cartDAO.removeItem(cartItemId);
     }
 

@@ -5,7 +5,6 @@ import com.chrionline.model.Cart;
 import com.chrionline.model.CartItem;
 
 import java.sql.*;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -139,6 +138,31 @@ public class CartDAO {
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("CartDAO.clearCart failed for cartId=" + cartId + ": " + e.getMessage(), e);
+        }
+    }
+
+    // ── Ownership-safe SELECT (userId + cartItemId) ──────────────────────────
+
+    /**
+     * Returns the cart item only if it belongs to the given user.
+     * Prevents horizontal privilege escalation (editing/removing another user's cart item).
+     */
+    public Optional<CartItem> findItemForUser(int userId, int cartItemId) {
+        final String sql =
+                "SELECT ci.cart_item_id, ci.cart_id, ci.product_id, ci.quantity, ci.unit_price " +
+                "FROM cart_items ci " +
+                "JOIN carts c ON ci.cart_id = c.cart_id " +
+                "WHERE c.user_id = ? AND ci.cart_item_id = ? " +
+                "LIMIT 1";
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, cartItemId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(mapCartItemRow(rs)) : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("CartDAO.findItemForUser failed for userId=" + userId + ", cartItemId=" + cartItemId + ": " + e.getMessage(), e);
         }
     }
 

@@ -378,10 +378,8 @@ public class ClientHandler implements Runnable {
             if (productId == null || quantity == null) {
                 return Response.error("Missing product_id or quantity");
             }
-            double unitPrice = 0.0;
-            Object up = req.getPayload() != null ? req.getPayload().get("unit_price") : null;
-            if (up instanceof Number) unitPrice = ((Number) up).doubleValue();
-            cartService.addToCart(userId, productId, quantity, unitPrice);
+            // Never trust client-provided price: server always reads product.price from DB
+            cartService.addToCart(userId, productId, quantity);
             return Response.ok("ADDED_TO_CART", cartService.getCartView(userId));
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -398,10 +396,10 @@ public class ClientHandler implements Runnable {
             if (cartItemId == null || quantity == null) {
                 return Response.error("Missing cart_item_id or quantity");
             }
-            cartService.updateCartItemQuantity(cartItemId, quantity);
             int userId = sessionManager.getUserFromToken(req.getToken())
                     .map(User::getUserId)
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            cartService.updateCartItemQuantity(userId, cartItemId, quantity);
             return Response.ok(cartService.getCartView(userId));
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -417,10 +415,10 @@ public class ClientHandler implements Runnable {
             if (cartItemId == null) {
                 return Response.error("Missing cart_item_id");
             }
-            cartService.removeCartItem(cartItemId);
             int userId = sessionManager.getUserFromToken(req.getToken())
                     .map(User::getUserId)
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            cartService.removeCartItem(userId, cartItemId);
             return Response.ok(cartService.getCartView(userId));
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());

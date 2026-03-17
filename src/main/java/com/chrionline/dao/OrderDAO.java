@@ -9,6 +9,7 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Data Access Object for the {@code orders} and {@code order_items} tables.
@@ -25,6 +26,165 @@ public class OrderDAO {
     // ── Connection helper ───────────────────────────────────────────────────
     private Connection conn() {
         return DatabaseConnection.getInstance().getConnection();
+    }
+
+    // ── PLACE ORDER FROM CART (transactional end-to-end) ─────────────────────
+
+    /**
+     * Converts the user's cart into an order in ONE database transaction:
+     * - Re-checks stock in real-time (row locks)
+     * - Inserts order header + order_items
+     * - Decrements product stock
+     * - Clears the cart
+     *
+     * <p>This is the "advanced-level" expected behavior: stock updates and order creation
+     * are atomic (COMMIT) or not applied at all (ROLLBACK) on failure.</p>
+     *
+     * @param userId authenticated user placing the order
+     * @return created order with items populated
+     * @throws IllegalArgumentException if cart is missing/empty or stock insufficient
+     * @throws RuntimeException on database errors (transaction rolled back)
+     */
+    public Order placeOrderFromCart(int userId) {
+        final String selectCartId = "SELECT cart_id FROM carts WHERE user_id = ? LIMIT 1";
+        final String selectCartItems =
+                "SELECT cart_item_id, cart_id, product_id, quantity, unit_price " +
+                "FROM cart_items WHERE cart_id = ?";
+        final String lockProduct =
+                "SELECT stock FROM products WHERE product_id = ? FOR UPDATE";
+        final String insertOrder =
+                "INSERT INTO orders (order_id, user_id, status, total_amount) VALUES (?, ?, ?, ?)";
+        final String insertItem =
+                "INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)";
+        final String decrementStock =
+                "UPDATE products SET stock = stock - ? WHERE product_id = ? AND stock >= ?";
+        final String clearCart =
+                "DELETE FROM cart_items WHERE cart_id = ?";
+
+        Connection c = conn();
+        try {
+            c.setAutoCommit(false);
+
+            Integer cartId = null;
+            try (PreparedStatement ps = c.prepareStatement(selectCartId)) {
+                ps.setInt(1, userId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) cartId = rs.getInt("cart_id");
+                }
+            }
+            if (cartId == null) {
+                throw new IllegalArgumentException("Panier introuvable.");
+            }
+
+            List<OrderItem> items = new ArrayList<>();
+            try (PreparedStatement ps = c.prepareStatement(selectCartItems)) {
+                ps.setInt(1, cartId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        OrderItem oi = new OrderItem();
+                        oi.setProductId(rs.getInt("product_id"));
+                        oi.setQuantity(rs.getInt("quantity"));
+                        oi.setUnitPrice(rs.getDouble("unit_price"));
+                        items.add(oi);
+                    }
+                }
+            }
+
+            if (items.isEmpty()) {
+                throw new IllegalArgumentException("Votre panier est vide.");
+            }
+
+            // Lock + validate stock for every product (prevents race conditions)
+            try (PreparedStatement psLock = c.prepareStatement(lockProduct)) {
+                for (OrderItem it : items) {
+                    if (it.getQuantity() <= 0) {
+                        throw new IllegalArgumentException("Quantité invalide dans le panier.");
+                    }
+                    psLock.setInt(1, it.getProductId());
+                    try (ResultSet rs = psLock.executeQuery()) {
+                        if (!rs.next()) {
+                            throw new IllegalArgumentException("Produit introuvable (id=" + it.getProductId() + ").");
+                        }
+                        int stock = rs.getInt("stock");
+                        if (stock < it.getQuantity()) {
+                            throw new IllegalArgumentException(
+                                    "Stock insuffisant pour le produit id=" + it.getProductId()
+                                            + ". Stock=" + stock + ", demandé=" + it.getQuantity());
+                        }
+                    }
+                }
+            }
+
+            // Compute total from cart snapshot prices (server wrote them when adding to cart)
+            double total = 0.0;
+            for (OrderItem it : items) {
+                if (it.getUnitPrice() < 0) {
+                    throw new IllegalArgumentException("Prix invalide dans le panier.");
+                }
+                total += it.getUnitPrice() * it.getQuantity();
+            }
+
+            String orderId = UUID.randomUUID().toString();
+
+            // Insert order header
+            try (PreparedStatement psOrder = c.prepareStatement(insertOrder)) {
+                psOrder.setString(1, orderId);
+                psOrder.setInt(2, userId);
+                psOrder.setString(3, OrderStatus.PENDING.name());
+                psOrder.setDouble(4, total);
+                psOrder.executeUpdate();
+            }
+
+            // Insert order items
+            try (PreparedStatement psItem = c.prepareStatement(insertItem)) {
+                for (OrderItem it : items) {
+                    psItem.setString(1, orderId);
+                    psItem.setInt(2, it.getProductId());
+                    psItem.setInt(3, it.getQuantity());
+                    psItem.setDouble(4, it.getUnitPrice());
+                    psItem.addBatch();
+                }
+                psItem.executeBatch();
+            }
+
+            // Decrement stock (conditional update) for every product
+            try (PreparedStatement psUpd = c.prepareStatement(decrementStock)) {
+                for (OrderItem it : items) {
+                    psUpd.setInt(1, it.getQuantity());
+                    psUpd.setInt(2, it.getProductId());
+                    psUpd.setInt(3, it.getQuantity());
+                    int updated = psUpd.executeUpdate();
+                    if (updated != 1) {
+                        throw new IllegalArgumentException("Stock insuffisant pour un ou plusieurs articles.");
+                    }
+                }
+            }
+
+            // Clear cart
+            try (PreparedStatement ps = c.prepareStatement(clearCart)) {
+                ps.setInt(1, cartId);
+                ps.executeUpdate();
+            }
+
+            c.commit();
+
+            Order order = new Order();
+            order.setOrderId(orderId);
+            order.setUserId(userId);
+            order.setStatus(OrderStatus.PENDING);
+            order.setTotalAmount(total);
+            order.setItems(items);
+            return order;
+
+        } catch (IllegalArgumentException e) {
+            try { c.rollback(); } catch (SQLException ignored) {}
+            throw e;
+        } catch (SQLException e) {
+            try { c.rollback(); } catch (SQLException ignored) {}
+            throw new RuntimeException("OrderDAO.placeOrderFromCart failed for userId=" + userId + ": " + e.getMessage(), e);
+        } finally {
+            try { c.setAutoCommit(true); } catch (SQLException ignored) {}
+        }
     }
 
     // ── INSERT orders + order_items (transactional) ──────────────────────────
