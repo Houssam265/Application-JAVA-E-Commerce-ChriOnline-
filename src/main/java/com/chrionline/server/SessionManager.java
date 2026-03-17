@@ -205,7 +205,7 @@ public class SessionManager {
         }
 
         LOG.info("[SESSION] Cleanup done — removed from cache: " + removedFromCache
-                 + ", removed from DB: " + removedFromDb);
+                + ", removed from DB: " + removedFromDb);
     }
 
     /**
@@ -224,8 +224,8 @@ public class SessionManager {
     /** Inserts a new session row into the {@code sessions} table. */
     private void insertSessionToDb(Session session) {
         final String sql =
-            "INSERT INTO sessions (session_id, user_id, token, created_at, expires_at, is_active) " +
-            "VALUES (?, ?, ?, ?, ?, ?)";
+                "INSERT INTO sessions (session_id, user_id, token, created_at, expires_at, is_active) " +
+                        "VALUES (?, ?, ?, ?, ?, ?)";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             ps.setString   (1, session.getSessionId());
@@ -237,8 +237,8 @@ public class SessionManager {
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(
-                "[SESSION] insertSessionToDb failed for userId=" + session.getUserId()
-                + ": " + e.getMessage(), e);
+                    "[SESSION] insertSessionToDb failed for userId=" + session.getUserId()
+                            + ": " + e.getMessage(), e);
         }
     }
 
@@ -248,8 +248,8 @@ public class SessionManager {
      */
     private Optional<Session> findSessionInDb(String token) {
         final String sql =
-            "SELECT session_id, user_id, token, created_at, expires_at, is_active " +
-            "FROM sessions WHERE token = ? LIMIT 1";
+                "SELECT session_id, user_id, token, created_at, expires_at, is_active " +
+                        "FROM sessions WHERE token = ? LIMIT 1";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             ps.setString(1, token);

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox xmlns="http://javafx.com/javafx/17"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.chrionline.ui.controller.CartController"
+      styleClass="root-pane"
+      spacing="18">
+
+    <padding>
+        <Insets top="24" right="28" bottom="24" left="28"/>
+    </padding>
+
+    <!-- Header -->
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <Label text="Panier" styleClass="brand-title page-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="← Retour au catalogue" onAction="#handleContinueShopping" styleClass="link-action" style="-fx-background-color: transparent;"/>
+    </HBox>
+
+    <VBox styleClass="auth-card" spacing="14">
+        <padding>
+            <Insets top="18" right="18" bottom="18" left="18"/>
+        </padding>
+
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label text="Articles" styleClass="field-label" style="-fx-font-size: 15px;"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Vider le panier" onAction="#handleClearCart" styleClass="btn-secondary"/>
+        </HBox>
+
+        <TableView fx:id="cartTable" styleClass="table-premium" prefHeight="360">
+            <columns>
+                <TableColumn fx:id="colProduct" text="Produit" prefWidth="260"/>
+                <TableColumn fx:id="colUnitPrice" text="Prix" prefWidth="110"/>
+                <TableColumn fx:id="colQuantity" text="Quantité" prefWidth="140"/>
+                <TableColumn fx:id="colSubtotal" text="Sous-total" prefWidth="130"/>
+                <TableColumn fx:id="colActions" text="" prefWidth="90"/>
+            </columns>
+        </TableView>
+
+        <HBox alignment="CENTER_RIGHT" spacing="14">
+            <Label text="Total :" styleClass="field-label" style="-fx-font-size: 15px;"/>
+            <Label fx:id="totalLabel" text="0.00 €" styleClass="product-price"/>
+            <Button fx:id="checkoutButton" text="Valider commande" onAction="#handleCheckout" styleClass="btn-primary" prefWidth="220"/>
+        </HBox>
+
+        <Label fx:id="messageLabel" visible="false" managed="false" wrapText="true" maxWidth="Infinity"/>
+    </VBox>
+</VBox>
+

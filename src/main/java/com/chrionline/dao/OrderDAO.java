@@ -133,6 +133,27 @@ public class OrderDAO {
         }
     }
 
+    // ── SELECT ALL (admin) ────────────────────────────────────────────────────
+
+    /**
+     * Returns all orders sorted newest-first (admin dashboard).
+     * Items list is NOT pre-loaded.
+     */
+    public List<Order> findAll() {
+        final String sql = "SELECT * FROM orders ORDER BY created_at DESC";
+        List<Order> result = new ArrayList<>();
+
+        try (PreparedStatement ps = conn().prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                result.add(mapOrderRow(rs));
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new RuntimeException("OrderDAO.findAll failed: " + e.getMessage(), e);
+        }
+    }
+
     // ── UPDATE status (admin) ────────────────────────────────────────────────
 
     public void updateStatus(String orderId, OrderStatus status) {

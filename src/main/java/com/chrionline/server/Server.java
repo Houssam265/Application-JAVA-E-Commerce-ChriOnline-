@@ -2,6 +2,9 @@ package com.chrionline.server;
 
 import com.chrionline.dao.UserDAO;
 import com.chrionline.service.AuthService;
+import com.chrionline.service.AdminService;
+import com.chrionline.service.CartService;
+import com.chrionline.service.OrderService;
 import com.chrionline.service.ProductService;
 
 import java.io.IOException;
@@ -49,6 +52,9 @@ public class Server {
         SessionManager sessionManager = new SessionManager(userDAO);
         AuthService    authService    = new AuthService(userDAO);
         ProductService productService = new ProductService();
+        CartService    cartService    = new CartService();
+        OrderService   orderService   = new OrderService();
+        AdminService   adminService   = new AdminService(userDAO);
 
         // ── Startup tasks ─────────────────────────────────────────────────────
         LOG.info("[SERVER] Seeding default admin account if not present...");
@@ -70,7 +76,7 @@ public class Server {
                 try {
                     Socket clientSocket = serverSocket.accept();
                     // Pass the SAME shared instances — no new service created per thread
-                    pool.execute(new ClientHandler(clientSocket, authService, sessionManager, productService));
+                    pool.execute(new ClientHandler(clientSocket, authService, sessionManager, productService, cartService, orderService, adminService));
                 } catch (IOException e) {
                     if (serverSocket.isClosed()) break;
                     LOG.log(Level.WARNING, "Erreur lors de accept()", e);

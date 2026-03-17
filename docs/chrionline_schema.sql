@@ -30,6 +30,7 @@ CREATE TABLE users (
     email         VARCHAR(150)  NOT NULL UNIQUE,
     password_hash VARCHAR(255)  NOT NULL,
     role          ENUM('CLIENT','ADMIN') NOT NULL DEFAULT 'CLIENT',
+    is_suspended  BOOLEAN       NOT NULL DEFAULT FALSE,
     created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (user_id)

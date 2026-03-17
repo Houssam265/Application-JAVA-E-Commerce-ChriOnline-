@@ -4,7 +4,6 @@ import com.chrionline.database.DatabaseConnection;
 import com.chrionline.model.User;
 
 import java.sql.*;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -32,13 +31,14 @@ public class UserDAO {
      */
     public User save(User user) {
         final String sql =
-            "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)";
+            "INSERT INTO users (username, email, password_hash, role, is_suspended) VALUES (?, ?, ?, ?, ?)";
 
         try (PreparedStatement ps = conn().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, user.getUsername());
             ps.setString(2, user.getEmail());
             ps.setString(3, user.getPasswordHash());
             ps.setString(4, user.getRole().name());
+            ps.setBoolean(5, user.isSuspended());
             ps.executeUpdate();
 
             try (ResultSet generated = ps.getGeneratedKeys()) {
@@ -216,6 +216,19 @@ public class UserDAO {
         }
     }
 
+    // ── Moderation: suspend / reactivate ──────────────────────────────────────
+
+    public void setSuspended(int userId, boolean suspended) {
+        final String sql = "UPDATE users SET is_suspended = ? WHERE user_id = ?";
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setBoolean(1, suspended);
+            ps.setInt(2, userId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.setSuspended failed for userId=" + userId + ": " + e.getMessage(), e);
+        }
+    }
+
     // ── Row mapper ───────────────────────────────────────────────────────────
 
     /** Maps one ResultSet row to a {@link User}. Column names match the schema exactly. */
@@ -226,6 +239,12 @@ public class UserDAO {
         u.setEmail(rs.getString("email"));
         u.setPasswordHash(rs.getString("password_hash"));
         u.setRole(User.Role.valueOf(rs.getString("role")));
+        try {
+            u.setSuspended(rs.getBoolean("is_suspended"));
+        } catch (SQLException ignored) {
+            // Backward compatibility if column doesn't exist in an older DB.
+            u.setSuspended(false);
+        }
 
         Timestamp ts = rs.getTimestamp("created_at");
         u.setCreatedAt(ts != null ? ts.toLocalDateTime() : null);
