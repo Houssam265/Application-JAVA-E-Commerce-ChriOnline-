@@ -4,46 +4,175 @@
 <?import javafx.scene.control.*?>
 <?import javafx.geometry.Insets?>
 
-<BorderPane xmlns="http://javafx.com/javafx/17"
+<ScrollPane xmlns="http://javafx.com/javafx/17"
             xmlns:fx="http://javafx.com/fxml/1"
             fx:controller="com.chrionline.ui.controller.HomeController"
-            styleClass="root-pane">
-
-    <top>
-        <VBox spacing="20" styleClass="app-container">
-            <!-- Header -->
-            <HBox alignment="CENTER_LEFT" spacing="20">
-                <Label text="ChriOnline | Catalogue" styleClass="brand-title page-title"/>
-                <Region HBox.hgrow="ALWAYS"/>
-                <Button fx:id="adminButton" text="Admin" onAction="#handleOpenAdmin" styleClass="btn-outline" visible="false" managed="false"/>
-                <Button fx:id="cartButton" text="Panier" onAction="#handleOpenCart" styleClass="btn-outline"/>
-                <Label fx:id="connectedLabel" text="Connecté" styleClass="status-pill"/>
+            fitToWidth="true" styleClass="root-pane content-scroll">
+    <content>
+        <VBox spacing="0" style="-fx-background-color: #fcfaf7;">
+            <!-- Navbar -->
+            <HBox alignment="CENTER" styleClass="navbar" prefHeight="80">
+                <HBox alignment="CENTER_LEFT" spacing="20" maxWidth="1200" HBox.hgrow="ALWAYS" style="-fx-padding: 0 40px;">
+                    <HBox alignment="CENTER_LEFT" spacing="10">
+                        <Label text="C" styleClass="logo-icon"/>
+                        <Label text="ChriOnline" styleClass="brand-title-small"/>
+                    </HBox>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <HBox alignment="CENTER" spacing="32">
+                        <Label text="Home" styleClass="nav-link"/>
+                        <Label text="Catalogue" styleClass="nav-link"/>
+                        <Label text="About" styleClass="nav-link"/>
+                        <Label text="Contact" styleClass="nav-link"/>
+                        <Label text="Orders" styleClass="nav-link"/>
+                    </HBox>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <HBox alignment="CENTER_RIGHT" spacing="16">
+                        <Button fx:id="adminButton" text="Admin" onAction="#handleOpenAdmin" styleClass="btn-outline" visible="false" managed="false"/>
+                        <Button fx:id="cartButton" text="Cart" onAction="#handleOpenCart" styleClass="btn-outline"/>
+                        <Label fx:id="connectedLabel" text="Conn." styleClass="status-pill"/>
+                    </HBox>
+                </HBox>
             </HBox>
 
-            <!-- Barre de recherche et Filtre -->
-            <HBox spacing="16" alignment="CENTER_LEFT">
-                <TextField fx:id="searchField"
-                           promptText="Rechercher un produit par nom..."
-                           styleClass="search-bar"
-                           HBox.hgrow="ALWAYS"/>
-                
-                <ComboBox fx:id="categoryCombo"
-                          styleClass="combo-box-premium"
-                          promptText="Catégories"
-                          prefWidth="220"/>
+            <!-- Hero Section -->
+            <StackPane styleClass="hero-section">
+                <!-- Background is handled in CSS -->
+                <VBox alignment="CENTER_LEFT" spacing="24" maxWidth="1200" style="-fx-padding: 100px 40px;">
+                    <Label text="New Collection 2024" styleClass="hero-badge" />
+                    <Label text="Discover products&#10;you'll love" styleClass="hero-super-title"/>
+                    <Label text="Curated collections from premium brands. Quality you can&#10;trust, prices you'll appreciate." styleClass="hero-subtitle"/>
+                    <HBox alignment="CENTER_LEFT" spacing="16" style="-fx-padding: 10px 0 0 0;">
+                        <Button text="Shop Now →" styleClass="btn-primary" />
+                        <Button text="Browse Catalogue" styleClass="btn-hero-secondary" />
+                    </HBox>
+                </VBox>
+            </StackPane>
+
+            <!-- Trust Badges -->
+            <HBox alignment="CENTER" spacing="0" style="-fx-background-color: #fcfaf7; -fx-padding: 40px 20px;">
+                <HBox alignment="CENTER" spacing="60" maxWidth="1200" HBox.hgrow="ALWAYS" style="-fx-padding: 0 20px;">
+                    <HBox alignment="CENTER" spacing="16">
+                        <Label text="🚚" style="-fx-font-size: 28px; -fx-text-fill: #f46a3d;"/>
+                        <VBox>
+                            <Label text="Free Shipping" styleClass="trust-title"/>
+                            <Label text="On orders over $50" styleClass="trust-subtitle"/>
+                        </VBox>
+                    </HBox>
+                    <HBox alignment="CENTER" spacing="16">
+                        <Label text="🛡" style="-fx-font-size: 28px; -fx-text-fill: #f46a3d;"/>
+                        <VBox>
+                            <Label text="Secure Payments" styleClass="trust-title"/>
+                            <Label text="100% protected" styleClass="trust-subtitle"/>
+                        </VBox>
+                    </HBox>
+                    <HBox alignment="CENTER" spacing="16">
+                        <Label text="🔄" style="-fx-font-size: 28px; -fx-text-fill: #f46a3d;"/>
+                        <VBox>
+                            <Label text="Easy Returns" styleClass="trust-title"/>
+                            <Label text="30-day guarantee" styleClass="trust-subtitle"/>
+                        </VBox>
+                    </HBox>
+                </HBox>
+            </HBox>
+
+            <!-- Main Content Container (Catalogue & Products) -->
+            <VBox alignment="TOP_CENTER" style="-fx-padding: 40px 20px 80px 20px;">
+                <VBox maxWidth="1200" spacing="48" VBox.vgrow="ALWAYS">
+                    
+                    <!-- Filters & Category -->
+                    <VBox spacing="20">
+                        <HBox alignment="CENTER_LEFT">
+                            <Label text="Shop by Category" styleClass="section-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Label text="View All →" styleClass="link-action-small"/>
+                        </HBox>
+                        <!-- Using dummy buttons for categories to look exactly like lovabale, plus real filters -->
+                        <HBox spacing="16" alignment="CENTER_LEFT" style="-fx-padding: 10px 0 20px 0;">
+                            <Button text="Electronics" styleClass="btn-category-pill"/>
+                            <Button text="Fashion" styleClass="btn-category-pill"/>
+                            <Button text="Home &amp; Living" styleClass="btn-category-pill"/>
+                            <Button text="Sports" styleClass="btn-category-pill"/>
+                            <Button text="Beauty" styleClass="btn-category-pill"/>
+                            <Button text="Books" styleClass="btn-category-pill"/>
+                        </HBox>
+                        <!-- Real interactive filters -->
+                        <HBox spacing="16" alignment="CENTER_LEFT">
+                            <ComboBox fx:id="categoryCombo" styleClass="combo-box-premium" prefWidth="250" promptText="Select Category..."/>
+                            <TextField fx:id="searchField" promptText="Search among curated products..." styleClass="search-bar" HBox.hgrow="ALWAYS"/>
+                        </HBox>
+                    </VBox>
+
+                    <!-- Products -->
+                    <VBox spacing="24">
+                        <Label text="Featured Products" styleClass="section-title"/>
+                        <FlowPane fx:id="productsGrid" hgap="24" vgap="24" styleClass="products-grid">
+                            <!-- Products injected here -->
+                        </FlowPane>
+                    </VBox>
+
+                    <!-- CTA Banner -->
+                    <StackPane styleClass="cta-banner" style="-fx-padding: 20px 0;">
+                        <VBox alignment="CENTER" spacing="16" style="-fx-padding: 60px 20px;">
+                            <Label text="Get 20% off your first order" styleClass="cta-title"/>
+                            <Label text="Sign up for our newsletter and receive an exclusive discount code." styleClass="cta-subtitle"/>
+                            <HBox alignment="CENTER" spacing="16" style="-fx-padding: 10px 0;">
+                                <TextField promptText="Enter your email" styleClass="cta-input" prefWidth="350"/>
+                                <Button text="Subscribe" styleClass="btn-dark"/>
+                            </HBox>
+                        </VBox>
+                    </StackPane>
+                </VBox>
+            </VBox>
+
+            <!-- Footer -->
+            <HBox styleClass="footer-section" alignment="CENTER">
+                <VBox maxWidth="1200" HBox.hgrow="ALWAYS" spacing="60" style="-fx-padding: 80px 20px 40px 20px;">
+                    <HBox spacing="100">
+                        <VBox spacing="20" prefWidth="300">
+                            <HBox alignment="CENTER_LEFT" spacing="10">
+                                <Label text="C" styleClass="logo-icon"/>
+                                <Label text="ChriOnline" styleClass="footer-brand"/>
+                            </HBox>
+                            <Label text="Your premium destination for quality&#10;products. Shop with confidence." styleClass="footer-text"/>
+                        </VBox>
+                        <VBox spacing="16">
+                            <Label text="Shop" styleClass="footer-header"/>
+                            <Label text="All Products" styleClass="footer-link"/>
+                            <Label text="Electronics" styleClass="footer-link"/>
+                            <Label text="Fashion" styleClass="footer-link"/>
+                            <Label text="Home &amp; Living" styleClass="footer-link"/>
+                        </VBox>
+                        <VBox spacing="16">
+                            <Label text="Account" styleClass="footer-header"/>
+                            <Label text="Profile" styleClass="footer-link"/>
+                            <Label text="Orders" styleClass="footer-link"/>
+                            <Label text="Wishlist" styleClass="footer-link"/>
+                            <Label text="Settings" styleClass="footer-link"/>
+                        </VBox>
+                        <VBox spacing="16">
+                            <Label text="Company" styleClass="footer-header"/>
+                            <Label text="About Us" styleClass="footer-link"/>
+                            <Label text="Contact" styleClass="footer-link"/>
+                            <Label text="FAQ" styleClass="footer-link"/>
+                            <Label text="Privacy Policy" styleClass="footer-link"/>
+                            <Label text="Terms of Service" styleClass="footer-link"/>
+                        </VBox>
+                    </HBox>
+                    
+                    <VBox spacing="30">
+                        <Region style="-fx-background-color: #334155; -fx-pref-height: 1px;"/>
+                        <HBox alignment="CENTER_LEFT">
+                            <Label text="© 2024 ChriOnline. All rights reserved." styleClass="footer-text"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <HBox spacing="32">
+                                <Label text="Privacy" styleClass="footer-link"/>
+                                <Label text="Terms" styleClass="footer-link"/>
+                                <Label text="Support" styleClass="footer-link"/>
+                            </HBox>
+                        </HBox>
+                    </VBox>
+                </VBox>
             </HBox>
         </VBox>
-    </top>
-
-    <center>
-        <!-- ScrollPane transparent pour la grille de produits -->
-        <ScrollPane fitToWidth="true" styleClass="content-scroll">
-            <content>
-                <FlowPane fx:id="productsGrid" hgap="24" vgap="24" styleClass="products-grid">
-                    <!-- Les cartes produits seront injectées ici par le contrôleur -->
-                </FlowPane>
-            </content>
-        </ScrollPane>
-    </center>
-
-</BorderPane>
+    </content>
+</ScrollPane>

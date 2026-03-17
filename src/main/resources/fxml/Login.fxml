@@ -6,86 +6,87 @@
 <?import javafx.geometry.*?>
 <?import javafx.scene.image.*?>
 
-<StackPane xmlns="http://javafx.com/javafx/17"
-           xmlns:fx="http://javafx.com/fxml/1"
-           fx:controller="com.chrionline.ui.controller.LoginController"
-           styleClass="root-pane">
+<HBox xmlns="http://javafx.com/javafx/17"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.chrionline.ui.controller.LoginController"
+      styleClass="split-pane-root">
 
-    <!-- Fond dégradé (appliqué via CSS sur .root-pane) -->
+    <!-- LEFT SIDE: Form -->
+    <VBox HBox.hgrow="ALWAYS" alignment="CENTER" styleClass="left-pane" maxWidth="600" minWidth="450">
+        <VBox spacing="20" maxWidth="400">
+            
+            <!-- Logo area at the top left -->
+            <HBox alignment="CENTER_LEFT" spacing="12">
+                <Label text="C" styleClass="logo-icon"/>
+                <Label text="ChriOnline" styleClass="brand-title-small"/>
+            </HBox>
 
-    <!-- Carte de connexion centrée -->
-    <VBox styleClass="auth-card" maxWidth="480" maxHeight="620" alignment="CENTER">
-        <padding><Insets top="56" right="56" bottom="56" left="56"/></padding>
-        <spacing>0</spacing>
+            <Region prefHeight="25" />
 
-        <!-- Logo / Titre -->
-        <VBox alignment="CENTER" spacing="8">
-            <Label text="ChriOnline" styleClass="brand-title"/>
-            <Label text="Connectez-vous à votre compte" styleClass="brand-subtitle"/>
+            <VBox spacing="8">
+                <Label text="Welcome back" styleClass="page-title"/>
+                <Label text="Sign in to your account to continue shopping" styleClass="brand-subtitle"/>
+            </VBox>
+
+            <Region prefHeight="10" />
+
+            <!-- EMAIL -->
+            <VBox spacing="8">
+                <Label text="Email" styleClass="field-label"/>
+                <TextField fx:id="emailField" promptText="you@example.com" styleClass="auth-field"/>
+                <Label fx:id="emailError" styleClass="error-label" visible="false" managed="false"/>
+            </VBox>
+
+            <!-- PASSWORD -->
+            <VBox spacing="8">
+                <Label text="Password" styleClass="field-label"/>
+                <StackPane alignment="CENTER_RIGHT">
+                    <PasswordField fx:id="passwordField" promptText="••••••••" styleClass="auth-field"/>
+                    <TextField fx:id="passwordTextField" promptText="••••••••" styleClass="auth-field" visible="false"/>
+                    <Button fx:id="togglePasswordButton" text="👁" styleClass="eye-button" onAction="#togglePasswordVisibility" focusTraversable="false" />
+                </StackPane>
+                <Label fx:id="passwordError" styleClass="error-label" visible="false" managed="false"/>
+            </VBox>
+
+            <!-- ERROR -->
+            <Label fx:id="globalError" styleClass="global-error" wrapText="true" visible="false" managed="false"/>
+
+            <!-- ACTION BUTTONS -->
+            <VBox spacing="16">
+                <!-- Forgot password -->
+                <HBox alignment="CENTER_RIGHT">
+                    <Hyperlink text="Forgot password?" styleClass="link-action-small" />
+                </HBox>
+
+                <!-- BUTTON -->
+                <Button fx:id="loginButton" text="Sign In →" styleClass="btn-primary" maxWidth="Infinity" onAction="#handleLogin"/>
+
+                <!-- LOADING -->
+                <HBox alignment="CENTER">
+                    <ProgressIndicator fx:id="loadingIndicator" visible="false" managed="false" styleClass="loading-spinner" prefWidth="36" prefHeight="36"/>
+                </HBox>
+            </VBox>
+
+            <!-- CREATE ACCOUNT -->
+            <HBox alignment="CENTER" spacing="5">
+                <Label text="Don't have an account?" styleClass="link-text"/>
+                <Hyperlink text="Create one" styleClass="link-action" onAction="#goToRegister"/>
+            </HBox>
+
+            <Region prefHeight="15" />
+
+            <!-- DEMO INFO BOX -->
+            <VBox styleClass="info-box">
+                <Label text="Demo: Use admin@chrionline.com for admin access, or any email for user access." styleClass="info-box-text" wrapText="true"/>
+            </VBox>
         </VBox>
-
-        <Region prefHeight="40"/>
-
-        <!-- Champ Email -->
-        <VBox spacing="8">
-            <Label text="Adresse email" styleClass="field-label"/>
-            <TextField fx:id="emailField"
-                       promptText="exemple@email.com"
-                       styleClass="auth-field"/>
-            <Label fx:id="emailError" styleClass="error-label" visible="false" managed="false"/>
-        </VBox>
-
-        <Region prefHeight="20"/>
-
-        <!-- Champ Mot de passe -->
-        <VBox spacing="8">
-            <Label text="Mot de passe" styleClass="field-label"/>
-            <StackPane alignment="CENTER_RIGHT">
-                <PasswordField fx:id="passwordField" promptText="Minimum 8 caractères" styleClass="auth-field"/>
-                <TextField fx:id="passwordTextField" promptText="Minimum 8 caractères" styleClass="auth-field" visible="false"/>
-                <Button fx:id="togglePasswordButton" text="👁" styleClass="eye-button" onAction="#togglePasswordVisibility" focusTraversable="false" />
-            </StackPane>
-            <Label fx:id="passwordError" styleClass="error-label" visible="false" managed="false"/>
-        </VBox>
-
-        <Region prefHeight="12"/>
-
-        <!-- Message d'erreur global (serveur) -->
-        <Label fx:id="globalError"
-               styleClass="global-error"
-               wrapText="true"
-               visible="false"
-               managed="false"/>
-
-        <Region prefHeight="32"/>
-
-        <!-- Bouton Se connecter -->
-        <Button fx:id="loginButton"
-                text="Se connecter"
-                styleClass="btn-primary"
-                maxWidth="Infinity"
-                onAction="#handleLogin"/>
-
-        <Region prefHeight="24"/>
-
-        <!-- Lien vers inscription -->
-        <HBox alignment="CENTER" spacing="8">
-            <Label text="Pas encore de compte ?" styleClass="link-text"/>
-            <Hyperlink text="Créer un compte"
-                       styleClass="link-action"
-                       onAction="#goToRegister"/>
-        </HBox>
-
-        <!-- Indicateur de chargement -->
-        <ProgressIndicator fx:id="loadingIndicator"
-                           visible="false"
-                           managed="false"
-                           styleClass="loading-spinner"
-                           prefWidth="36"
-                           prefHeight="36"/>
-        <VBox.margin>
-            <Insets top="12"/>
-        </VBox.margin>
-
     </VBox>
-</StackPane>
+
+    <!-- RIGHT SIDE: Hero Graphic/Gradient -->
+    <VBox HBox.hgrow="ALWAYS" alignment="CENTER" styleClass="right-pane" minWidth="450">
+        <Label text="Shop smarter.&#10;Live better." styleClass="hero-title" textAlignment="CENTER"/>
+        <Region prefHeight="16"/>
+        <Label text="Discover curated products from the world's best&#10;brands, all in one place." styleClass="hero-subtitle" textAlignment="CENTER"/>
+    </VBox>
+
+</HBox>
