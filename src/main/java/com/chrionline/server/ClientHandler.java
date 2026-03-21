@@ -9,6 +9,7 @@ import com.chrionline.service.AuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
 import com.chrionline.service.OrderService;
+import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -64,6 +65,7 @@ public class ClientHandler implements Runnable {
     private final ProductService productService;
     private final CartService    cartService;
     private final OrderService   orderService;
+    private final PaymentService paymentService;
     private final AdminService   adminService;
 
     // ── Per-connection state ──────────────────────────────────────────────────
@@ -86,6 +88,7 @@ public class ClientHandler implements Runnable {
                          ProductService productService,
                          CartService cartService,
                          OrderService orderService,
+                         PaymentService paymentService,
                          AdminService adminService) {
         this.socket         = socket;
         this.authService    = authService;
@@ -93,6 +96,7 @@ public class ClientHandler implements Runnable {
         this.productService = productService;
         this.cartService    = cartService;
         this.orderService   = orderService;
+        this.paymentService = paymentService;
         this.adminService   = adminService;
     }
 
@@ -197,6 +201,9 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_PLACE_ORDER:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handlePlaceOrder(req);
+            case MessageProtocol.ACTION_PAYMENT:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handlePayment(req);
             case MessageProtocol.ACTION_GET_ORDERS:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetOrders(req);
@@ -457,6 +464,62 @@ public class ClientHandler implements Runnable {
             LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
             return Response.error("Erreur serveur lors de la validation de la commande.");
         }
+    }
+
+    /**
+     * KAN-7 — Paiement simulé : payload {@code order_id}, {@code card_number}, {@code expiry} (MM/YY), {@code cvv}.
+     */
+    private Response handlePayment(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            String orderId = firstNonBlank(
+                    getPayloadString(req, "order_id"),
+                    getPayloadString(req, "orderId"));
+            String cardNumber = firstNonBlank(
+                    getPayloadString(req, "card_number"),
+                    getPayloadString(req, "cardNumber"));
+            String expiry = firstNonBlank(
+                    getPayloadString(req, "expiry"),
+                    getPayloadString(req, "expiryMmYy"));
+            String cvv = payloadValueAsString(req, "cvv");
+
+            if (orderId == null || orderId.isBlank()
+                    || cardNumber == null || cardNumber.isBlank()
+                    || expiry == null || expiry.isBlank()
+                    || cvv == null || cvv.isBlank()) {
+                return Response.error("Champs requis : order_id, card_number, expiry (MM/YY), cvv.");
+            }
+
+            Map<String, Object> result = paymentService.processSimulatedCardPayment(
+                    userId, orderId, cardNumber, expiry, cvv);
+
+            if (Boolean.TRUE.equals(result.get("success"))) {
+                return Response.ok("PAYMENT_OK", result);
+            }
+            String msg = result.get("message") != null ? String.valueOf(result.get("message")) : "Paiement refusé.";
+            return Response.error(msg, result);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[PAYMENT] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du paiement.");
+        }
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) return a.trim();
+        if (b != null && !b.isBlank()) return b.trim();
+        return null;
+    }
+
+    /** Chaîne ou nombre JSON (ex. CVV). */
+    private static String payloadValueAsString(Request req, String key) {
+        if (req.getPayload() == null) return null;
+        Object v = req.getPayload().get(key);
+        if (v == null) return null;
+        return String.valueOf(v).trim();
     }
 
     private Response handleGetOrders(Request req) {

@@ -43,6 +43,11 @@ public class Response {
         return new Response(false, message != null ? message : "Erreur", null, null);
     }
 
+    /** Erreur métier avec payload structuré (ex. paiement KAN-7 enregistré mais refusé). */
+    public static Response error(String message, Object payload) {
+        return new Response(false, message != null ? message : "Erreur", payload, null);
+    }
+
     // ── Désérialisation ──────────────────────────────────────────────────────
 
     /**

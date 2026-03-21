@@ -5,6 +5,7 @@ import com.chrionline.service.AuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
 import com.chrionline.service.OrderService;
+import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
 
 import java.io.IOException;
@@ -54,6 +55,7 @@ public class Server {
         ProductService productService = new ProductService();
         CartService    cartService    = new CartService();
         OrderService   orderService   = new OrderService();
+        PaymentService paymentService = new PaymentService();
         AdminService   adminService   = new AdminService(userDAO);
 
         // ── Startup tasks ─────────────────────────────────────────────────────
@@ -76,7 +78,7 @@ public class Server {
                 try {
                     Socket clientSocket = serverSocket.accept();
                     // Pass the SAME shared instances — no new service created per thread
-                    pool.execute(new ClientHandler(clientSocket, authService, sessionManager, productService, cartService, orderService, adminService));
+                    pool.execute(new ClientHandler(clientSocket, authService, sessionManager, productService, cartService, orderService, paymentService, adminService));
                 } catch (IOException e) {
                     if (serverSocket.isClosed()) break;
                     LOG.log(Level.WARNING, "Erreur lors de accept()", e);
