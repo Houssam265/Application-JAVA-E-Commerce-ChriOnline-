@@ -10,6 +10,7 @@ import com.chrionline.ui.SceneManager;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
+import javafx.scene.Cursor;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.control.*;
@@ -19,6 +20,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,13 +32,13 @@ import java.util.stream.Collectors;
  * Responsabilités (KAN-6) :
  * 1. Afficher la liste de tous les produits sous forme de grille (FlowPane).
  * 2. Afficher nom, prix, stock et catégorie.
- * 3. Filtrage dynamique par : Nom (barre de recherche), Catégorie (ComboBox).
- * 4. Bouton "Voir détail" et indicateur d'indisponibilité si stock=0.
+ * 3. Filtrage par nom (recherche) et catégorie (pastilles issues de la BD).
+ * 4. Clic sur une carte produit pour ouvrir le détail ; indicateur si stock=0.
  */
 public class HomeController {
 
     @FXML private TextField searchField;
-    @FXML private ComboBox<String> categoryCombo;
+    @FXML private FlowPane categoryPills;
     @FXML private FlowPane productsGrid;
     @FXML private Button adminButton;
     @FXML private Label connectedLabel;
@@ -45,6 +47,8 @@ public class HomeController {
     private List<Product> allProducts;
     private final Map<Integer, String> categoryNameById = new HashMap<>();
     private final Map<String, Integer> categoryIdByName = new HashMap<>();
+    /** "Toutes" ou nom exact d'une catégorie renvoyée par le serveur. */
+    private String selectedCategoryName = "Toutes";
 
     @FXML
     public void initialize() {
@@ -57,14 +61,9 @@ public class HomeController {
             connectedLabel.setText("Connecté · " + session.getUsername());
         }
 
-        // Init collections (DB-driven)
         allProducts = new ArrayList<>();
-        categoryCombo.getItems().setAll("Toutes");
-        categoryCombo.setValue("Toutes");
 
-        // Ajout des écouteurs pour la barre de recherche et filtres de catégorie en temps réel
         searchField.textProperty().addListener((observable, oldValue, newValue) -> filterProducts());
-        categoryCombo.valueProperty().addListener((observable, oldValue, newValue) -> filterProducts());
 
         // Load categories + products from server (DB)
         loadCatalogueFromServer();
@@ -85,11 +84,10 @@ public class HomeController {
      */
     private void filterProducts() {
         String searchText = searchField.getText().toLowerCase();
-        String selectedCategory = categoryCombo.getValue();
 
-        int targetCategoryId = -1; // -1 = Tous
-        if (selectedCategory != null && !"Toutes".equals(selectedCategory)) {
-            targetCategoryId = categoryIdByName.getOrDefault(selectedCategory, -1);
+        int targetCategoryId = -1;
+        if (selectedCategoryName != null && !"Toutes".equals(selectedCategoryName)) {
+            targetCategoryId = categoryIdByName.getOrDefault(selectedCategoryName, -1);
         }
 
         int finalTargetId = targetCategoryId;
@@ -133,7 +131,6 @@ public class HomeController {
 
             Map<Integer, String> byId = new HashMap<>();
             Map<String, Integer> byName = new HashMap<>();
-            List<String> names = new ArrayList<>();
 
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject c = arr.getJSONObject(i);
@@ -142,7 +139,6 @@ public class HomeController {
                 if (id <= 0 || name.isBlank()) continue;
                 byId.put(id, name);
                 byName.put(name, id);
-                names.add(name);
             }
 
             Platform.runLater(() -> {
@@ -151,11 +147,53 @@ public class HomeController {
                 categoryNameById.putAll(byId);
                 categoryIdByName.putAll(byName);
 
-                categoryCombo.getItems().setAll("Toutes");
-                categoryCombo.getItems().addAll(names);
-                if (categoryCombo.getValue() == null) categoryCombo.setValue("Toutes");
+                selectedCategoryName = "Toutes";
+                rebuildCategoryPills();
+                filterProducts();
             });
         } catch (Exception ignored) {}
+    }
+
+    /**
+     * Construit les pastilles « Toutes » + une par catégorie renvoyée par la BD.
+     */
+    private void rebuildCategoryPills() {
+        if (categoryPills == null) {
+            return;
+        }
+        categoryPills.getChildren().clear();
+
+        ToggleGroup group = new ToggleGroup();
+
+        ToggleButton allBtn = new ToggleButton("Toutes");
+        allBtn.getStyleClass().addAll("btn-category-pill", "category-pill-toggle");
+        allBtn.setToggleGroup(group);
+        allBtn.setSelected(true);
+        allBtn.selectedProperty().addListener((obs, prev, now) -> {
+            if (Boolean.TRUE.equals(now)) {
+                selectedCategoryName = "Toutes";
+                filterProducts();
+            }
+        });
+
+        List<String> sorted = new ArrayList<>(categoryIdByName.keySet());
+        Collections.sort(sorted, String.CASE_INSENSITIVE_ORDER);
+
+        for (String catName : sorted) {
+            ToggleButton pill = new ToggleButton(catName);
+            pill.getStyleClass().addAll("btn-category-pill", "category-pill-toggle");
+            pill.setToggleGroup(group);
+            final String name = catName;
+            pill.selectedProperty().addListener((obs, prev, now) -> {
+                if (Boolean.TRUE.equals(now)) {
+                    selectedCategoryName = name;
+                    filterProducts();
+                }
+            });
+            categoryPills.getChildren().add(pill);
+        }
+
+        categoryPills.getChildren().add(0, allBtn);
     }
 
     private void applyProducts(Object payload) {
@@ -203,10 +241,13 @@ public class HomeController {
      * Construit dynamiquement la "Carte Produit" pour l'UI.
      */
     private VBox createProductCard(Product p) {
-        VBox card = new VBox(14);
-        card.getStyleClass().addAll("product-card", "product-card--rich");
+        VBox card = new VBox(12);
+        card.getStyleClass().addAll("product-card", "product-card--rich", "product-card-clickable");
         card.setPrefWidth(280);
-        card.setPrefHeight(250);
+        card.setMinHeight(Region.USE_PREF_SIZE);
+        card.setCursor(Cursor.HAND);
+
+        card.setOnMouseClicked(e -> SceneManager.showProductDetail(p));
 
         // Header: catégorie + stock (pill)
         Label categoryLabel = new Label(getCategoryName(p.getCategoryId()));
@@ -231,14 +272,13 @@ public class HomeController {
         // Media (image)
         StackPane media = new StackPane();
         media.getStyleClass().add("product-media");
-        media.setPrefHeight(120);
+        media.setPrefHeight(130);
 
         ImageView img = new ImageView();
         img.getStyleClass().add("product-image");
-        // Fixed box for consistent UI (cover crop)
         img.setPreserveRatio(true);
-        img.setFitWidth(280 - 48); // card width minus padding (~24*2)
-        img.setFitHeight(120);
+        img.setFitWidth(280 - 48);
+        img.setFitHeight(130);
         img.setSmooth(true);
         img.setCache(true);
 
@@ -246,13 +286,13 @@ public class HomeController {
         placeholder.getStyleClass().add("image-placeholder");
 
         String url = p.getImageUrl();
-        if (url != null) url = url.trim();
+        if (url != null) {
+            url = url.trim();
+        }
         if (url != null && !url.isBlank() && !"null".equalsIgnoreCase(url)) {
             try {
-                // background loading
                 Image image = new Image(url, true);
                 img.setImage(image);
-                // Apply center-crop once image is loaded
                 image.progressProperty().addListener((obs, ov, nv) -> {
                     if (nv != null && nv.doubleValue() >= 1.0) {
                         Platform.runLater(() -> applyCoverViewport(img, image, img.getFitWidth(), img.getFitHeight()));
@@ -266,32 +306,26 @@ public class HomeController {
         }
         media.getChildren().addAll(img, placeholder);
 
-        // Title + short description
         Label nameLabel = new Label(p.getName());
         nameLabel.getStyleClass().add("product-title");
         nameLabel.setWrapText(true);
+        nameLabel.setMaxWidth(260);
 
-        Label descLabel = new Label(p.getDescription() == null ? "" : p.getDescription());
-        descLabel.getStyleClass().addAll("product-desc", "body-text");
-        descLabel.setWrapText(true);
-        descLabel.setMaxHeight(44); // ~2 lignes
-
-        // Footer: prix + CTA
         Label priceLabel = new Label(String.format("%.2f Dhs", p.getPrice()));
         priceLabel.getStyleClass().add("product-price");
+        priceLabel.setMaxWidth(Double.MAX_VALUE);
 
-        Button detailButton = new Button("Voir détail →");
-        detailButton.getStyleClass().add("btn-outline");
-        detailButton.setOnAction(event -> com.chrionline.ui.SceneManager.showProductDetail(p));
+        String rawDesc = p.getDescription() == null ? "" : p.getDescription().trim();
+        Label descLabel = new Label(rawDesc);
+        descLabel.getStyleClass().addAll("product-desc", "body-text");
+        descLabel.setWrapText(true);
+        descLabel.setMaxHeight(48);
+        if (rawDesc.isEmpty()) {
+            descLabel.setVisible(false);
+            descLabel.setManaged(false);
+        }
 
-        Region footerSpacer = new Region();
-        HBox.setHgrow(footerSpacer, Priority.ALWAYS);
-
-        HBox footer = new HBox(12, priceLabel, footerSpacer, detailButton);
-        footer.getStyleClass().add("product-card__footer");
-        footer.setFillHeight(true);
-
-        card.getChildren().addAll(header, media, nameLabel, descLabel, footer);
+        card.getChildren().addAll(header, media, nameLabel, priceLabel, descLabel);
         return card;
     }
 

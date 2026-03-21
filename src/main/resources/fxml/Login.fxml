@@ -5,6 +5,7 @@
 <?import javafx.scene.text.*?>
 <?import javafx.geometry.*?>
 <?import javafx.scene.image.*?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
 
 <HBox xmlns="http://javafx.com/javafx/17"
       xmlns:fx="http://javafx.com/fxml/1"
@@ -12,19 +13,20 @@
       styleClass="split-pane-root">
 
     <!-- LEFT SIDE: Form -->
-    <VBox HBox.hgrow="ALWAYS" alignment="CENTER" styleClass="left-pane" maxWidth="600" minWidth="450">
-        <VBox spacing="20" maxWidth="400">
-            
-            <!-- Logo area at the top left -->
+    <VBox HBox.hgrow="ALWAYS" alignment="CENTER" styleClass="left-pane" maxWidth="560" minWidth="430">
+        <VBox spacing="22" maxWidth="420">
+
+            <!-- Logo area -->
             <HBox alignment="CENTER_LEFT" spacing="12">
                 <Label text="C" styleClass="logo-icon"/>
                 <Label text="ChriOnline" styleClass="brand-title-small"/>
             </HBox>
 
-            <Region prefHeight="25" />
+            <Region prefHeight="20" />
 
+            <!-- Heading -->
             <VBox spacing="8">
-                <Label text="Welcome back" styleClass="page-title"/>
+                <Label text="Welcome back 👋" styleClass="page-title"/>
                 <Label text="Sign in to your account to continue shopping" styleClass="brand-subtitle"/>
             </VBox>
 
@@ -32,14 +34,20 @@
 
             <!-- EMAIL -->
             <VBox spacing="8">
-                <Label text="Email" styleClass="field-label"/>
+                <HBox alignment="CENTER_LEFT" spacing="6">
+                    <FontIcon iconLiteral="fas-envelope" iconSize="14" styleClass="ikonli-muted"/>
+                    <Label text="Email address" styleClass="field-label"/>
+                </HBox>
                 <TextField fx:id="emailField" promptText="you@example.com" styleClass="auth-field"/>
                 <Label fx:id="emailError" styleClass="error-label" visible="false" managed="false"/>
             </VBox>
 
             <!-- PASSWORD -->
             <VBox spacing="8">
-                <Label text="Password" styleClass="field-label"/>
+                <HBox alignment="CENTER_LEFT" spacing="6">
+                    <FontIcon iconLiteral="fas-lock" iconSize="14" styleClass="ikonli-muted"/>
+                    <Label text="Password" styleClass="field-label"/>
+                </HBox>
                 <StackPane alignment="CENTER_RIGHT">
                     <PasswordField fx:id="passwordField" promptText="••••••••" styleClass="auth-field"/>
                     <TextField fx:id="passwordTextField" promptText="••••••••" styleClass="auth-field" visible="false"/>
@@ -52,41 +60,75 @@
             <Label fx:id="globalError" styleClass="global-error" wrapText="true" visible="false" managed="false"/>
 
             <!-- ACTION BUTTONS -->
-            <VBox spacing="16">
-                <!-- Forgot password -->
+            <VBox spacing="14">
                 <HBox alignment="CENTER_RIGHT">
                     <Hyperlink text="Forgot password?" styleClass="link-action-small" />
                 </HBox>
 
-                <!-- BUTTON -->
-                <Button fx:id="loginButton" text="Sign In →" styleClass="btn-primary" maxWidth="Infinity" onAction="#handleLogin"/>
+                <Button fx:id="loginButton" text="Sign In  →" styleClass="btn-primary" maxWidth="Infinity" onAction="#handleLogin"/>
 
-                <!-- LOADING -->
                 <HBox alignment="CENTER">
-                    <ProgressIndicator fx:id="loadingIndicator" visible="false" managed="false" styleClass="loading-spinner" prefWidth="36" prefHeight="36"/>
+                    <ProgressIndicator fx:id="loadingIndicator" visible="false" managed="false" styleClass="loading-spinner" prefWidth="38" prefHeight="38"/>
                 </HBox>
             </VBox>
 
             <!-- CREATE ACCOUNT -->
-            <HBox alignment="CENTER" spacing="5">
+            <HBox alignment="CENTER" spacing="6">
                 <Label text="Don't have an account?" styleClass="link-text"/>
                 <Hyperlink text="Create one" styleClass="link-action" onAction="#goToRegister"/>
             </HBox>
 
-            <Region prefHeight="15" />
-
-            <!-- DEMO INFO BOX -->
-            <VBox styleClass="info-box">
-                <Label text="Demo: Use admin@chrionline.com for admin access, or any email for user access." styleClass="info-box-text" wrapText="true"/>
-            </VBox>
         </VBox>
     </VBox>
 
-    <!-- RIGHT SIDE: Hero Graphic/Gradient -->
-    <VBox HBox.hgrow="ALWAYS" alignment="CENTER" styleClass="right-pane" minWidth="450">
-        <Label text="Shop smarter.&#10;Live better." styleClass="hero-title" textAlignment="CENTER"/>
-        <Region prefHeight="16"/>
-        <Label text="Discover curated products from the world's best&#10;brands, all in one place." styleClass="hero-subtitle" textAlignment="CENTER"/>
+    <!-- RIGHT SIDE: Hero Panel -->
+    <VBox HBox.hgrow="ALWAYS" alignment="CENTER" styleClass="right-pane" minWidth="420">
+        <VBox alignment="CENTER" spacing="28" style="-fx-padding: 60px 50px;">
+
+            <!-- Feature icons row -->
+            <HBox alignment="CENTER" spacing="32">
+                <VBox alignment="CENTER" spacing="8">
+                    <StackPane style="-fx-background-color: rgba(244,106,61,0.2); -fx-background-radius: 50%; -fx-padding: 18px;">
+                        <FontIcon iconLiteral="fas-shopping-bag" iconSize="28" styleClass="ikonli-accent"/>
+                    </StackPane>
+                    <Label text="Shop" style="-fx-text-fill: #475569; -fx-font-size: 12px;"/>
+                </VBox>
+                <VBox alignment="CENTER" spacing="8">
+                    <StackPane style="-fx-background-color: rgba(192,132,252,0.2); -fx-background-radius: 50%; -fx-padding: 18px;">
+                        <FontIcon iconLiteral="fas-shield-alt" iconSize="28" styleClass="ikonli-purple"/>
+                    </StackPane>
+                    <Label text="Secure" style="-fx-text-fill: #475569; -fx-font-size: 12px;"/>
+                </VBox>
+                <VBox alignment="CENTER" spacing="8">
+                    <StackPane style="-fx-background-color: rgba(34,197,94,0.2); -fx-background-radius: 50%; -fx-padding: 18px;">
+                        <FontIcon iconLiteral="fas-truck" iconSize="28" styleClass="ikonli-green"/>
+                    </StackPane>
+                    <Label text="Fast" style="-fx-text-fill: #475569; -fx-font-size: 12px;"/>
+                </VBox>
+            </HBox>
+
+            <Label text="Shop smarter.&#10;Live better." styleClass="hero-title" textAlignment="CENTER"/>
+
+            <Label text="Discover curated products from the world's&#10;best brands, all in one place." styleClass="hero-subtitle" textAlignment="CENTER"/>
+
+            <!-- Stats row -->
+            <HBox alignment="CENTER" spacing="40" style="-fx-padding: 10px 0 0 0;">
+                <VBox alignment="CENTER" spacing="4">
+                    <Label text="50K+" style="-fx-font-size: 24px; -fx-font-weight: 900; -fx-text-fill: #fb923c;"/>
+                    <Label text="Products" style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
+                </VBox>
+                <Region style="-fx-background-color: rgba(15,23,42,0.12); -fx-pref-width: 1px; -fx-pref-height: 40px;"/>
+                <VBox alignment="CENTER" spacing="4">
+                    <Label text="10K+" style="-fx-font-size: 24px; -fx-font-weight: 900; -fx-text-fill: #c084fc;"/>
+                    <Label text="Customers" style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
+                </VBox>
+                <Region style="-fx-background-color: rgba(15,23,42,0.12); -fx-pref-width: 1px; -fx-pref-height: 40px;"/>
+                <VBox alignment="CENTER" spacing="4">
+                    <Label text="99%" style="-fx-font-size: 24px; -fx-font-weight: 900; -fx-text-fill: #86efac;"/>
+                    <Label text="Satisfaction" style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
+                </VBox>
+            </HBox>
+        </VBox>
     </VBox>
 
 </HBox>

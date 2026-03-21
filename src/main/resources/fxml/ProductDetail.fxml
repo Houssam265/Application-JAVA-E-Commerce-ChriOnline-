@@ -9,62 +9,83 @@
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.layout.Region?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
 
-<VBox styleClass="root-pane" alignment="CENTER" spacing="20" 
+<VBox styleClass="root-pane" alignment="CENTER" spacing="24"
       xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.chrionline.ui.controller.ProductDetailController">
 
-    <!-- Card Container -->
-    <VBox styleClass="auth-card" spacing="25" maxWidth="600" alignment="TOP_LEFT">
+    <!-- Card Container  -->
+    <VBox styleClass="auth-card" spacing="24" maxWidth="640" alignment="TOP_LEFT">
         <padding>
-            <Insets top="40" right="40" bottom="40" left="40"/>
+            <Insets top="36" right="40" bottom="36" left="40"/>
         </padding>
 
-        <!-- Header: Category & Back Button -->
-        <HBox alignment="CENTER_LEFT" spacing="10">
+        <!-- Header: Category + Back -->
+        <HBox alignment="CENTER_LEFT" spacing="12">
             <Label fx:id="productCategoryLabel" text="Catégorie" styleClass="product-category"/>
             <Region HBox.hgrow="ALWAYS" />
-            <Button text="← Retour au catalogue" onAction="#handleBackToCatalog" styleClass="link-action" style="-fx-background-color: transparent;"/>
+            <Button onAction="#handleBackToCatalog" styleClass="btn-outline" style="-fx-padding: 6px 14px;">
+                <graphic>
+                    <HBox alignment="CENTER" spacing="6">
+                        <FontIcon iconLiteral="fas-arrow-left" iconSize="12" styleClass="ikonli-muted"/>
+                        <Label text="Retour" style="-fx-text-fill: #64748b; -fx-font-weight: 600; -fx-font-size: 13px;"/>
+                    </HBox>
+                </graphic>
+            </Button>
         </HBox>
 
-        <!-- Title -->
-        <Label fx:id="productNameLabel" text="Nom du Produit" styleClass="brand-title" wrapText="true" style="-fx-font-size: 32px;"/>
-        
+        <!-- Product Name -->
+        <Label fx:id="productNameLabel" text="Nom du Produit" styleClass="product-detail-title" wrapText="true"/>
+
         <!-- Price & Stock -->
-        <HBox alignment="CENTER_LEFT" spacing="15">
-            <Label fx:id="productPriceLabel" text="0.00 Dhs" styleClass="product-price" style="-fx-font-size: 24px;"/>
-            <Label fx:id="stockStatusLabel" text="En stock (0)" styleClass="badge-instock" style="-fx-font-size: 14px; -fx-padding: 6 12;"/>
+        <HBox alignment="CENTER_LEFT" spacing="14">
+            <Label fx:id="productPriceLabel" text="0.00 Dhs" styleClass="product-detail-price"/>
+            <Label fx:id="stockStatusLabel" text="En stock" styleClass="badge-instock" style="-fx-font-size: 13px; -fx-padding: 5 14;"/>
         </HBox>
 
-        <!-- Product image -->
-        <StackPane styleClass="product-media" prefHeight="220">
-            <ImageView fx:id="productImageView" fitHeight="220" preserveRatio="true" smooth="true" styleClass="product-image"/>
-            <Label fx:id="imagePlaceholderLabel" text="Aucune image" styleClass="image-placeholder"/>
+        <!-- Product Image placeholder -->
+        <StackPane styleClass="product-media" prefHeight="220" minHeight="180">
+            <ImageView fx:id="productImageView" fitHeight="200" preserveRatio="true" smooth="true"/>
+            <VBox alignment="CENTER" spacing="8">
+                <FontIcon iconLiteral="fas-image" iconSize="36" styleClass="ikonli-dim"/>
+                <Label fx:id="imagePlaceholderLabel" text="Aucune image disponible" styleClass="image-placeholder"/>
+            </VBox>
         </StackPane>
 
-        <!-- Description -->
-        <Label fx:id="productDescriptionLabel" text="Description du produit..." wrapText="true" 
-               style="-fx-text-fill: #475569; -fx-font-size: 16px;"/>
+        <!-- Divider -->
+        <Region styleClass="divider"/>
 
-        <!-- Separator visual -->
-        <Region style="-fx-background-color: #cbd5e1; -fx-pref-height: 1px;" />
+        <!-- Description -->
+        <VBox spacing="8">
+            <HBox alignment="CENTER_LEFT" spacing="6">
+                <FontIcon iconLiteral="fas-info-circle" iconSize="14" styleClass="ikonli-muted"/>
+                <Label text="Description" styleClass="field-label"/>
+            </HBox>
+            <Label fx:id="productDescriptionLabel" text="Description du produit..." wrapText="true" styleClass="body-text"/>
+        </VBox>
+
+        <!-- Divider -->
+        <Region styleClass="divider"/>
 
         <!-- Quantity & Add to Cart -->
-        <HBox alignment="CENTER_LEFT" spacing="20">
-            <padding>
-                <Insets top="10" />
-            </padding>
-            <Label text="Quantité :" styleClass="field-label" style="-fx-font-size: 16px;"/>
-            
-            <Spinner fx:id="quantitySpinner" prefWidth="110" styleClass="premium-spinner" style="-fx-font-size: 14px;"/>
-            
+        <HBox alignment="CENTER_LEFT" spacing="18">
+            <VBox spacing="6">
+                <Label text="Quantité" styleClass="field-label"/>
+                <Spinner fx:id="quantitySpinner" prefWidth="120" styleClass="premium-spinner"/>
+            </VBox>
             <Region HBox.hgrow="ALWAYS" />
-            <Button fx:id="addToCartButton" text="🛒 Ajouter au panier" onAction="#handleAddToCart" 
-                    styleClass="btn-primary" prefWidth="200" />
+            <Button fx:id="addToCartButton" onAction="#handleAddToCart" styleClass="btn-primary" prefWidth="220" prefHeight="52">
+                <graphic>
+                    <HBox alignment="CENTER" spacing="10">
+                        <FontIcon iconLiteral="fas-cart-plus" iconSize="16" styleClass="ikonli-on-primary"/>
+                        <Label text="Ajouter au panier" style="-fx-text-fill: white; -fx-font-weight: 700; -fx-font-size: 14px;"/>
+                    </HBox>
+                </graphic>
+            </Button>
         </HBox>
 
-        <!-- Missing stock message / Success message -->
-        <Label fx:id="messageLabel" visible="false" managed="true" wrapText="true" maxWidth="Infinity" />
-        
+        <!-- Message success/error -->
+        <Label fx:id="messageLabel" visible="false" managed="true" wrapText="true" maxWidth="Infinity"/>
     </VBox>
 </VBox>

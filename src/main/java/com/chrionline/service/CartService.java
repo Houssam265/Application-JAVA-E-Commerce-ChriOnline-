@@ -1,6 +1,7 @@
 package com.chrionline.service;
 
 import com.chrionline.dao.CartDAO;
+import com.chrionline.dao.CategoryDAO;
 import com.chrionline.dao.ProductDAO;
 import com.chrionline.model.Cart;
 import com.chrionline.model.CartItem;
@@ -15,6 +16,7 @@ public class CartService {
 
     private final CartDAO cartDAO = new CartDAO();
     private final ProductDAO productDAO = new ProductDAO();
+    private final CategoryDAO categoryDAO = new CategoryDAO();
 
     public Cart getOrCreateCart(int userId) {
         return cartDAO.findByUserId(userId).orElseGet(() -> cartDAO.createForUser(userId));
@@ -103,6 +105,18 @@ public class CartService {
             row.put("unitPrice", it.getUnitPrice());
             row.put("quantity", it.getQuantity());
             row.put("subtotal", it.getSubtotal());
+            if (p.isPresent()) {
+                Product prod = p.get();
+                String img = prod.getImageUrl();
+                row.put("imageUrl", img != null ? img : "");
+                String catName = categoryDAO.findById(prod.getCategoryId())
+                    .map(c -> c.getName())
+                    .orElse("");
+                row.put("categoryName", catName);
+            } else {
+                row.put("imageUrl", "");
+                row.put("categoryName", "");
+            }
             items.add(row);
         }
 

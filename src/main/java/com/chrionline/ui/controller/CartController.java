@@ -10,14 +10,21 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
-import javafx.scene.control.*;
-import javafx.scene.layout.HBox;
+import javafx.geometry.Pos;
+import javafx.scene.Cursor;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.*;
+import javafx.scene.shape.Rectangle;
+import org.kordamp.ikonli.javafx.FontIcon;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * KAN-28 — Cart screen (Panier).
- * Features: list items, update quantity, remove item, totals, checkout.
+ * Panier — mise en page deux colonnes (liste + récap), style e-commerce moderne.
  */
 public class CartController {
 
@@ -25,6 +32,8 @@ public class CartController {
         private final IntegerProperty cartItemId = new SimpleIntegerProperty();
         private final IntegerProperty productId  = new SimpleIntegerProperty();
         private final StringProperty  name       = new SimpleStringProperty();
+        private final StringProperty  categoryName = new SimpleStringProperty("");
+        private final StringProperty  imageUrl     = new SimpleStringProperty("");
         private final DoubleProperty  unitPrice  = new SimpleDoubleProperty();
         private final IntegerProperty quantity   = new SimpleIntegerProperty();
 
@@ -34,6 +43,10 @@ public class CartController {
         public IntegerProperty productIdProperty() { return productId; }
         public String getName() { return name.get(); }
         public StringProperty nameProperty() { return name; }
+        public String getCategoryName() { return categoryName.get(); }
+        public StringProperty categoryNameProperty() { return categoryName; }
+        public String getImageUrl() { return imageUrl.get(); }
+        public StringProperty imageUrlProperty() { return imageUrl; }
         public double getUnitPrice() { return unitPrice.get(); }
         public DoubleProperty unitPriceProperty() { return unitPrice; }
         public int getQuantity() { return quantity.get(); }
@@ -42,84 +55,155 @@ public class CartController {
         public double getSubtotal() { return getUnitPrice() * getQuantity(); }
     }
 
-    @FXML private TableView<CartRow> cartTable;
-    @FXML private TableColumn<CartRow, String> colProduct;
-    @FXML private TableColumn<CartRow, String> colUnitPrice;
-    @FXML private TableColumn<CartRow, Number> colQuantity;
-    @FXML private TableColumn<CartRow, String> colSubtotal;
-    @FXML private TableColumn<CartRow, Void> colActions;
-
-    @FXML private Label totalLabel;
+    @FXML private VBox cartItemsContainer;
+    @FXML private Label subtotalLabel;
+    @FXML private Label shippingLabel;
+    @FXML private Label taxLabel;
+    @FXML private Label grandTotalLabel;
     @FXML private Button checkoutButton;
     @FXML private Label messageLabel;
 
     private final ObservableList<CartRow> rows = FXCollections.observableArrayList();
 
+    /** TVA affichée (0 % par défaut ; modifier si besoin). */
+    private static final double TAX_RATE = 0.0;
+
     @FXML
     public void initialize() {
-        cartTable.setItems(rows);
-
-        colProduct.setCellValueFactory(cd -> cd.getValue().nameProperty());
-        colUnitPrice.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f Dhs", cd.getValue().getUnitPrice())));
-        colSubtotal.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f Dhs", cd.getValue().getSubtotal())));
-
-        // Quantity column uses a Spinner per row
-        colQuantity.setCellValueFactory(cd -> cd.getValue().quantityProperty());
-        colQuantity.setCellFactory(tc -> new TableCell<>() {
-            private final Spinner<Integer> spinner = new Spinner<>();
-
-            {
-                spinner.getStyleClass().add("premium-spinner");
-                spinner.setEditable(true);
-                spinner.valueProperty().addListener((obs, oldV, newV) -> {
-                    CartRow row = getTableRow() != null ? (CartRow) getTableRow().getItem() : null;
-                    if (row == null || newV == null) return;
-                    if (newV <= 0) return;
-                    if (newV == row.getQuantity()) return;
-                    row.quantityProperty().set(newV);
-                    updateTotals();
-                    updateQuantityOnServer(row.getCartItemId(), newV);
-                });
-            }
-
-            @Override
-            protected void updateItem(Number item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                    setGraphic(null);
-                    return;
-                }
-                int current = ((CartRow) getTableRow().getItem()).getQuantity();
-                SpinnerValueFactory<Integer> vf = new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 999, current);
-                spinner.setValueFactory(vf);
-                setGraphic(spinner);
-            }
-        });
-
-        // Actions column: remove button
-        colActions.setCellFactory(tc -> new TableCell<>() {
-            private final Button remove = new Button("Suppr.");
-            {
-                remove.getStyleClass().add("btn-secondary");
-                remove.setOnAction(e -> {
-                    CartRow row = getTableRow() != null ? (CartRow) getTableRow().getItem() : null;
-                    if (row == null) return;
-                    removeItem(row.getCartItemId());
-                });
-            }
-
-            @Override
-            protected void updateItem(Void item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                    setGraphic(null);
-                    return;
-                }
-                setGraphic(new HBox(remove));
-            }
-        });
-
+        rows.addListener((javafx.collections.ListChangeListener<CartRow>) c -> rebuildCartItems());
+        rebuildCartItems();
         refreshCart();
+    }
+
+    private void rebuildCartItems() {
+        if (cartItemsContainer == null) {
+            return;
+        }
+        cartItemsContainer.getChildren().clear();
+        if (rows.isEmpty()) {
+            Label empty = new Label("Your cart is empty.");
+            empty.getStyleClass().add("cart-empty-state");
+            cartItemsContainer.getChildren().add(empty);
+            return;
+        }
+        for (CartRow row : rows) {
+            cartItemsContainer.getChildren().add(createItemCard(row));
+        }
+    }
+
+    private HBox createItemCard(CartRow row) {
+        HBox card = new HBox(20);
+        card.getStyleClass().add("cart-item-card");
+        card.setAlignment(Pos.CENTER_LEFT);
+
+        double imgSize = 104;
+        StackPane imgWrap = new StackPane();
+        imgWrap.setMinSize(imgSize, imgSize);
+        imgWrap.setMaxSize(imgSize, imgSize);
+        imgWrap.getStyleClass().add("cart-item-image-wrap");
+
+        ImageView imgView = new ImageView();
+        imgView.setFitWidth(imgSize);
+        imgView.setFitHeight(imgSize);
+        imgView.setPreserveRatio(true);
+        imgView.setSmooth(true);
+        Rectangle clip = new Rectangle(imgSize, imgSize);
+        clip.setArcWidth(12);
+        clip.setArcHeight(12);
+        imgView.setClip(clip);
+
+        Label imgPh = new Label("No image");
+        imgPh.getStyleClass().add("cart-item-image-placeholder");
+
+        String url = row.getImageUrl();
+        if (url != null) {
+            url = url.trim();
+        }
+        if (url != null && !url.isBlank() && !"null".equalsIgnoreCase(url)) {
+            try {
+                Image im = new Image(url, true);
+                imgView.setImage(im);
+                imgPh.setVisible(false);
+                imgPh.setManaged(false);
+            } catch (Exception ignored) {
+                imgView.setVisible(false);
+            }
+        } else {
+            imgView.setVisible(false);
+        }
+
+        imgWrap.getChildren().addAll(imgView, imgPh);
+
+        Label title = new Label(row.getName());
+        title.getStyleClass().add("cart-item-title");
+        title.setWrapText(true);
+
+        String cat = row.getCategoryName();
+        Label catLbl = new Label(cat == null || cat.isBlank() ? "—" : cat);
+        catLbl.getStyleClass().add("cart-item-category");
+
+        Button minus = new Button("−");
+        minus.getStyleClass().add("cart-qty-btn");
+        Label qtyVal = new Label(String.valueOf(row.getQuantity()));
+        qtyVal.getStyleClass().add("cart-qty-value");
+        Button plus = new Button("+");
+        plus.getStyleClass().add("cart-qty-btn");
+
+        HBox qtyBox = new HBox(0, minus, qtyVal, plus);
+        qtyBox.getStyleClass().add("cart-qty-box");
+        qtyBox.setAlignment(Pos.CENTER_LEFT);
+
+        int q0 = row.getQuantity();
+        minus.setDisable(q0 <= 1);
+        minus.setOnAction(e -> {
+            int q = row.getQuantity();
+            if (q <= 1) return;
+            int nq = q - 1;
+            row.quantityProperty().set(nq);
+            updateTotals();
+            updateQuantityOnServer(row.getCartItemId(), nq);
+            rebuildCartItems();
+        });
+        plus.setOnAction(e -> {
+            int q = row.getQuantity();
+            if (q >= 999) return;
+            int nq = q + 1;
+            row.quantityProperty().set(nq);
+            updateTotals();
+            updateQuantityOnServer(row.getCartItemId(), nq);
+            rebuildCartItems();
+        });
+
+        VBox leftText = new VBox(8, title, catLbl, qtyBox);
+        leftText.setFillWidth(true);
+        HBox.setHgrow(leftText, Priority.ALWAYS);
+
+        FontIcon trashIc = new FontIcon();
+        trashIc.setIconLiteral("fas-trash-alt");
+        trashIc.setIconSize(15);
+        trashIc.getStyleClass().add("ikonli-danger");
+        Button remove = new Button();
+        remove.setGraphic(trashIc);
+        remove.setTooltip(new Tooltip("Remove item"));
+        remove.getStyleClass().add("btn-cart-remove-icon");
+        remove.setCursor(Cursor.HAND);
+        remove.setOnAction(e -> removeItem(row.getCartItemId()));
+
+        Label unitPrice = new Label(String.format("%.2f Dhs", row.getUnitPrice()));
+        unitPrice.getStyleClass().add("cart-item-unit-price");
+
+        VBox rightCol = new VBox(8);
+        rightCol.setAlignment(Pos.TOP_RIGHT);
+        Region sp = new Region();
+        VBox.setVgrow(sp, Priority.ALWAYS);
+        HBox topTrash = new HBox(remove);
+        topTrash.setAlignment(Pos.TOP_RIGHT);
+        VBox priceBox = new VBox(unitPrice);
+        priceBox.setAlignment(Pos.BOTTOM_RIGHT);
+        rightCol.getChildren().addAll(topTrash, sp, priceBox);
+
+        card.getChildren().addAll(imgWrap, leftText, rightCol);
+        return card;
     }
 
     @FXML
@@ -148,7 +232,7 @@ public class CartController {
             updateTotals();
             setMessage("Panier vidé.", false);
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors du vidage du panier.", true));
+        t.setOnFailed(ev -> setMessage("Erreur réseau lors du vidage du panier.", true));
         runTask(t);
     }
 
@@ -222,6 +306,8 @@ public class CartController {
             row.nameProperty().set(it.optString("name", "Produit"));
             row.unitPriceProperty().set(it.optDouble("unitPrice", 0.0));
             row.quantityProperty().set(it.optInt("quantity", 1));
+            row.categoryNameProperty().set(it.optString("categoryName", ""));
+            row.imageUrlProperty().set(it.optString("imageUrl", ""));
             list.add(row);
         }
         return list;
@@ -277,9 +363,26 @@ public class CartController {
     }
 
     private void updateTotals() {
-        double total = rows.stream().mapToDouble(CartRow::getSubtotal).sum();
-        totalLabel.setText(String.format("%.2f Dhs", total));
-        checkoutButton.setDisable(rows.isEmpty());
+        double sub = rows.stream().mapToDouble(CartRow::getSubtotal).sum();
+        double shipping = 0.0;
+        double tax = sub * TAX_RATE;
+        double grand = sub + shipping + tax;
+
+        if (subtotalLabel != null) {
+            subtotalLabel.setText(String.format("%.2f Dhs", sub));
+        }
+        if (shippingLabel != null) {
+            shippingLabel.setText(shipping <= 0 ? "Free" : String.format("%.2f Dhs", shipping));
+        }
+        if (taxLabel != null) {
+            taxLabel.setText(String.format("%.2f Dhs", tax));
+        }
+        if (grandTotalLabel != null) {
+            grandTotalLabel.setText(String.format("%.2f Dhs", grand));
+        }
+        if (checkoutButton != null) {
+            checkoutButton.setDisable(rows.isEmpty());
+        }
     }
 
     private void setMessage(String msg, boolean error) {
@@ -302,4 +405,3 @@ public class CartController {
         th.start();
     }
 }
-
