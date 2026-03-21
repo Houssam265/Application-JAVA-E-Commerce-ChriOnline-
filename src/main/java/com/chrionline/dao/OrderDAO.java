@@ -4,9 +4,12 @@ import com.chrionline.database.DatabaseConnection;
 import com.chrionline.model.Order;
 import com.chrionline.model.OrderItem;
 import com.chrionline.model.OrderStatus;
+import com.chrionline.model.Payment;
 
 import java.sql.*;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,13 +35,11 @@ public class OrderDAO {
 
     /**
      * Converts the user's cart into an order in ONE database transaction:
-     * - Re-checks stock in real-time (row locks)
-     * - Inserts order header + order_items
-     * - Decrements product stock
-     * - Clears the cart
+     * - Re-checks stock en temps réel (verrous de lignes)
+     * - Insère l'en-tête de commande + {@code order_items}
+     * - Vide le panier
      *
-     * <p>This is the "advanced-level" expected behavior: stock updates and order creation
-     * are atomic (COMMIT) or not applied at all (ROLLBACK) on failure.</p>
+     * <p>Le décrément de stock est effectué au paiement accepté (KAN-19), pas ici.</p>
      *
      * @param userId authenticated user placing the order
      * @return created order with items populated
@@ -56,8 +57,6 @@ public class OrderDAO {
                 "INSERT INTO orders (order_id, user_id, status, total_amount) VALUES (?, ?, ?, ?)";
         final String insertItem =
                 "INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)";
-        final String decrementStock =
-                "UPDATE products SET stock = stock - ? WHERE product_id = ? AND stock >= ?";
         final String clearCart =
                 "DELETE FROM cart_items WHERE cart_id = ?";
 
@@ -145,19 +144,6 @@ public class OrderDAO {
                     psItem.addBatch();
                 }
                 psItem.executeBatch();
-            }
-
-            // Decrement stock (conditional update) for every product
-            try (PreparedStatement psUpd = c.prepareStatement(decrementStock)) {
-                for (OrderItem it : items) {
-                    psUpd.setInt(1, it.getQuantity());
-                    psUpd.setInt(2, it.getProductId());
-                    psUpd.setInt(3, it.getQuantity());
-                    int updated = psUpd.executeUpdate();
-                    if (updated != 1) {
-                        throw new IllegalArgumentException("Stock insuffisant pour un ou plusieurs articles.");
-                    }
-                }
             }
 
             // Clear cart
@@ -328,6 +314,119 @@ public class OrderDAO {
         }
     }
 
+    /**
+     * KAN-19 — Une transaction SQL : verrou de la commande, décrément du stock par ligne
+     * (FOR UPDATE), marquage indisponible si stock = 0, paiement SUCCESS, commande VALIDATED.
+     * En cas d'échec (stock insuffisant, commande déjà traitée, etc.) : ROLLBACK complet.
+     */
+    public void completePaymentWithStockDecrement(
+            String orderId,
+            Payment.Method method,
+            double amount,
+            String transactionId,
+            LocalDateTime paidAt) {
+
+        final String lockOrder = "SELECT status FROM orders WHERE order_id = ? FOR UPDATE";
+        final String lockProduct = "SELECT stock FROM products WHERE product_id = ? FOR UPDATE";
+        final String updateProduct =
+                "UPDATE products SET stock = ?, is_available = ? WHERE product_id = ?";
+
+        PaymentDAO paymentDAO = new PaymentDAO();
+        Connection c = conn();
+        try {
+            c.setAutoCommit(false);
+
+            try (PreparedStatement ps = c.prepareStatement(lockOrder)) {
+                ps.setString(1, orderId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) {
+                        throw new IllegalArgumentException("Commande introuvable.");
+                    }
+                    String st = rs.getString("status");
+                    if (!OrderStatus.PENDING.name().equals(st)) {
+                        throw new IllegalArgumentException(
+                                "La commande ne peut pas être payée (statut : " + st + ").");
+                    }
+                }
+            }
+
+            List<OrderItem> items = getItems(c, orderId);
+            if (items.isEmpty()) {
+                throw new IllegalArgumentException("Commande sans article.");
+            }
+            items.sort(Comparator.comparingInt(OrderItem::getProductId));
+
+            for (OrderItem it : items) {
+                int pid = it.getProductId();
+                int qty = it.getQuantity();
+                if (qty <= 0) {
+                    throw new IllegalArgumentException("Quantité invalide dans la commande.");
+                }
+                int stock;
+                try (PreparedStatement ps = c.prepareStatement(lockProduct)) {
+                    ps.setInt(1, pid);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) {
+                            throw new IllegalArgumentException("Produit introuvable (id=" + pid + ").");
+                        }
+                        stock = rs.getInt("stock");
+                    }
+                }
+                if (stock < qty) {
+                    throw new IllegalArgumentException(
+                            "Stock insuffisant pour le produit id=" + pid
+                                    + ". Stock disponible=" + stock + ", requis=" + qty + ".");
+                }
+                int newStock = stock - qty;
+                boolean stillAvailable = newStock > 0;
+                try (PreparedStatement ps = c.prepareStatement(updateProduct)) {
+                    ps.setInt(1, newStock);
+                    ps.setBoolean(2, stillAvailable);
+                    ps.setInt(3, pid);
+                    int n = ps.executeUpdate();
+                    if (n != 1) {
+                        throw new IllegalArgumentException(
+                                "Mise à jour du stock impossible pour le produit id=" + pid + ".");
+                    }
+                }
+            }
+
+            paymentDAO.upsertPayment(
+                    c, orderId, method, Payment.Status.SUCCESS, amount, transactionId, paidAt);
+
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE orders SET status = ? WHERE order_id = ?")) {
+                ps.setString(1, OrderStatus.VALIDATED.name());
+                ps.setString(2, orderId);
+                ps.executeUpdate();
+            }
+
+            c.commit();
+        } catch (IllegalArgumentException e) {
+            try {
+                c.rollback();
+            } catch (SQLException ignored) {
+            }
+            throw e;
+        } catch (SQLException e) {
+            try {
+                c.rollback();
+            } catch (SQLException ignored) {
+            }
+            throw new RuntimeException(
+                    "OrderDAO.completePaymentWithStockDecrement failed for orderId='"
+                            + orderId
+                            + "': "
+                            + e.getMessage(),
+                    e);
+        } finally {
+            try {
+                c.setAutoCommit(true);
+            } catch (SQLException ignored) {
+            }
+        }
+    }
+
     // ── SELECT items for an order ────────────────────────────────────────────
 
     /**
@@ -336,29 +435,31 @@ public class OrderDAO {
      * stored in {@code order_items} (not the current live price).
      */
     public List<OrderItem> getItems(String orderId) {
-        // JOIN is included for future use (e.g. product name in order history view)
-        // but we map only the order_items columns to keep the model clean.
+        try {
+            return getItems(conn(), orderId);
+        } catch (SQLException e) {
+            throw new RuntimeException("OrderDAO.getItems failed for orderId='" + orderId + "': " + e.getMessage(), e);
+        }
+    }
+
+    private List<OrderItem> getItems(Connection c, String orderId) throws SQLException {
         final String sql =
-            "SELECT oi.order_item_id, oi.order_id, oi.product_id, " +
-            "       oi.quantity, oi.unit_price " +
-            "FROM order_items oi " +
-            "JOIN products p ON oi.product_id = p.product_id " +
-            "WHERE oi.order_id = ?";
+                "SELECT oi.order_item_id, oi.order_id, oi.product_id, "
+                        + "oi.quantity, oi.unit_price "
+                        + "FROM order_items oi "
+                        + "JOIN products p ON oi.product_id = p.product_id "
+                        + "WHERE oi.order_id = ?";
 
         List<OrderItem> items = new ArrayList<>();
-
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, orderId);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     items.add(mapOrderItemRow(rs));
                 }
             }
-            return items;
-
-        } catch (SQLException e) {
-            throw new RuntimeException("OrderDAO.getItems failed for orderId='" + orderId + "': " + e.getMessage(), e);
         }
+        return items;
     }
 
     // ── Row mappers ───────────────────────────────────────────────────────────

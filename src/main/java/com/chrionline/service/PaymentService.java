@@ -3,7 +3,6 @@ package com.chrionline.service;
 import com.chrionline.dao.OrderDAO;
 import com.chrionline.dao.PaymentDAO;
 import com.chrionline.model.Order;
-import com.chrionline.model.OrderStatus;
 import com.chrionline.model.Payment;
 import com.chrionline.service.payment.CardValidation;
 
@@ -113,15 +112,23 @@ public class PaymentService {
             return res;
         }
 
-        paymentDAO.upsertPayment(
-                orderId,
-                Payment.Method.CREDIT_CARD,
-                Payment.Status.SUCCESS,
-                amount,
-                txId,
-                now
-        );
-        orderDAO.updateStatus(orderId, OrderStatus.VALIDATED);
+        try {
+            orderDAO.completePaymentWithStockDecrement(
+                    orderId,
+                    Payment.Method.CREDIT_CARD,
+                    amount,
+                    txId,
+                    now);
+        } catch (IllegalArgumentException e) {
+            Map<String, Object> stockErr = new HashMap<>();
+            stockErr.put("success", false);
+            stockErr.put("status", "FAILED");
+            stockErr.put("reason", "STOCK");
+            stockErr.put("message", e.getMessage());
+            stockErr.put("orderId", orderId);
+            stockErr.put("paidAt", now.toString());
+            return stockErr;
+        }
 
         Payment saved = paymentDAO.findByOrderId(orderId).orElseThrow();
         Map<String, Object> ok = new HashMap<>();

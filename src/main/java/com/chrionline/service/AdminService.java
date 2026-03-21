@@ -72,6 +72,7 @@ public class AdminService {
         if (p.getStock() < 0) {
             throw new IllegalArgumentException("Le stock doit être >= 0.");
         }
+        p.setAvailable(p.getStock() > 0);
     }
 }
 

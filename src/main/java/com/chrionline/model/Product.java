@@ -4,7 +4,7 @@ package com.chrionline.model;
  * Maps to the {@code products} table.
  *
  * columns: product_id, category_id (FK), name, description (nullable),
- *          price DECIMAL(10,2), stock INT, image_url (nullable)
+ *          price DECIMAL(10,2), stock INT, is_available, image_url (nullable)
  */
 public class Product {
 
@@ -15,6 +15,8 @@ public class Product {
     private String description;   // nullable TEXT
     private double price;
     private int    stock;
+    /** Mis à false automatiquement lorsque le stock atteint 0 (KAN-19). */
+    private boolean available = true;
     private String imageUrl;      // nullable VARCHAR(300)
 
     // ── Constructors ────────────────────────────────────────────────────────
@@ -22,13 +24,14 @@ public class Product {
     public Product() {}
 
     public Product(int productId, int categoryId, String name, String description,
-                   double price, int stock, String imageUrl) {
+                   double price, int stock, boolean available, String imageUrl) {
         this.productId   = productId;
         this.categoryId  = categoryId;
         this.name        = name;
         this.description = description;
         this.price       = price;
         this.stock       = stock;
+        this.available   = available;
         this.imageUrl    = imageUrl;
     }
 
@@ -52,6 +55,9 @@ public class Product {
     public int    getStock()          { return stock; }
     public void   setStock(int v)     { this.stock = v; }
 
+    public boolean isAvailable()       { return available; }
+    public void    setAvailable(boolean v) { this.available = v; }
+
     public String getImageUrl()          { return imageUrl; }
     public void   setImageUrl(String v)  { this.imageUrl = v; }
 
@@ -65,6 +71,7 @@ public class Product {
                ", name='"      + name        + '\'' +
                ", price="      + price       +
                ", stock="      + stock       +
+               ", available="  + available   +
                '}';
     }
 }

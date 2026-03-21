@@ -333,7 +333,9 @@ public class ClientHandler implements Runnable {
      */
     private Response handleGetProducts(Request req) {
         Integer categoryId = req.getPayloadInt("category_id");
-        List<?> products   = productService.getProducts(categoryId);
+        User user = sessionManager.getUserFromToken(req.getToken()).orElse(null);
+        boolean adminCatalog = user != null && authService.isAdmin(user);
+        List<?> products = productService.getProducts(categoryId, adminCatalog);
         return Response.ok(products);
     }
 
@@ -346,7 +348,9 @@ public class ClientHandler implements Runnable {
         if (productId == null) {
             return Response.error("Missing product_id in payload");
         }
-        return productService.getProductDetails(productId)
+        User user = sessionManager.getUserFromToken(req.getToken()).orElse(null);
+        boolean admin = user != null && authService.isAdmin(user);
+        return productService.getProductDetails(productId, admin)
                 .map(Response::ok)
                 .orElse(Response.error("Product not found: " + productId));
     }

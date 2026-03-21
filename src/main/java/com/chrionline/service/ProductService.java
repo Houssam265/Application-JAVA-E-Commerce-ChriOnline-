@@ -20,16 +20,20 @@ public class ProductService {
     private final CategoryDAO categoryDAO = new CategoryDAO();
 
     /**
-     * Returns all products, optionally filtered by category.
-     *
-     * @param categoryId optional; if null, returns all products
-     * @return list of products (never null)
+     * Catalogue client : produits disponibles uniquement. Si {@code includeAllForAdmin},
+     * retourne tout (y compris indisponibles) — utilisé par l’interface admin.
      */
-    public List<Product> getProducts(Integer categoryId) {
-        if (categoryId != null) {
-            return productDAO.findByCategoryId(categoryId);
+    public List<Product> getProducts(Integer categoryId, boolean includeAllForAdmin) {
+        if (includeAllForAdmin) {
+            if (categoryId != null) {
+                return productDAO.findByCategoryId(categoryId);
+            }
+            return productDAO.findAll();
         }
-        return productDAO.findAll();
+        if (categoryId != null) {
+            return productDAO.findByCategoryIdAvailable(categoryId);
+        }
+        return productDAO.findAllAvailable();
     }
 
     /**
@@ -39,12 +43,15 @@ public class ProductService {
      * @param productId product primary key
      * @return map with keys "product" (Product) and "category" (Category), or empty if not found
      */
-    public Optional<Map<String, Object>> getProductDetails(int productId) {
+    public Optional<Map<String, Object>> getProductDetails(int productId, boolean allowUnavailableForAdmin) {
         Optional<Product> optProduct = productDAO.findById(productId);
         if (optProduct.isEmpty()) {
             return Optional.empty();
         }
         Product product = optProduct.get();
+        if (!allowUnavailableForAdmin && !product.isAvailable()) {
+            return Optional.empty();
+        }
         Optional<Category> optCategory = categoryDAO.findById(product.getCategoryId());
         Category category = optCategory.orElse(null);
 

@@ -79,7 +79,7 @@ public class ProductDetailController {
             }
         }
 
-        if (product.getStock() > 0) {
+        if (product.isAvailable() && product.getStock() > 0) {
             stockStatusLabel.setText("En stock (" + product.getStock() + ")");
             stockStatusLabel.getStyleClass().setAll("badge-instock");
             
@@ -109,7 +109,7 @@ public class ProductDetailController {
 
     @FXML
     private void handleAddToCart() {
-        if (product != null && product.getStock() > 0) {
+        if (product != null && product.isAvailable() && product.getStock() > 0) {
             int quantity = quantitySpinner.getValue();
             Task<Response> t = new Task<>() {
                 @Override protected Response call() throws Exception {

@@ -5,6 +5,7 @@ import com.chrionline.model.Payment;
 
 import java.sql.*;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -38,6 +39,25 @@ public class PaymentDAO {
                              double amount,
                              String transactionId,
                              LocalDateTime paidAt) {
+        try {
+            return upsertPayment(conn(), orderId, method, status, amount, transactionId, paidAt);
+        } catch (SQLException e) {
+            throw new RuntimeException("PaymentDAO.upsertPayment failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Même logique que {@link #upsertPayment(String, Payment.Method, Payment.Status, double, String, LocalDateTime)}
+     * sur une connexion existante (transaction KAN-19).
+     */
+    public int upsertPayment(Connection connection,
+                             String orderId,
+                             Payment.Method method,
+                             Payment.Status status,
+                             double amount,
+                             String transactionId,
+                             LocalDateTime paidAt) throws SQLException {
+        Objects.requireNonNull(connection, "connection");
         final String sql =
                 "INSERT INTO payments (order_id, method, status, amount, transaction_id, paid_at) " +
                 "VALUES (?, ?, ?, ?, ?, ?) " +
@@ -48,7 +68,7 @@ public class PaymentDAO {
                 "transaction_id = VALUES(transaction_id), " +
                 "paid_at = VALUES(paid_at)";
 
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1, orderId);
             ps.setString(2, method.name());
             ps.setString(3, status.name());
@@ -64,10 +84,14 @@ public class PaymentDAO {
                 ps.setTimestamp(6, Timestamp.valueOf(paidAt));
             }
             ps.executeUpdate();
-        } catch (SQLException e) {
-            throw new RuntimeException("PaymentDAO.upsertPayment failed: " + e.getMessage(), e);
         }
-        return findByOrderId(orderId).map(Payment::getPaymentId).orElse(0);
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT payment_id FROM payments WHERE order_id = ? LIMIT 1")) {
+            ps.setString(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt("payment_id") : 0;
+            }
+        }
     }
 
     private Payment mapRow(ResultSet rs) throws SQLException {

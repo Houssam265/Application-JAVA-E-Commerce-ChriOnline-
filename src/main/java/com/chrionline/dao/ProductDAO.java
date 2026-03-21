@@ -28,8 +28,8 @@ public class ProductDAO {
      */
     public Product save(Product product) {
         final String sql =
-            "INSERT INTO products (category_id, name, description, price, stock, image_url) " +
-            "VALUES (?, ?, ?, ?, ?, ?)";
+            "INSERT INTO products (category_id, name, description, price, stock, is_available, image_url) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
         try (PreparedStatement ps = conn().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, product.getCategoryId());
@@ -37,7 +37,8 @@ public class ProductDAO {
             ps.setString(3, product.getDescription());
             ps.setDouble(4, product.getPrice());
             ps.setInt(5, product.getStock());
-            ps.setString(6, product.getImageUrl());
+            ps.setBoolean(6, product.getStock() > 0 && product.isAvailable());
+            ps.setString(7, product.getImageUrl());
             ps.executeUpdate();
 
             try (ResultSet generated = ps.getGeneratedKeys()) {
@@ -69,20 +70,39 @@ public class ProductDAO {
 
     // ── SELECT ALL ───────────────────────────────────────────────────────────
 
+    /**
+     * Catalogue client : produits disponibles à la vente (KAN-19).
+     */
+    public List<Product> findAllAvailable() {
+        final String sql = "SELECT * FROM products WHERE is_available = TRUE ORDER BY product_id ASC";
+        return queryAllProducts(sql, null);
+    }
+
+    public List<Product> findByCategoryIdAvailable(int categoryId) {
+        final String sql = "SELECT * FROM products WHERE category_id = ? AND is_available = TRUE ORDER BY product_id ASC";
+        return queryAllProducts(sql, categoryId);
+    }
+
+    /** Tous les produits (y compris indisponibles) — admin / rapports. */
     public List<Product> findAll() {
         final String sql = "SELECT * FROM products ORDER BY product_id ASC";
+        return queryAllProducts(sql, null);
+    }
+
+    private List<Product> queryAllProducts(String sql, Integer categoryId) {
         List<Product> result = new ArrayList<>();
-
-        try (PreparedStatement ps = conn().prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-
-            while (rs.next()) {
-                result.add(mapRow(rs));
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            if (categoryId != null) {
+                ps.setInt(1, categoryId);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(mapRow(rs));
+                }
             }
             return result;
-
         } catch (SQLException e) {
-            throw new RuntimeException("ProductDAO.findAll failed: " + e.getMessage(), e);
+            throw new RuntimeException("ProductDAO query failed: " + e.getMessage(), e);
         }
     }
 
@@ -90,20 +110,7 @@ public class ProductDAO {
 
     public List<Product> findByCategoryId(int categoryId) {
         final String sql = "SELECT * FROM products WHERE category_id = ? ORDER BY product_id ASC";
-        List<Product> result = new ArrayList<>();
-
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
-            ps.setInt(1, categoryId);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    result.add(mapRow(rs));
-                }
-            }
-            return result;
-
-        } catch (SQLException e) {
-            throw new RuntimeException("ProductDAO.findByCategoryId failed for categoryId=" + categoryId + ": " + e.getMessage(), e);
-        }
+        return queryAllProducts(sql, categoryId);
     }
 
     // ── UPDATE all fields ─────────────────────────────────────────────────────
@@ -111,7 +118,7 @@ public class ProductDAO {
     public void update(Product product) {
         final String sql =
             "UPDATE products " +
-            "SET category_id = ?, name = ?, description = ?, price = ?, stock = ?, image_url = ? " +
+            "SET category_id = ?, name = ?, description = ?, price = ?, stock = ?, is_available = ?, image_url = ? " +
             "WHERE product_id = ?";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
@@ -120,8 +127,9 @@ public class ProductDAO {
             ps.setString(3, product.getDescription());
             ps.setDouble(4, product.getPrice());
             ps.setInt(5, product.getStock());
-            ps.setString(6, product.getImageUrl());
-            ps.setInt(7, product.getProductId());
+            ps.setBoolean(6, product.getStock() > 0 && product.isAvailable());
+            ps.setString(7, product.getImageUrl());
+            ps.setInt(8, product.getProductId());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("ProductDAO.update failed for productId=" + product.getProductId() + ": " + e.getMessage(), e);
@@ -132,11 +140,12 @@ public class ProductDAO {
 
     /** Used by OrderService / CartService after a checkout to decrement stock. */
     public void updateStock(int productId, int newStock) {
-        final String sql = "UPDATE products SET stock = ? WHERE product_id = ?";
+        final String sql = "UPDATE products SET stock = ?, is_available = ? WHERE product_id = ?";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             ps.setInt(1, newStock);
-            ps.setInt(2, productId);
+            ps.setBoolean(2, newStock > 0);
+            ps.setInt(3, productId);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("ProductDAO.updateStock failed for productId=" + productId + ": " + e.getMessage(), e);
@@ -163,12 +172,12 @@ public class ProductDAO {
      * Called by CartService / OrderService before adding to cart or checking out.
      */
     public boolean isAvailable(int productId, int requestedQty) {
-        final String sql = "SELECT stock FROM products WHERE product_id = ?";
+        final String sql = "SELECT stock, is_available FROM products WHERE product_id = ?";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             ps.setInt(1, productId);
             try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() && rs.getInt("stock") >= requestedQty;
+                return rs.next() && rs.getBoolean("is_available") && rs.getInt("stock") >= requestedQty;
             }
         } catch (SQLException e) {
             throw new RuntimeException("ProductDAO.isAvailable failed for productId=" + productId + ": " + e.getMessage(), e);
@@ -186,6 +195,7 @@ public class ProductDAO {
         p.setDescription(rs.getString("description"));
         p.setPrice(rs.getDouble("price"));
         p.setStock(rs.getInt("stock"));
+        p.setAvailable(rs.getBoolean("is_available"));
         p.setImageUrl(rs.getString("image_url"));
         return p;
     }

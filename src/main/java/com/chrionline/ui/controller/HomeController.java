@@ -209,6 +209,7 @@ public class HomeController {
                 pr.setDescription(p.optString("description", ""));
                 pr.setPrice(p.optDouble("price", 0.0));
                 pr.setStock(p.optInt("stock", 0));
+                pr.setAvailable(p.optBoolean("available", p.optBoolean("isAvailable", pr.getStock() > 0)));
                 pr.setImageUrl(p.optString("imageUrl", p.optString("image_url", "")));
                 list.add(pr);
             }
@@ -254,7 +255,7 @@ public class HomeController {
         categoryLabel.getStyleClass().add("product-category");
 
         Label stockLabel = new Label();
-        boolean isAvailable = p.getStock() > 0;
+        boolean isAvailable = p.isAvailable() && p.getStock() > 0;
         if (isAvailable) {
             stockLabel.setText("En stock · " + p.getStock());
             stockLabel.getStyleClass().add("badge-instock");

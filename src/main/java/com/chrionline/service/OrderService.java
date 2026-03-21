@@ -13,8 +13,8 @@ public class OrderService {
 
     /**
      * Places an order from the user's cart.
-     * This operation is end-to-end transactional in {@link OrderDAO#placeOrderFromCart(int)}:
-     * stock check, order creation, stock decrement, cart clearing.
+     * Transaction dans {@link OrderDAO#placeOrderFromCart(int)} : vérification stock,
+     * création commande PENDING, vidage panier. Le stock est décrémenté au paiement (KAN-19).
      */
     public Order placeOrderFromCart(int userId) {
         return orderDAO.placeOrderFromCart(userId);

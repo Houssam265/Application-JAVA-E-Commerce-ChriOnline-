@@ -72,6 +72,7 @@ CREATE TABLE products (
     description  TEXT,
     price        DECIMAL(10,2)  NOT NULL CHECK (price >= 0),
     stock        INT            NOT NULL DEFAULT 0 CHECK (stock >= 0),
+    is_available BOOLEAN        NOT NULL DEFAULT TRUE,
     image_url    VARCHAR(300),
 
     PRIMARY KEY (product_id),

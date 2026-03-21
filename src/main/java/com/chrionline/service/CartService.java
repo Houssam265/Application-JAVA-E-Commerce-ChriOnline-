@@ -36,6 +36,9 @@ public class CartService {
 
         Product product = productDAO.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("Produit introuvable (id=" + productId + ")."));
+        if (!product.isAvailable()) {
+            throw new IllegalArgumentException("Ce produit n'est plus disponible.");
+        }
         if (product.getPrice() <= 0) {
             throw new IllegalArgumentException("Prix du produit invalide (id=" + productId + ").");
         }
@@ -66,6 +69,9 @@ public class CartService {
 
         Product product = productDAO.findById(item.getProductId())
                 .orElseThrow(() -> new IllegalArgumentException("Produit introuvable (id=" + item.getProductId() + ")."));
+        if (!product.isAvailable()) {
+            throw new IllegalArgumentException("Ce produit n'est plus disponible.");
+        }
 
         if (product.getStock() < newQuantity) {
             throw new IllegalArgumentException(
