@@ -7,15 +7,19 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
+import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
 import javafx.application.Platform;
+import javafx.animation.PauseTransition;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
+import javafx.util.Duration;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
@@ -104,6 +108,7 @@ public class AdminController {
     @FXML private ComboBox<String> usersSuspendedFilter;
 
     @FXML private Label messageLabel;
+    @FXML private TabPane tabPane;
 
     private final ObservableList<ProductRow> productRows = FXCollections.observableArrayList();
     private final ObservableList<OrderRow> orderRows = FXCollections.observableArrayList();
@@ -140,6 +145,12 @@ public class AdminController {
         refreshProducts();
         refreshOrders();
         refreshUsers();
+
+        if (tabPane != null) {
+            tabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldV, newV) -> {
+                setMessage(null, false);
+            });
+        }
     }
 
     @FXML
@@ -176,6 +187,7 @@ public class AdminController {
 
     @FXML
     private void handleNewProduct() {
+        setMessage(null, false);
         editingProductId = null;
         editingImageUrl = null;
         selectedProductImageFile = null;
@@ -254,7 +266,7 @@ public class AdminController {
         String desc = prodDescField.getText().trim();
 
         if (name.isBlank() || categoryId <= 0 || price < 0 || stock < 0) {
-            setMessage("Vérifie les champs: nom, categoryId>0, prix>=0, stock>=0.", true);
+            setMessage("Veuillez remplir tous les champs obligatoires correctement (Catégorie, Prix et Stock valides).", true);
             return;
         }
 
@@ -291,13 +303,16 @@ public class AdminController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Enregistrement impossible." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (handleSessionExpiredIfNeeded(msg)) return;
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Enregistrement impossible." : msg);
+                setMessage(null, false);
                 return;
             }
             setMessage(isCreate ? "Produit créé." : "Produit mis à jour.", false);
             refreshProducts();
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors de l'enregistrement.", true));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::handleSaveProduct));
         runTask(t);
     }
 
@@ -322,14 +337,17 @@ public class AdminController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Suppression impossible." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (handleSessionExpiredIfNeeded(msg)) return;
+                ErrorHandler.showWarningDialog("Erreur", msg.isBlank() ? "Suppression impossible." : msg);
+                setMessage(null, false);
                 return;
             }
             setMessage("Produit supprimé.", false);
             handleNewProduct();
             refreshProducts();
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors de la suppression.", true));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::handleDeleteProduct));
         runTask(t);
     }
 
@@ -344,12 +362,15 @@ public class AdminController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Impossible de charger les produits." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (handleSessionExpiredIfNeeded(msg)) return;
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Impossible de charger les produits." : msg);
+                setMessage(null, false);
                 return;
             }
             productRows.setAll(parseProducts(r));
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors du chargement des produits.", true));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::refreshProducts));
         runTask(t);
     }
 
@@ -505,12 +526,15 @@ public class AdminController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Impossible de charger les commandes." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (handleSessionExpiredIfNeeded(msg)) return;
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Impossible de charger les commandes." : msg);
+                setMessage(null, false);
                 return;
             }
             orderRows.setAll(parseOrders(r));
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors du chargement des commandes.", true));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::refreshOrders));
         runTask(t);
     }
 
@@ -546,7 +570,10 @@ public class AdminController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Statut non mis à jour." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (handleSessionExpiredIfNeeded(msg)) return;
+                ErrorHandler.showWarningDialog("Mise à jour refusée", msg.isBlank() ? "Statut non mis à jour." : msg);
+                setMessage(null, false);
                 return;
             }
             rowRef.status.set(newStatus);
@@ -554,7 +581,7 @@ public class AdminController {
             applyOrdersFiltering();
             ordersTable.refresh();
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors de la mise à jour du statut.", true));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> updateOrderStatus(rowRef, newStatus)));
         runTask(t);
     }
 
@@ -768,12 +795,15 @@ public class AdminController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Impossible de charger les utilisateurs." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (handleSessionExpiredIfNeeded(msg)) return;
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Impossible de charger les utilisateurs." : msg);
+                setMessage(null, false);
                 return;
             }
             userRows.setAll(parseUsers(r));
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors du chargement des utilisateurs.", true));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::refreshUsers));
         runTask(t);
     }
 
@@ -810,7 +840,10 @@ public class AdminController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Action impossible." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (handleSessionExpiredIfNeeded(msg)) return;
+                ErrorHandler.showWarningDialog("Action impossible", msg.isBlank() ? "Action impossible." : msg);
+                setMessage(null, false);
                 return;
             }
             rowRef.suspended.set(suspended);
@@ -818,13 +851,20 @@ public class AdminController {
             applyUsersFiltering();
             usersTable.refresh();
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors de l'action utilisateur.", true));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> setUserSuspended(rowRef, suspended)));
         runTask(t);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+    private PauseTransition messageClearTransition;
+
     private void setMessage(String msg, boolean error) {
         if (messageLabel == null) return;
+
+        if (messageClearTransition != null) {
+            messageClearTransition.stop();
+        }
+
         if (msg == null || msg.isBlank()) {
             messageLabel.setText("");
             messageLabel.setVisible(false);
@@ -835,6 +875,38 @@ public class AdminController {
         messageLabel.getStyleClass().setAll(error ? "global-error" : "success-label");
         messageLabel.setVisible(true);
         messageLabel.setManaged(true);
+
+        messageClearTransition = new PauseTransition(Duration.seconds(4));
+        messageClearTransition.setOnFinished(e -> {
+            messageLabel.setText("");
+            messageLabel.setVisible(false);
+            messageLabel.setManaged(false);
+        });
+        messageClearTransition.play();
+    }
+
+    private Scene getSceneOrNull() {
+        if (messageLabel != null && messageLabel.getScene() != null) return messageLabel.getScene();
+        return null;
+    }
+
+    private boolean handleSessionExpiredIfNeeded(String msg) {
+        String m = msg == null ? "" : msg;
+        if (ErrorHandler.isSessionExpiredMessage(m)) {
+            setMessage(null, false);
+            ErrorHandler.handleSessionExpired();
+            return true;
+        }
+        return false;
+    }
+
+    private void handleTcpFailure(Throwable cause, String bannerMessage, Runnable retryAction) {
+        Scene sc = getSceneOrNull();
+        if (sc != null && retryAction != null) {
+            ErrorHandler.showServerUnavailableBanner(sc, retryAction);
+        }
+        // Server unavailable: rule = ONLY top banner (no dialog, no inline label).
+        setMessage(null, false);
     }
 
     private void runTask(Task<?> t) {

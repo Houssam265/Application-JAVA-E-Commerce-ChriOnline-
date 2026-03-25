@@ -5,6 +5,7 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
+import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
 import com.chrionline.ui.notifications.AppNotification;
 import com.chrionline.ui.notifications.NotificationCenter;
@@ -37,8 +38,10 @@ public class ProfileController {
     @FXML private VBox editBox;
     @FXML private PasswordField oldPasswordField;
     @FXML private PasswordField newPasswordField;
+    @FXML private PasswordField confirmNewPasswordField;
     @FXML private Label oldPasswordError;
     @FXML private Label newPasswordError;
+    @FXML private Label confirmPasswordError;
     @FXML private Node strengthBar;
     @FXML private Label strengthLabel;
     @FXML private Label globalMessage;
@@ -64,6 +67,22 @@ public class ProfileController {
 
         if (newPasswordField != null) {
             newPasswordField.textProperty().addListener((obs, ov, nv) -> updateStrength(nv));
+            newPasswordField.textProperty().addListener((obs, ov, nv) -> {
+                ErrorHandler.clearFieldError(newPasswordError);
+                ErrorHandler.clearInlineError(newPasswordField);
+            });
+        }
+        if (confirmNewPasswordField != null) {
+            confirmNewPasswordField.textProperty().addListener((obs, ov, nv) -> {
+                ErrorHandler.clearFieldError(confirmPasswordError);
+                ErrorHandler.clearInlineError(confirmNewPasswordField);
+            });
+        }
+        if (nameField != null) {
+            nameField.textProperty().addListener((obs, ov, nv) -> {
+                ErrorHandler.clearFieldError(globalMessage);
+                ErrorHandler.clearInlineError(nameField);
+            });
         }
     }
 
@@ -208,10 +227,16 @@ public class ProfileController {
     private void handleSave() {
         hideError(oldPasswordError);
         hideError(newPasswordError);
+        hideError(confirmPasswordError);
         setGlobalMessage(null, false);
 
         String newName = nameField.getText() == null ? "" : nameField.getText().trim();
         String mail = emailField.getText() == null ? "" : emailField.getText().trim();
+        if (newName.isBlank()) {
+            ErrorHandler.showFieldError(globalMessage, "Le nom ne peut pas être vide");
+            ErrorHandler.showInlineError(nameField, "nom vide");
+            return;
+        }
 
         Task<Response> updateProfile = new Task<>() {
             @Override protected Response call() throws Exception {
@@ -227,7 +252,14 @@ public class ProfileController {
         updateProfile.setOnSucceeded(e -> {
             Response r = updateProfile.getValue();
             if (!r.isSuccess()) {
-                setGlobalMessage(r.getMessage().isBlank() ? "Mise à jour impossible." : r.getMessage(), true);
+                if (ErrorHandler.isSessionExpiredMessage(r.getMessage())) {
+                    setGlobalMessage(null, false);
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                setGlobalMessage(null, false);
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Mise à jour impossible." : msg);
                 return;
             }
             ClientSession s = ClientSession.getInstance();
@@ -239,13 +271,21 @@ public class ProfileController {
             // Password change if fields provided
             String oldPwd = oldPasswordField.getText() == null ? "" : oldPasswordField.getText();
             String newPwd = newPasswordField.getText() == null ? "" : newPasswordField.getText();
+            String confirmPwd = confirmNewPasswordField == null || confirmNewPasswordField.getText() == null ? "" : confirmNewPasswordField.getText();
             if (!oldPwd.isBlank() || !newPwd.isBlank()) {
                 if (oldPwd.isBlank()) {
-                    showError(oldPasswordError, "Ancien mot de passe requis.");
+                    showError(oldPasswordError, "Ancien mot de passe incorrect");
+                    ErrorHandler.showInlineError(oldPasswordField, "old pwd");
                     return;
                 }
                 if (!isStrongEnough(newPwd)) {
-                    showError(newPasswordError, "Mot de passe faible (8+ caractères, lettres + chiffres).");
+                    showError(newPasswordError, "Mot de passe trop court (minimum 8 caractères)");
+                    ErrorHandler.showInlineError(newPasswordField, "new pwd");
+                    return;
+                }
+                if (!newPwd.equals(confirmPwd)) {
+                    showError(confirmPasswordError, "Les mots de passe ne correspondent pas");
+                    ErrorHandler.showInlineError(confirmNewPasswordField, "confirm mismatch");
                     return;
                 }
                 changePassword(oldPwd, newPwd);
@@ -254,7 +294,12 @@ public class ProfileController {
                 toggleEdit();
             }
         });
-        updateProfile.setOnFailed(e -> setGlobalMessage("Erreur réseau mise à jour profil.", true));
+        updateProfile.setOnFailed(e -> {
+            setGlobalMessage(null, false);
+            if (editButton != null && editButton.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(editButton.getScene(), this::handleSave);
+            }
+        });
         runTask(updateProfile);
     }
 
@@ -272,13 +317,30 @@ public class ProfileController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setGlobalMessage(r.getMessage().isBlank() ? "Changement mot de passe impossible." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    setGlobalMessage(null, false);
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                if (msg.toLowerCase().contains("ancien") || msg.toLowerCase().contains("old")) {
+                    showError(oldPasswordError, "Ancien mot de passe incorrect");
+                    ErrorHandler.showInlineError(oldPasswordField, "Ancien mot de passe incorrect");
+                    return;
+                }
+                setGlobalMessage(null, false);
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Changement mot de passe impossible." : msg);
                 return;
             }
             setGlobalMessage("Profil + mot de passe mis à jour.", false);
             toggleEdit();
         });
-        t.setOnFailed(e -> setGlobalMessage("Erreur réseau changement mot de passe.", true));
+        t.setOnFailed(e -> {
+            setGlobalMessage(null, false);
+            if (editButton != null && editButton.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(editButton.getScene(), () -> changePassword(oldPwd, newPwd));
+            }
+        });
         runTask(t);
     }
 
@@ -327,17 +389,11 @@ public class ProfileController {
     }
 
     private void showError(Label label, String msg) {
-        if (label == null) return;
-        label.setText(msg);
-        label.setVisible(true);
-        label.setManaged(true);
+        ErrorHandler.showFieldError(label, msg);
     }
 
     private void hideError(Label label) {
-        if (label == null) return;
-        label.setText("");
-        label.setVisible(false);
-        label.setManaged(false);
+        ErrorHandler.clearFieldError(label);
     }
 
     @FXML
@@ -360,7 +416,12 @@ public class ProfileController {
                 SceneManager.showLogin();
             });
         });
-        t.setOnFailed(e -> setGlobalMessage("Erreur réseau logout.", true));
+        t.setOnFailed(e -> {
+            setGlobalMessage(null, false);
+            if (editButton != null && editButton.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(editButton.getScene(), this::handleLogout);
+            }
+        });
         runTask(t);
     }
 

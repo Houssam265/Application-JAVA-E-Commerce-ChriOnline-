@@ -5,6 +5,7 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
+import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
 import com.chrionline.ui.invoice.InvoicePdfGenerator;
 import com.chrionline.ui.notifications.AppNotification;
@@ -29,6 +30,7 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -91,6 +93,7 @@ public class CheckoutController {
         renderCardBrand(CardBrand.GENERIC, false);
         setupPaymentFormatters();
         loadOrderSummaryFromServer();
+        updatePayButtonState();
     }
 
     private void setActiveNav() {
@@ -159,7 +162,10 @@ public class CheckoutController {
                 cardNumberField.positionCaret(caret);
             }
             updateCardBrandUI();
+            ErrorHandler.clearFieldError(cardNumberError);
+            ErrorHandler.clearInlineError(cardNumberField);
             validateCard(false);
+            updatePayButtonState();
         });
 
         expiryField.textProperty().addListener((obs, oldV, newV) -> {
@@ -173,6 +179,9 @@ public class CheckoutController {
                 expiryField.positionCaret(caret);
             }
             validateExpiry(false);
+            ErrorHandler.clearFieldError(expiryError);
+            ErrorHandler.clearInlineError(expiryField);
+            updatePayButtonState();
         });
 
         cvvField.textProperty().addListener((obs, oldV, newV) -> {
@@ -180,7 +189,14 @@ public class CheckoutController {
             if (!digits.equals(newV)) cvvField.setText(digits);
             if (digits.length() > 4) cvvField.setText(digits.substring(0, 4));
             validateCvv(false);
+            ErrorHandler.clearFieldError(cvvError);
+            ErrorHandler.clearInlineError(cvvField);
+            updatePayButtonState();
         });
+
+        cardNumberField.focusedProperty().addListener((obs, ov, focused) -> { if (!focused) validateCard(true); });
+        expiryField.focusedProperty().addListener((obs, ov, focused) -> { if (!focused) validateExpiry(true); });
+        cvvField.focusedProperty().addListener((obs, ov, focused) -> { if (!focused) validateCvv(true); });
     }
 
     @FXML
@@ -312,7 +328,7 @@ public class CheckoutController {
 
     private void loadOrderSummaryFromServer() {
         if (orderId == null || orderId.isBlank()) {
-            setGlobalMessage("Aucune commande à payer. Retourne au panier.", true);
+            ErrorHandler.showWarningDialog("Panier vide", "Votre panier est vide");
             if (payButton != null) payButton.setDisable(true);
             return;
         }
@@ -330,7 +346,14 @@ public class CheckoutController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setGlobalMessage(r.getMessage().isBlank() ? "Impossible de charger la commande." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    setGlobalMessage(null, false);
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                setGlobalMessage(null, false);
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Impossible de charger la commande." : msg);
                 return;
             }
             try {
@@ -363,15 +386,20 @@ public class CheckoutController {
                 itemsList.getItems().setAll("Commande prête · Paiement requis");
             }
         });
-        t.setOnFailed(e -> setGlobalMessage("Erreur réseau lors du chargement de la commande.", true));
+        t.setOnFailed(e -> {
+            setGlobalMessage(null, false);
+            if (payButton != null && payButton.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(payButton.getScene(), this::loadOrderSummaryFromServer);
+            }
+        });
         runTask(t);
     }
 
     @FXML
     private void handlePay() {
-        hideError(cardNumberError);
-        hideError(expiryError);
-        hideError(cvvError);
+        ErrorHandler.clearFieldError(cardNumberError);
+        ErrorHandler.clearFieldError(expiryError);
+        ErrorHandler.clearFieldError(cvvError);
         setGlobalMessage(null, false);
 
         boolean ok = validateCard(true) & validateExpiry(true) & validateCvv(true);
@@ -406,52 +434,79 @@ public class CheckoutController {
             if (r.isSuccess()) {
                 showResultOverlay(true, "Paiement accepté", "Merci ! Votre paiement a été validé et la commande a été mise à jour.");
             } else {
-                showResultOverlay(false, "Paiement refusé", r.getMessage().isBlank() ? "Paiement refusé." : r.getMessage());
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (msg.toLowerCase().contains("stock insuffisant")) {
+                    ErrorHandler.showWarningDialog("Stock insuffisant", msg);
+                    return;
+                }
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                ErrorHandler.showErrorDialog("Paiement refusé", "Paiement refusé. Vérifiez vos informations bancaires.");
+                return;
             }
         });
         t.setOnFailed(e -> {
             payButton.setDisable(false);
-            showResultOverlay(false, "Erreur réseau", "Impossible de contacter le serveur.");
+            if (payButton != null && payButton.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(payButton.getScene(), this::handlePay);
+            }
+            // Server unavailable: ONLY top banner (no popup, no inline label, no overlay)
         });
         runTask(t);
     }
 
     private boolean validateCard(boolean show) {
         String digits = cardNumberField.getText().replaceAll("\\D+", "");
-        boolean ok = digits.length() == 16;
-        if (!ok && show) showError(cardNumberError, "Le numéro doit contenir 16 chiffres.");
-        if (ok) hideError(cardNumberError);
+        boolean ok = digits.length() == 16 && passesLuhn(digits);
+        if (!ok && show) {
+            ErrorHandler.showFieldError(cardNumberError, "Numéro de carte invalide");
+            ErrorHandler.showInlineError(cardNumberField, "Numéro invalide");
+        }
+        if (ok) {
+            ErrorHandler.clearFieldError(cardNumberError);
+            ErrorHandler.clearInlineError(cardNumberField);
+        }
         return ok;
     }
 
     private boolean validateExpiry(boolean show) {
         String v = expiryField.getText().trim();
         boolean ok = v.matches("^(0[1-9]|1[0-2])\\/\\d{2}$");
-        if (!ok && show) showError(expiryError, "Format invalide. Exemple: 08/27");
-        if (ok) hideError(expiryError);
+        if (ok) {
+            try {
+                int mm = Integer.parseInt(v.substring(0, 2));
+                int yy = Integer.parseInt(v.substring(3, 5));
+                YearMonth cardYm = YearMonth.of(2000 + yy, mm);
+                ok = !cardYm.isBefore(YearMonth.now());
+            } catch (Exception ex) {
+                ok = false;
+            }
+        }
+        if (!ok && show) {
+            ErrorHandler.showFieldError(expiryError, "Date d'expiration invalide");
+            ErrorHandler.showInlineError(expiryField, "date invalide");
+        }
+        if (ok) {
+            ErrorHandler.clearFieldError(expiryError);
+            ErrorHandler.clearInlineError(expiryField);
+        }
         return ok;
     }
 
     private boolean validateCvv(boolean show) {
         String v = cvvField.getText().trim();
         boolean ok = v.matches("^\\d{3,4}$");
-        if (!ok && show) showError(cvvError, "CVV invalide (3-4 chiffres).");
-        if (ok) hideError(cvvError);
+        if (!ok && show) {
+            ErrorHandler.showFieldError(cvvError, "CVV invalide");
+            ErrorHandler.showInlineError(cvvField, "cvv invalide");
+        }
+        if (ok) {
+            ErrorHandler.clearFieldError(cvvError);
+            ErrorHandler.clearInlineError(cvvField);
+        }
         return ok;
-    }
-
-    private void showError(Label label, String msg) {
-        if (label == null) return;
-        label.setText(msg);
-        label.setVisible(true);
-        label.setManaged(true);
-    }
-
-    private void hideError(Label label) {
-        if (label == null) return;
-        label.setText("");
-        label.setVisible(false);
-        label.setManaged(false);
     }
 
     private void setGlobalMessage(String msg, boolean error) {
@@ -667,7 +722,29 @@ public class CheckoutController {
         };
 
         t.setOnSucceeded(e -> setGlobalMessage("Facture enregistrée: " + out.getName(), false));
-        t.setOnFailed(e -> setGlobalMessage("Erreur facture: " + (t.getException() != null ? t.getException().getMessage() : "inconnue"), true));
+        t.setOnFailed(e -> {
+            setGlobalMessage(null, false);
+            String msg = t.getException() != null && t.getException().getMessage() != null ? t.getException().getMessage() : "";
+
+            if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                ErrorHandler.handleSessionExpired();
+                return;
+            }
+
+            String m = msg.toLowerCase();
+            boolean looksLikeNetwork = m.contains("connection") || m.contains("refused")
+                    || m.contains("timed out") || m.contains("timeout") || m.contains("socket")
+                    || m.contains("network") || m.contains("ioexception") || m.contains("unreachable");
+
+            if (looksLikeNetwork && payButton != null && payButton.getScene() != null) {
+                // Server unavailable: ONLY banner countdown.
+                ErrorHandler.showServerUnavailableBanner(payButton.getScene(), this::downloadInvoice);
+                return;
+            }
+
+            // Server error response: ONLY dialog.
+            ErrorHandler.showErrorDialog("Erreur facture", msg.isBlank() ? "Impossible de générer la facture." : msg);
+        });
         runTask(t);
     }
 
@@ -680,6 +757,31 @@ public class CheckoutController {
         Thread th = new Thread(t);
         th.setDaemon(true);
         th.start();
+    }
+
+    private void updatePayButtonState() {
+        boolean ready = cardNumberField != null && expiryField != null && cvvField != null
+                && !cardNumberField.getText().trim().isEmpty()
+                && !expiryField.getText().trim().isEmpty()
+                && !cvvField.getText().trim().isEmpty();
+        if (payButton != null && (globalMessage == null || !globalMessage.isVisible())) {
+            payButton.setDisable(!ready);
+        }
+    }
+
+    private boolean passesLuhn(String digits) {
+        int sum = 0;
+        boolean alt = false;
+        for (int i = digits.length() - 1; i >= 0; i--) {
+            int n = digits.charAt(i) - '0';
+            if (alt) {
+                n *= 2;
+                if (n > 9) n -= 9;
+            }
+            sum += n;
+            alt = !alt;
+        }
+        return sum % 10 == 0;
     }
 }
 

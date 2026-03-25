@@ -5,13 +5,12 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
+import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
-import animatefx.animation.Shake;
-import animatefx.animation.FadeIn;
 
 import org.json.JSONObject;
 
@@ -45,24 +44,36 @@ public class LoginController {
 
     @FXML
     public void initialize() {
-        // Efface les erreurs au focus sur le champ
-        emailField.focusedProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal) hideError(emailError);
-        });
-        passwordField.focusedProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal) hideError(passwordError);
-        });
-        passwordTextField.focusedProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal) hideError(passwordError);
-        });
-
         // Synchronisation des champs
         passwordTextField.textProperty().bindBidirectional(passwordField.textProperty());
+
+        emailField.textProperty().addListener((obs, ov, nv) -> {
+            ErrorHandler.clearFieldError(emailError);
+            ErrorHandler.clearInlineError(emailField);
+            updateLoginButtonState();
+        });
+        passwordField.textProperty().addListener((obs, ov, nv) -> {
+            ErrorHandler.clearFieldError(passwordError);
+            ErrorHandler.clearInlineError(passwordField);
+            updateLoginButtonState();
+        });
+        passwordTextField.textProperty().addListener((obs, ov, nv) -> updateLoginButtonState());
+
+        emailField.focusedProperty().addListener((obs, oldVal, focused) -> {
+            if (!focused) validateEmailField();
+        });
+        passwordField.focusedProperty().addListener((obs, oldVal, focused) -> {
+            if (!focused) validatePasswordField();
+        });
+        passwordTextField.focusedProperty().addListener((obs, oldVal, focused) -> {
+            if (!focused) validatePasswordField();
+        });
 
         // Permet de valider avec la touche Entrée
         passwordField.setOnAction(e -> handleLogin());
         passwordTextField.setOnAction(e -> handleLogin());
         emailField.setOnAction(e -> handleLogin());
+        updateLoginButtonState();
     }
 
     @FXML
@@ -89,33 +100,16 @@ public class LoginController {
     @FXML
     private void handleLogin() {
         // ① Réinitialise les erreurs
-        hideError(emailError);
-        hideError(passwordError);
-        hideError(globalError);
+        ErrorHandler.clearFieldError(emailError);
+        ErrorHandler.clearFieldError(passwordError);
+        ErrorHandler.clearFieldError(globalError);
 
         String email    = emailField.getText().trim();
         // Si le champ texte clair est visible, on prend sa valeur, sinon le passwordField
         String password = passwordField.isVisible() ? passwordField.getText() : passwordTextField.getText();
 
         // ② Validation locale
-        boolean valid = true;
-
-        if (email.isEmpty()) {
-            showError(emailError, "L'adresse email est requise.");
-            valid = false;
-        } else if (!email.matches(EMAIL_REGEX)) {
-            showError(emailError, "Format d'email invalide (ex: user@email.com).");
-            valid = false;
-        }
-
-        if (password.isEmpty()) {
-            showError(passwordError, "Le mot de passe est requis.");
-            valid = false;
-        } else if (password.length() < MIN_PASSWORD) {
-            showError(passwordError, "Le mot de passe doit contenir au moins 8 caractères.");
-            valid = false;
-        }
-
+        boolean valid = validateEmailField() & validatePasswordField();
         if (!valid) return;
 
         // ③ Envoi TCP dans un thread JavaFX (Task) pour ne pas bloquer l'UI
@@ -162,19 +156,34 @@ public class LoginController {
                 }
                 Platform.runLater(SceneManager::showHome);
             } else {
-                // ⑤ Erreur métier renvoyée par le serveur
-                showError(globalError, response.getMessage().isEmpty()
-                        ? "Identifiants incorrects. Veuillez réessayer."
-                        : response.getMessage());
+                String msg = response.getMessage() == null ? "" : response.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                String lower = msg.toLowerCase();
+                if (lower.contains("suspend")) {
+                    ErrorHandler.showErrorDialog("Compte suspendu", "Compte suspendu. Contactez l'administrateur.");
+                    return;
+                }
+                ErrorHandler.showErrorDialog("Connexion échouée",
+                        "Identifiants incorrects. Vérifiez votre email et mot de passe.");
             }
         });
 
         loginTask.setOnFailed(event -> {
             setLoading(false);
             Throwable cause = loginTask.getException();
-            showError(globalError, cause != null
-                    ? cause.getMessage()
-                    : "Une erreur réseau s'est produite.");
+            String msg = cause != null ? String.valueOf(cause.getMessage()) : "Une erreur réseau s'est produite.";
+            String lower = msg.toLowerCase();
+            if (lower.contains("timed out") || lower.contains("timeout")) {
+                ErrorHandler.showErrorDialog("Timeout", "La requête a expiré. Vérifiez votre connexion.");
+                return;
+            }
+            ErrorHandler.showErrorDialog("Serveur indisponible", "Serveur indisponible. Vérifiez votre connexion.");
+            if (emailField.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(emailField.getScene(), this::handleLogin);
+            }
         });
 
         Thread thread = new Thread(loginTask);
@@ -190,22 +199,53 @@ public class LoginController {
 
     // ── Utilitaires privés ────────────────────────────────────────────────────
 
-    private void showError(Label label, String message) {
-        label.setText(message);
-        label.setVisible(true);
-        label.setManaged(true);
-        new Shake(label).play();
-    }
-
-    private void hideError(Label label) {
-        label.setText("");
-        label.setVisible(false);
-        label.setManaged(false);
-    }
-
     private void setLoading(boolean loading) {
         loginButton.setDisable(loading);
         loadingIndicator.setVisible(loading);
         loadingIndicator.setManaged(loading);
+    }
+
+    private void updateLoginButtonState() {
+        boolean hasEmail = emailField.getText() != null && !emailField.getText().trim().isEmpty();
+        String pwd = passwordField.isVisible() ? passwordField.getText() : passwordTextField.getText();
+        boolean hasPwd = pwd != null && !pwd.isBlank();
+        if (!loadingIndicator.isVisible()) {
+            loginButton.setDisable(!(hasEmail && hasPwd));
+        }
+    }
+
+    private boolean validateEmailField() {
+        String email = emailField.getText() == null ? "" : emailField.getText().trim();
+        if (email.isEmpty()) {
+            ErrorHandler.showFieldError(emailError, "Ce champ est obligatoire");
+            ErrorHandler.showInlineError(emailField, "Ce champ est obligatoire");
+            return false;
+        }
+        if (!email.matches(EMAIL_REGEX)) {
+            ErrorHandler.showFieldError(emailError, "Format email invalide (ex: nom@email.com)");
+            ErrorHandler.showInlineError(emailField, "Format email invalide");
+            return false;
+        }
+        ErrorHandler.clearFieldError(emailError);
+        ErrorHandler.clearInlineError(emailField);
+        return true;
+    }
+
+    private boolean validatePasswordField() {
+        String password = passwordField.isVisible() ? passwordField.getText() : passwordTextField.getText();
+        if (password == null || password.isBlank()) {
+            ErrorHandler.showFieldError(passwordError, "Ce champ est obligatoire");
+            ErrorHandler.showInlineError(passwordField.isVisible() ? passwordField : passwordTextField, "Ce champ est obligatoire");
+            return false;
+        }
+        if (password.length() < MIN_PASSWORD) {
+            ErrorHandler.showFieldError(passwordError, "Mot de passe trop court (minimum 8 caractères)");
+            ErrorHandler.showInlineError(passwordField.isVisible() ? passwordField : passwordTextField, "Mot de passe trop court");
+            return false;
+        }
+        ErrorHandler.clearFieldError(passwordError);
+        ErrorHandler.clearInlineError(passwordField);
+        ErrorHandler.clearInlineError(passwordTextField);
+        return true;
     }
 }

@@ -106,6 +106,12 @@
                         </VBox>
                     </HBox>
 
+                    <VBox spacing="8" HBox.hgrow="ALWAYS">
+                        <Label text="Confirm new password" styleClass="field-label"/>
+                        <PasswordField fx:id="confirmNewPasswordField" styleClass="auth-field" promptText="Retapez le nouveau mot de passe"/>
+                        <Label fx:id="confirmPasswordError" text="" styleClass="error-label" visible="false" managed="false"/>
+                    </VBox>
+
                     <Button text="Save changes" onAction="#handleSave" styleClass="btn-primary" maxWidth="Infinity" prefHeight="52"/>
                 </VBox>
 

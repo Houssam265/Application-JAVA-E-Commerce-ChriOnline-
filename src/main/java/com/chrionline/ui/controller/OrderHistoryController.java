@@ -5,6 +5,7 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.SceneManager;
+import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.notifications.AppNotification;
 import com.chrionline.ui.notifications.NotificationCenter;
 import javafx.animation.*;
@@ -20,6 +21,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.Scene;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -53,6 +55,20 @@ public class OrderHistoryController {
     @FXML private VBox timelineBox;
 
     private final List<JSONObject> allOrders = new ArrayList<>();
+
+    private Scene getSceneOrNull() {
+        if (cardsContainer != null && cardsContainer.getScene() != null) return cardsContainer.getScene();
+        if (drawerPanel != null && drawerPanel.getScene() != null) return drawerPanel.getScene();
+        return null;
+    }
+
+    private void handleTcpFailure(Throwable cause, String bannerMessage, Runnable retry) {
+        Scene sc = getSceneOrNull();
+        // Server unavailable: ONLY top banner (no dialog, no inline label).
+        if (sc != null) {
+            ErrorHandler.showServerUnavailableBanner(sc, retry);
+        }
+    }
 
     @FXML
     public void initialize() {
@@ -183,7 +199,13 @@ public class OrderHistoryController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                showToast("Erreur", r.getMessage().isBlank() ? "Impossible de charger les commandes." : r.getMessage());
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                String titleMsg = msg.isBlank() ? "Impossible de charger les commandes." : msg;
+                ErrorHandler.showErrorDialog("Erreur", titleMsg);
                 return;
             }
             allOrders.clear();
@@ -194,7 +216,7 @@ public class OrderHistoryController {
             }
             rebuildCards();
         });
-        t.setOnFailed(e -> showToast("Erreur", "Erreur réseau lors du chargement des commandes."));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::loadOrders));
         runTask(t);
     }
 
@@ -274,7 +296,13 @@ public class OrderHistoryController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                showToast("Erreur", r.getMessage().isBlank() ? "Impossible de charger le détail." : r.getMessage());
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                String titleMsg = msg.isBlank() ? "Impossible de charger le détail." : msg;
+                ErrorHandler.showErrorDialog("Erreur", titleMsg);
                 return;
             }
             JSONObject payload = r.getPayloadAsJsonObject();
@@ -285,7 +313,7 @@ public class OrderHistoryController {
             }
             showDetails(orderId, payload, order);
         });
-        t.setOnFailed(e -> showToast("Erreur", "Erreur réseau détail commande."));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> openDetails(orderId)));
         runTask(t);
     }
 

@@ -29,19 +29,19 @@
         <TabPane fx:id="tabPane" tabClosingPolicy="UNAVAILABLE" styleClass="tab-premium" VBox.vgrow="ALWAYS">
             <tabs>
                 <Tab text="Produits">
-                    <BorderPane>
-                        <center>
-                            <TableView fx:id="productsTable" styleClass="table-premium" prefHeight="360">
-                                <columns>
-                                    <TableColumn fx:id="colProdId" text="ID" prefWidth="70"/>
-                                    <TableColumn fx:id="colProdName" text="Nom" prefWidth="220"/>
-                                    <TableColumn fx:id="colProdCategory" text="Cat." prefWidth="90"/>
-                                    <TableColumn fx:id="colProdPrice" text="Prix" prefWidth="110"/>
-                                    <TableColumn fx:id="colProdStock" text="Stock" prefWidth="90"/>
-                                </columns>
-                            </TableView>
-                        </center>
-                        <bottom>
+                    <VBox spacing="10" VBox.vgrow="ALWAYS">
+                        <TableView fx:id="productsTable" styleClass="table-premium" minHeight="350" VBox.vgrow="ALWAYS">
+                            <columns>
+                                <TableColumn fx:id="colProdId" text="ID" prefWidth="70"/>
+                                <TableColumn fx:id="colProdName" text="Nom" prefWidth="220"/>
+                                <TableColumn fx:id="colProdCategory" text="Cat." prefWidth="90"/>
+                                <TableColumn fx:id="colProdPrice" text="Prix" prefWidth="110"/>
+                                <TableColumn fx:id="colProdStock" text="Stock" prefWidth="90"/>
+                            </columns>
+                        </TableView>
+
+                        <!-- Scroll le formulaire pour ne pas “écraser” la table -->
+                        <ScrollPane fitToWidth="true" VBox.vgrow="NEVER" prefViewportHeight="260">
                             <VBox spacing="10">
                                 <Separator/>
                                 <HBox spacing="10">
@@ -69,8 +69,8 @@
                                     <Button text="Supprimer" onAction="#handleDeleteProduct" styleClass="btn-secondary"/>
                                 </HBox>
                             </VBox>
-                        </bottom>
-                    </BorderPane>
+                        </ScrollPane>
+                    </VBox>
                 </Tab>
 
                 <Tab text="Commandes">

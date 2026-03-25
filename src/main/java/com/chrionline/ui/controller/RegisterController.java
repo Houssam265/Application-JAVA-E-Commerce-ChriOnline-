@@ -5,6 +5,7 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
+import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
@@ -48,14 +49,19 @@ public class RegisterController {
 
     @FXML
     public void initialize() {
-        // Efface l'erreur d'un champ quand l'utilisateur le sélectionne
-        usernameField.focusedProperty().addListener((obs, o, n) -> { if (n) hideError(usernameError); });
-        emailField.focusedProperty().addListener((obs, o, n) -> { if (n) hideError(emailError); });
-        passwordField.focusedProperty().addListener((obs, o, n) -> { if (n) hideError(passwordError); });
-        confirmPasswordField.focusedProperty().addListener((obs, o, n) -> { if (n) hideError(confirmPasswordError); });
+        usernameField.textProperty().addListener((obs, ov, nv) -> { ErrorHandler.clearFieldError(usernameError); ErrorHandler.clearInlineError(usernameField); updateRegisterButtonState(); });
+        emailField.textProperty().addListener((obs, ov, nv) -> { ErrorHandler.clearFieldError(emailError); ErrorHandler.clearInlineError(emailField); updateRegisterButtonState(); });
+        passwordField.textProperty().addListener((obs, ov, nv) -> { ErrorHandler.clearFieldError(passwordError); ErrorHandler.clearInlineError(passwordField); updateRegisterButtonState(); });
+        confirmPasswordField.textProperty().addListener((obs, ov, nv) -> { ErrorHandler.clearFieldError(confirmPasswordError); ErrorHandler.clearInlineError(confirmPasswordField); updateRegisterButtonState(); });
+
+        usernameField.focusedProperty().addListener((obs, o, focused) -> { if (!focused) validateUsernameField(); });
+        emailField.focusedProperty().addListener((obs, o, focused) -> { if (!focused) validateEmailField(); });
+        passwordField.focusedProperty().addListener((obs, o, focused) -> { if (!focused) validatePasswordField(); });
+        confirmPasswordField.focusedProperty().addListener((obs, o, focused) -> { if (!focused) validateConfirmPasswordField(); });
 
         // Entrée depuis le dernier champ déclenche l'inscription
         confirmPasswordField.setOnAction(e -> handleRegister());
+        updateRegisterButtonState();
     }
 
     // ── Gestionnaires d'événements ────────────────────────────────────────────
@@ -66,53 +72,19 @@ public class RegisterController {
     @FXML
     private void handleRegister() {
         // ① Réinitialise toutes les erreurs
-        hideError(usernameError);
-        hideError(emailError);
-        hideError(passwordError);
-        hideError(confirmPasswordError);
-        hideError(globalError);
+        ErrorHandler.clearFieldError(usernameError);
+        ErrorHandler.clearFieldError(emailError);
+        ErrorHandler.clearFieldError(passwordError);
+        ErrorHandler.clearFieldError(confirmPasswordError);
+        ErrorHandler.clearFieldError(globalError);
         hideSuccess();
 
         String username        = usernameField.getText().trim();
         String email           = emailField.getText().trim();
         String password        = passwordField.getText();
-        String confirmPassword = confirmPasswordField.getText();
 
         // ② Validation locale complète
-        boolean valid = true;
-
-        if (username.isEmpty()) {
-            showError(usernameError, "Le nom d'utilisateur est requis.");
-            valid = false;
-        } else if (!username.matches(USERNAME_REGEX)) {
-            showError(usernameError, "3 à 30 caractères : lettres, chiffres, underscore uniquement.");
-            valid = false;
-        }
-
-        if (email.isEmpty()) {
-            showError(emailError, "L'adresse email est requise.");
-            valid = false;
-        } else if (!email.matches(EMAIL_REGEX)) {
-            showError(emailError, "Format d'email invalide (ex: user@email.com).");
-            valid = false;
-        }
-
-        if (password.isEmpty()) {
-            showError(passwordError, "Le mot de passe est requis.");
-            valid = false;
-        } else if (password.length() < MIN_PASSWORD) {
-            showError(passwordError, "Le mot de passe doit contenir au moins 8 caractères.");
-            valid = false;
-        }
-
-        if (confirmPassword.isEmpty()) {
-            showError(confirmPasswordError, "Veuillez confirmer votre mot de passe.");
-            valid = false;
-        } else if (!password.equals(confirmPassword)) {
-            showError(confirmPasswordError, "Les mots de passe ne correspondent pas.");
-            valid = false;
-        }
-
+        boolean valid = validateUsernameField() & validateEmailField() & validatePasswordField() & validateConfirmPasswordField();
         if (!valid) return;
 
         // ③ Envoi TCP dans un thread séparé
@@ -173,18 +145,35 @@ public class RegisterController {
 
             } else {
                 // ⑤ Erreur renvoyée par le serveur (ex: email déjà utilisé)
-                showError(globalError, response.getMessage().isEmpty()
-                        ? "Inscription échouée. Veuillez réessayer."
-                        : response.getMessage());
+                String msg = response.getMessage() == null ? "" : response.getMessage();
+                String lower = msg.toLowerCase();
+                if (lower.contains("username") && lower.contains("exist")) {
+                    ErrorHandler.showFieldError(usernameError, "Ce nom d'utilisateur est déjà utilisé");
+                    ErrorHandler.showInlineError(usernameField, "Username déjà utilisé");
+                } else if (lower.contains("email") && lower.contains("exist")) {
+                    ErrorHandler.showFieldError(emailError, "Cet email est déjà utilisé");
+                    ErrorHandler.showInlineError(emailField, "Email déjà utilisé");
+                } else if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    ErrorHandler.handleSessionExpired();
+                } else {
+                    ErrorHandler.showErrorDialog("Inscription échouée", msg.isBlank() ? "Inscription échouée. Veuillez réessayer." : msg);
+                }
             }
         });
 
         registerTask.setOnFailed(event -> {
             setLoading(false);
             Throwable cause = registerTask.getException();
-            showError(globalError, cause != null
-                    ? cause.getMessage()
-                    : "Une erreur réseau s'est produite.");
+            String msg = cause != null ? String.valueOf(cause.getMessage()) : "Une erreur réseau s'est produite.";
+            String lower = msg.toLowerCase();
+            if (lower.contains("timeout") || lower.contains("timed out")) {
+                ErrorHandler.showErrorDialog("Timeout", "La requête a expiré. Vérifiez votre connexion.");
+            } else {
+                ErrorHandler.showErrorDialog("Serveur indisponible", "Serveur indisponible. Vérifiez votre connexion.");
+            }
+            if (usernameField.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(usernameField.getScene(), this::handleRegister);
+            }
         });
 
         Thread thread = new Thread(registerTask);
@@ -199,18 +188,6 @@ public class RegisterController {
     }
 
     // ── Utilitaires privés ────────────────────────────────────────────────────
-
-    private void showError(Label label, String message) {
-        label.setText(message);
-        label.setVisible(true);
-        label.setManaged(true);
-    }
-
-    private void hideError(Label label) {
-        label.setText("");
-        label.setVisible(false);
-        label.setManaged(false);
-    }
 
     private void showSuccess(String message) {
         successMessage.setText(message);
@@ -227,5 +204,73 @@ public class RegisterController {
         registerButton.setDisable(loading);
         loadingIndicator.setVisible(loading);
         loadingIndicator.setManaged(loading);
+    }
+
+    private void updateRegisterButtonState() {
+        boolean ready = !usernameField.getText().trim().isEmpty()
+                && !emailField.getText().trim().isEmpty()
+                && !passwordField.getText().isBlank()
+                && !confirmPasswordField.getText().isBlank();
+        if (!loadingIndicator.isVisible()) registerButton.setDisable(!ready);
+    }
+
+    private boolean validateUsernameField() {
+        String username = usernameField.getText() == null ? "" : usernameField.getText().trim();
+        if (username.isEmpty()) {
+            ErrorHandler.showFieldError(usernameError, "Ce champ est obligatoire");
+            ErrorHandler.showInlineError(usernameField, "obligatoire");
+            return false;
+        }
+        if (!username.matches(USERNAME_REGEX)) {
+            ErrorHandler.showFieldError(usernameError, "Nom invalide (3-30, lettres/chiffres/_)");
+            ErrorHandler.showInlineError(usernameField, "nom invalide");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validateEmailField() {
+        String email = emailField.getText() == null ? "" : emailField.getText().trim();
+        if (email.isEmpty()) {
+            ErrorHandler.showFieldError(emailError, "Ce champ est obligatoire");
+            ErrorHandler.showInlineError(emailField, "obligatoire");
+            return false;
+        }
+        if (!email.matches(EMAIL_REGEX)) {
+            ErrorHandler.showFieldError(emailError, "Format email invalide (ex: nom@email.com)");
+            ErrorHandler.showInlineError(emailField, "email invalide");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validatePasswordField() {
+        String password = passwordField.getText();
+        if (password == null || password.isBlank()) {
+            ErrorHandler.showFieldError(passwordError, "Ce champ est obligatoire");
+            ErrorHandler.showInlineError(passwordField, "obligatoire");
+            return false;
+        }
+        if (password.length() < MIN_PASSWORD) {
+            ErrorHandler.showFieldError(passwordError, "Mot de passe trop court (minimum 8 caractères)");
+            ErrorHandler.showInlineError(passwordField, "trop court");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validateConfirmPasswordField() {
+        String confirmPassword = confirmPasswordField.getText();
+        if (confirmPassword == null || confirmPassword.isBlank()) {
+            ErrorHandler.showFieldError(confirmPasswordError, "Ce champ est obligatoire");
+            ErrorHandler.showInlineError(confirmPasswordField, "obligatoire");
+            return false;
+        }
+        if (!confirmPassword.equals(passwordField.getText())) {
+            ErrorHandler.showFieldError(confirmPasswordError, "Les mots de passe ne correspondent pas");
+            ErrorHandler.showInlineError(confirmPasswordField, "mismatch");
+            return false;
+        }
+        return true;
     }
 }

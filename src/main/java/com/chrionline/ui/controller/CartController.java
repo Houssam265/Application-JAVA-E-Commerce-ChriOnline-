@@ -4,6 +4,7 @@ import com.chrionline.client.Client;
 import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
+import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
@@ -11,6 +12,7 @@ import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
+import javafx.scene.Scene;
 import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -73,6 +75,22 @@ public class CartController {
         rows.addListener((javafx.collections.ListChangeListener<CartRow>) c -> rebuildCartItems());
         rebuildCartItems();
         refreshCart();
+    }
+
+    private Scene getSceneOrNull() {
+        if (messageLabel != null && messageLabel.getScene() != null) return messageLabel.getScene();
+        if (checkoutButton != null && checkoutButton.getScene() != null) return checkoutButton.getScene();
+        return null;
+    }
+
+    private void handleTcpFailure(Throwable cause, String bannerMessage, Runnable retryAction) {
+        // Server unavailable: rule = ONLY top banner countdown.
+        Scene scene = getSceneOrNull();
+        if (scene != null && retryAction != null) {
+            ErrorHandler.showServerUnavailableBanner(scene, retryAction);
+        }
+        // Hide inline/global message so we never show dialog+banner+inline at once.
+        setMessage(null, false);
     }
 
     private void rebuildCartItems() {
@@ -226,14 +244,21 @@ public class CartController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Impossible de vider le panier." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    setMessage(null, false);
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Impossible de vider le panier." : msg);
+                setMessage(null, false);
                 return;
             }
             rows.clear();
             updateTotals();
             setMessage("Panier vidé.", false);
         });
-        t.setOnFailed(ev -> setMessage("Erreur réseau lors du vidage du panier.", true));
+        t.setOnFailed(ev -> handleTcpFailure(((Task<?>) ev.getSource()).getException(), "Erreur réseau lors du vidage du panier.", this::handleClearCart));
         runTask(t);
     }
 
@@ -257,7 +282,20 @@ public class CartController {
             checkoutButton.setDisable(false);
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Commande échouée." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    setMessage(null, false);
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                if (msg.toLowerCase().contains("stock") && msg.toLowerCase().contains("insuff")) {
+                    ErrorHandler.showWarningDialog("Stock insuffisant", msg);
+                    setMessage(null, false);
+                }
+                else {
+                    ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Commande échouée." : msg);
+                    setMessage(null, false);
+                }
                 return;
             }
             // Extract orderId from payload so Checkout can pay it.
@@ -281,7 +319,7 @@ public class CartController {
         });
         t.setOnFailed(e -> {
             checkoutButton.setDisable(false);
-            setMessage("Erreur réseau lors de la validation.", true);
+            handleTcpFailure(((Task<?>) e.getSource()).getException(), "Erreur serveur — Nouvelle tentative dans 10s...", this::handleCheckout);
         });
         runTask(t);
     }
@@ -299,13 +337,20 @@ public class CartController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Impossible de charger le panier." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    setMessage(null, false);
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Impossible de charger le panier." : msg);
+                setMessage(null, false);
                 return;
             }
             rows.setAll(parseCartRows(r));
             updateTotals();
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors du chargement du panier.", true));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::refreshCart));
         runTask(t);
     }
 
@@ -343,13 +388,20 @@ public class CartController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Suppression impossible." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    setMessage(null, false);
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Suppression impossible." : msg);
+                setMessage(null, false);
                 return;
             }
             rows.removeIf(x -> x.getCartItemId() == cartItemId);
             updateTotals();
         });
-        t.setOnFailed(e -> setMessage("Erreur réseau lors de la suppression.", true));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> removeItem(cartItemId)));
         runTask(t);
     }
 
@@ -367,13 +419,19 @@ public class CartController {
         t.setOnSucceeded(e -> {
             Response r = t.getValue();
             if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Quantité non mise à jour côté serveur." : r.getMessage(), true);
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    setMessage(null, false);
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                ErrorHandler.showErrorDialog("Erreur", msg.isBlank() ? "Quantité non mise à jour côté serveur." : msg);
+                setMessage(null, false);
                 refreshCart();
             }
         });
         t.setOnFailed(e -> {
-            setMessage("Erreur réseau lors de la mise à jour de quantité.", true);
-            refreshCart();
+            handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> updateQuantityOnServer(cartItemId, newQty));
         });
         runTask(t);
     }
