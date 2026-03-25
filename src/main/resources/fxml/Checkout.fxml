@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<BorderPane xmlns="http://javafx.com/javafx/17"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.chrionline.ui.controller.CheckoutController"
+            styleClass="root-pane">
+
+    <!-- ── Top bar ─────────────────────────────────────────────────── -->
+    <top>
+        <HBox alignment="CENTER_LEFT" spacing="12" style="-fx-padding: 24px 28px 10px 28px;">
+            <Button text="← Back" onAction="#handleBack" styleClass="btn-outline"/>
+            <Label text="Checkout" styleClass="cart-page-title"/>
+            <Region HBox.hgrow="ALWAYS"/>
+        </HBox>
+    </top>
+
+    <!-- ── Center content ──────────────────────────────────────────── -->
+    <center>
+        <HBox spacing="32" alignment="TOP_LEFT" style="-fx-padding: 18px 48px 40px 48px;">
+
+            <!-- Left column: Order Summary (items from cart) -->
+            <VBox spacing="0" HBox.hgrow="ALWAYS">
+                <Label text="Order Summary" styleClass="cart-summary-title" style="-fx-padding: 0 0 16 0;"/>
+                <ScrollPane fitToWidth="true" styleClass="cart-scroll" VBox.vgrow="ALWAYS" minViewportHeight="380">
+                    <VBox fx:id="summaryContainer" spacing="12" styleClass="cart-items-column">
+                        <padding>
+                            <Insets bottom="8"/>
+                        </padding>
+                    </VBox>
+                </ScrollPane>
+            </VBox>
+
+            <!-- Right column: Payment form + totals -->
+            <VBox styleClass="cart-order-summary" prefWidth="380" minWidth="340" spacing="0">
+                <padding>
+                    <Insets top="24" right="24" bottom="24" left="24"/>
+                </padding>
+
+                <Label text="Payment Details" styleClass="cart-summary-title"/>
+                <Region prefHeight="20"/>
+
+                <!-- Card Holder -->
+                <Label text="Cardholder Name" styleClass="field-label"/>
+                <Region prefHeight="6"/>
+                <TextField fx:id="cardHolderField" promptText="Full name on card" styleClass="auth-field"
+                           style="-fx-pref-height: 44px; -fx-padding: 0 16px;"/>
+                <Region prefHeight="14"/>
+
+                <!-- Card Number -->
+                <Label text="Card Number" styleClass="field-label"/>
+                <Region prefHeight="6"/>
+                <TextField fx:id="cardNumberField" promptText="1234 5678 9012 3456" styleClass="auth-field"
+                           style="-fx-pref-height: 44px; -fx-padding: 0 16px;"/>
+                <Region prefHeight="14"/>
+
+                <!-- Expiry + CVV side by side -->
+                <HBox spacing="12">
+                    <VBox HBox.hgrow="ALWAYS">
+                        <Label text="Expiry (MM/YY)" styleClass="field-label"/>
+                        <Region prefHeight="6"/>
+                        <TextField fx:id="expiryField" promptText="MM/YY" styleClass="auth-field"
+                                   style="-fx-pref-height: 44px; -fx-padding: 0 16px;"/>
+                    </VBox>
+                    <VBox HBox.hgrow="ALWAYS">
+                        <Label text="CVV" styleClass="field-label"/>
+                        <Region prefHeight="6"/>
+                        <TextField fx:id="cvvField" promptText="123" styleClass="auth-field"
+                                   style="-fx-pref-height: 44px; -fx-padding: 0 16px;"/>
+                    </VBox>
+                </HBox>
+
+                <Separator styleClass="cart-summary-sep"/>
+
+                <!-- Totals -->
+                <HBox alignment="CENTER_LEFT">
+                    <Label text="Subtotal" styleClass="cart-summary-label"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="subtotalLabel" text="0.00 Dhs" styleClass="cart-summary-value"/>
+                </HBox>
+                <Region prefHeight="10"/>
+                <HBox alignment="CENTER_LEFT">
+                    <Label text="Shipping" styleClass="cart-summary-label"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label text="Free" styleClass="cart-summary-value cart-summary-shipping"/>
+                </HBox>
+
+                <Separator styleClass="cart-summary-sep"/>
+
+                <HBox alignment="CENTER_LEFT">
+                    <Label text="Total" styleClass="cart-summary-total-label"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="totalLabel" text="0.00 Dhs" styleClass="cart-summary-total-amount"/>
+                </HBox>
+
+                <Region prefHeight="24"/>
+
+                <!-- Pay button -->
+                <Button fx:id="payButton" onAction="#handlePay" styleClass="btn-cart-checkout"
+                        maxWidth="Infinity" prefHeight="52">
+                    <graphic>
+                        <HBox alignment="CENTER" spacing="10">
+                            <FontIcon iconLiteral="fas-lock" iconSize="14" styleClass="ikonli-on-primary"/>
+                            <Label text="Pay Now" style="-fx-text-fill: white; -fx-font-weight: 700; -fx-font-size: 15px;"/>
+                        </HBox>
+                    </graphic>
+                </Button>
+
+                <Region prefHeight="12"/>
+
+                <!-- Status label for errors/success -->
+                <Label fx:id="statusLabel" visible="false" managed="false" wrapText="true"
+                       maxWidth="Infinity" style="-fx-padding: 0;"/>
+            </VBox>
+        </HBox>
+    </center>
+</BorderPane>

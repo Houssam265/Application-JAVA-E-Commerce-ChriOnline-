@@ -243,31 +243,7 @@ public class CartController {
             setMessage("Votre panier est vide.", true);
             return;
         }
-        checkoutButton.setDisable(true);
-        Task<Response> t = new Task<>() {
-            @Override protected Response call() throws Exception {
-                Client client = Client.getInstance();
-                client.connect();
-                JSONObject payload = new JSONObject();
-                return client.send(new Request(MessageProtocol.ACTION_PLACE_ORDER, payload, client.getSessionToken()));
-            }
-        };
-        t.setOnSucceeded(e -> {
-            checkoutButton.setDisable(false);
-            Response r = t.getValue();
-            if (!r.isSuccess()) {
-                setMessage(r.getMessage().isBlank() ? "Commande échouée." : r.getMessage(), true);
-                return;
-            }
-            setMessage("Commande validée avec succès.", false);
-            rows.clear();
-            updateTotals();
-        });
-        t.setOnFailed(e -> {
-            checkoutButton.setDisable(false);
-            setMessage("Erreur réseau lors de la validation.", true);
-        });
-        runTask(t);
+        SceneManager.showCheckout();
     }
 
     private void refreshCart() {

@@ -51,6 +51,13 @@ public class AdminController {
         final BooleanProperty suspended = new SimpleBooleanProperty();
     }
 
+    // ── Category row view-model (KAN-18) ─────────────────────────────────────
+    public static final class CategoryRow {
+        final IntegerProperty categoryId  = new SimpleIntegerProperty();
+        final StringProperty  name        = new SimpleStringProperty();
+        final StringProperty  description = new SimpleStringProperty();
+    }
+
     // ── FXML: Products ───────────────────────────────────────────────────────
     @FXML private TableView<ProductRow> productsTable;
     @FXML private TableColumn<ProductRow, Number> colProdId;
@@ -83,13 +90,23 @@ public class AdminController {
     @FXML private TableColumn<UserRow, Boolean> colSuspended;
     @FXML private TableColumn<UserRow, Void> colUserAction;
 
+    // ── FXML: Categories (KAN-18) ─────────────────────────────────────────────
+    @FXML private TableView<CategoryRow> categoriesTable;
+    @FXML private TableColumn<CategoryRow, Number> colCatId;
+    @FXML private TableColumn<CategoryRow, String> colCatName;
+    @FXML private TableColumn<CategoryRow, String> colCatDesc;
+    @FXML private TextField catNameField;
+    @FXML private TextField catDescField;
+
     @FXML private Label messageLabel;
 
-    private final ObservableList<ProductRow> productRows = FXCollections.observableArrayList();
-    private final ObservableList<OrderRow> orderRows = FXCollections.observableArrayList();
-    private final ObservableList<UserRow> userRows = FXCollections.observableArrayList();
+    private final ObservableList<ProductRow>  productRows  = FXCollections.observableArrayList();
+    private final ObservableList<OrderRow>    orderRows    = FXCollections.observableArrayList();
+    private final ObservableList<UserRow>     userRows     = FXCollections.observableArrayList();
+    private final ObservableList<CategoryRow> categoryRows = FXCollections.observableArrayList();
 
-    private Integer editingProductId = null;
+    private Integer editingProductId  = null;
+    private Integer editingCategoryId = null;
 
     @FXML
     public void initialize() {
@@ -107,10 +124,12 @@ public class AdminController {
         initProductsTable();
         initOrdersTable();
         initUsersTable();
+        initCategoriesTable();
 
         refreshProducts();
         refreshOrders();
         refreshUsers();
+        refreshCategories();
     }
 
     @FXML
@@ -477,6 +496,149 @@ public class AdminController {
         });
         t.setOnFailed(e -> setMessage("Erreur réseau lors de l'action utilisateur.", true));
         runTask(t);
+    }
+
+    // ── Categories tab (KAN-18) ───────────────────────────────────────────────
+
+    private void initCategoriesTable() {
+        categoriesTable.setItems(categoryRows);
+        colCatId.setCellValueFactory(cd -> cd.getValue().categoryId);
+        colCatName.setCellValueFactory(cd -> cd.getValue().name);
+        colCatDesc.setCellValueFactory(cd -> cd.getValue().description);
+
+        categoriesTable.getSelectionModel().selectedItemProperty().addListener((obs, oldV, row) -> {
+            if (row == null) return;
+            editingCategoryId = row.categoryId.get();
+            catNameField.setText(row.name.get() == null ? "" : row.name.get());
+            catDescField.setText(row.description.get() == null ? "" : row.description.get());
+        });
+    }
+
+    @FXML
+    private void handleRefreshCategories() {
+        refreshCategories();
+    }
+
+    @FXML
+    private void handleNewCategory() {
+        editingCategoryId = null;
+        catNameField.clear();
+        catDescField.clear();
+        categoriesTable.getSelectionModel().clearSelection();
+    }
+
+    @FXML
+    private void handleSaveCategory() {
+        setMessage(null, false);
+        String name = catNameField.getText() == null ? "" : catNameField.getText().trim();
+        String desc = catDescField.getText() == null ? "" : catDescField.getText().trim();
+
+        if (name.isBlank()) {
+            setMessage("Le nom de la catégorie est requis.", true);
+            return;
+        }
+
+        boolean isCreate = editingCategoryId == null;
+        final Integer catId = editingCategoryId;
+
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                JSONObject payload = new JSONObject();
+                payload.put("name", name);
+                if (!desc.isBlank()) payload.put("description", desc);
+                String action;
+                if (isCreate) {
+                    action = MessageProtocol.ACTION_ADMIN_ADD_CATEGORY;
+                } else {
+                    payload.put("id", catId);
+                    action = MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY;
+                }
+                return client.send(new Request(action, payload, client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> {
+            Response r = t.getValue();
+            if (!r.isSuccess()) {
+                setMessage(r.getMessage().isBlank() ? "Enregistrement impossible." : r.getMessage(), true);
+                return;
+            }
+            setMessage(isCreate ? "Catégorie créée." : "Catégorie mise à jour.", false);
+            handleNewCategory();
+            refreshCategories();
+        });
+        t.setOnFailed(e -> setMessage("Erreur réseau lors de l'enregistrement.", true));
+        runTask(t);
+    }
+
+    @FXML
+    private void handleDeleteCategory() {
+        setMessage(null, false);
+        CategoryRow row = categoriesTable.getSelectionModel().getSelectedItem();
+        if (row == null) {
+            setMessage("Sélectionne une catégorie à supprimer.", true);
+            return;
+        }
+        int catId = row.categoryId.get();
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                JSONObject payload = new JSONObject();
+                payload.put("id", catId);
+                return client.send(new Request(
+                        MessageProtocol.ACTION_ADMIN_DELETE_CATEGORY, payload, client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> {
+            Response r = t.getValue();
+            if (!r.isSuccess()) {
+                setMessage(r.getMessage().isBlank() ? "Suppression impossible (des produits sont liés ?)." : r.getMessage(), true);
+                return;
+            }
+            setMessage("Catégorie supprimée.", false);
+            handleNewCategory();
+            refreshCategories();
+        });
+        t.setOnFailed(e -> setMessage("Erreur réseau lors de la suppression.", true));
+        runTask(t);
+    }
+
+    private void refreshCategories() {
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                return client.send(new Request(
+                        MessageProtocol.ACTION_GET_CATEGORIES, new JSONObject(), client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> {
+            Response r = t.getValue();
+            if (!r.isSuccess()) {
+                setMessage(r.getMessage().isBlank() ? "Impossible de charger les catégories." : r.getMessage(), true);
+                return;
+            }
+            categoryRows.setAll(parseCategories(r));
+        });
+        t.setOnFailed(e -> setMessage("Erreur réseau lors du chargement des catégories.", true));
+        runTask(t);
+    }
+
+    private ObservableList<CategoryRow> parseCategories(Response r) {
+        ObservableList<CategoryRow> list = FXCollections.observableArrayList();
+        Object payload = r.getPayload();
+        JSONArray arr = payload instanceof JSONArray ? (JSONArray) payload : new JSONArray(payload.toString());
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject c = arr.getJSONObject(i);
+            CategoryRow row = new CategoryRow();
+            row.categoryId.set(c.optInt("categoryId", c.optInt("category_id", 0)));
+            row.name.set(c.optString("name", ""));
+            row.description.set(c.optString("description", ""));
+            list.add(row);
+        }
+        return list;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

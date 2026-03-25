@@ -12,6 +12,7 @@ public class OrderItem {
     private int    orderItemId;
     private String orderId;       // CHAR(36) FK → orders.order_id
     private int    productId;
+    private String productName;   // transient — populated via JOIN, not a DB column
     private int    quantity;
     private double unitPrice;     // price snapshot at order time
 
@@ -48,6 +49,9 @@ public class OrderItem {
 
     public int    getProductId()          { return productId; }
     public void   setProductId(int v)     { this.productId = v; }
+
+    public String getProductName()            { return productName; }
+    public void   setProductName(String v)    { this.productName = v; }
 
     public int    getQuantity()        { return quantity; }
     public void   setQuantity(int v)   { this.quantity = v; }

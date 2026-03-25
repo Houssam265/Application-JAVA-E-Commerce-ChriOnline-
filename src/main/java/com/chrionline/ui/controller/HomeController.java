@@ -79,6 +79,11 @@ public class HomeController {
         SceneManager.showAdmin();
     }
 
+    @FXML
+    private void handleOrderHistory() {
+        SceneManager.showOrderHistory();
+    }
+
     /**
      * Filtre les produits selon le texte de recherche et la catégorie sélectionnée.
      */

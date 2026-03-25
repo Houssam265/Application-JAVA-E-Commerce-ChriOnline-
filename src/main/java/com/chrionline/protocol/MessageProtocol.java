@@ -45,4 +45,9 @@ public final class MessageProtocol {
     public static final String ACTION_ADMIN_LIST_USERS         = "ADMIN_LIST_USERS";
     public static final String ACTION_ADMIN_UPDATE_USER_ROLE   = "ADMIN_UPDATE_USER_ROLE";
     public static final String ACTION_ADMIN_SET_USER_SUSPENDED = "ADMIN_SET_USER_SUSPENDED";
+
+    // Admin — Category CRUD (KAN-18)
+    public static final String ACTION_ADMIN_ADD_CATEGORY    = "ADD_CATEGORY";
+    public static final String ACTION_ADMIN_UPDATE_CATEGORY = "UPDATE_CATEGORY";
+    public static final String ACTION_ADMIN_DELETE_CATEGORY = "DELETE_CATEGORY";
 }

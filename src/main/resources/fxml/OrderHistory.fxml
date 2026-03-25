@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane xmlns="http://javafx.com/javafx/17"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.chrionline.ui.controller.OrderHistoryController"
+            styleClass="root-pane">
+
+    <top>
+        <HBox alignment="CENTER_LEFT" spacing="12" style="-fx-padding: 24px 28px 10px 28px;">
+            <Button text="← Back" onAction="#handleBack" styleClass="btn-outline"/>
+            <Label text="My Orders" styleClass="cart-page-title"/>
+            <Region HBox.hgrow="ALWAYS"/>
+        </HBox>
+    </top>
+
+    <center>
+        <StackPane>
+            <ScrollPane fitToWidth="true" styleClass="content-scroll">
+                <VBox fx:id="orderListContainer" spacing="16">
+                    <padding>
+                        <Insets top="18" right="48" bottom="40" left="48"/>
+                    </padding>
+                </VBox>
+            </ScrollPane>
+
+            <!-- Empty / error state overlay -->
+            <Label fx:id="statusLabel"
+                   visible="false"
+                   managed="false"
+                   wrapText="true"
+                   maxWidth="Infinity"
+                   styleClass="empty-state"/>
+        </StackPane>
+    </center>
+</BorderPane>
+

@@ -230,15 +230,3 @@ CREATE TABLE server_logs (
 CREATE INDEX idx_log_user       ON server_logs(user_id);
 CREATE INDEX idx_log_created_at ON server_logs(created_at);
 
--- ─────────────────────────────────────────
---  DEFAULT ADMIN ACCOUNT
---  Password hash below = BCrypt of "admin1234"
---  Change before any real deployment.
--- ─────────────────────────────────────────
-INSERT INTO users (username, email, password_hash, role)
-VALUES (
-    'admin',
-    'admin@chrionline.ma',
-    '$2a$12$placeholderHashReplaceWithRealBCryptHash',
-    'ADMIN'
-);

@@ -217,6 +217,10 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_ADMIN_DELETE_PRODUCT:
             case MessageProtocol.ACTION_ADMIN_LIST_USERS:
             case MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED:
+            // ── Admin — Category CRUD (KAN-18) ————————————————————————————
+            case MessageProtocol.ACTION_ADMIN_ADD_CATEGORY:
+            case MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY:
+            case MessageProtocol.ACTION_ADMIN_DELETE_CATEGORY:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleAdmin(req);
 
@@ -616,6 +620,27 @@ public class ClientHandler implements Runnable {
                     if (productId == null) return Response.error("Missing product_id");
                     adminService.deleteProduct(productId);
                     return Response.ok("DELETED", null);
+                }
+                case MessageProtocol.ACTION_ADMIN_ADD_CATEGORY: {
+                    String name = getPayloadString(req, "name");
+                    Object desc = req.getPayload() != null ? req.getPayload().get("description") : null;
+                    String description = desc != null ? String.valueOf(desc) : null;
+                    return adminService.addCategory(name, description);
+                }
+                case MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY: {
+                    Integer id = req.getPayloadInt("id");
+                    if (id == null) id = req.getPayloadInt("category_id");
+                    String name = getPayloadString(req, "name");
+                    Object desc = req.getPayload() != null ? req.getPayload().get("description") : null;
+                    String description = desc != null ? String.valueOf(desc) : null;
+                    if (id == null) return Response.error("Missing id");
+                    return adminService.updateCategory(id, name, description);
+                }
+                case MessageProtocol.ACTION_ADMIN_DELETE_CATEGORY: {
+                    Integer id = req.getPayloadInt("id");
+                    if (id == null) id = req.getPayloadInt("category_id");
+                    if (id == null) return Response.error("Missing id");
+                    return adminService.deleteCategory(id);
                 }
                 case MessageProtocol.ACTION_ADMIN_LIST_USERS: {
                     return Response.ok(adminService.listUsers());
