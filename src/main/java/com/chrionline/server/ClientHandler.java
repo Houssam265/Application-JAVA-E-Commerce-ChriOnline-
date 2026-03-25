@@ -20,7 +20,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.net.InetAddress;
 import java.net.Socket;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -67,9 +69,14 @@ public class ClientHandler implements Runnable {
     private final OrderService   orderService;
     private final PaymentService paymentService;
     private final AdminService   adminService;
+    private final UDPNotificationService udpNotificationService;
 
     // ── Per-connection state ──────────────────────────────────────────────────
     private final Socket socket;
+    private final InetAddress clientAddress;
+
+    /** Token associated to the current TCP connection (revoked on disconnect). */
+    private String connectionToken;
 
     /** Output writer — kept as a field so helper methods can write responses. */
     private PrintWriter out;
@@ -89,8 +96,10 @@ public class ClientHandler implements Runnable {
                          CartService cartService,
                          OrderService orderService,
                          PaymentService paymentService,
-                         AdminService adminService) {
+                         AdminService adminService,
+                         UDPNotificationService udpNotificationService) {
         this.socket         = socket;
+        this.clientAddress  = socket.getInetAddress();
         this.authService    = authService;
         this.sessionManager = sessionManager;
         this.productService = productService;
@@ -98,6 +107,7 @@ public class ClientHandler implements Runnable {
         this.orderService   = orderService;
         this.paymentService = paymentService;
         this.adminService   = adminService;
+        this.udpNotificationService = udpNotificationService;
     }
 
     // ── Runnable ──────────────────────────────────────────────────────────────
@@ -127,10 +137,16 @@ public class ClientHandler implements Runnable {
                 LOG.info("[" + clientId + "] >> " + jsonOut);
             }
 
-        } catch (IOException e) {
+        } catch (SocketException e) {
             LOG.log(Level.INFO, "Connexion terminee avec " + clientId + ": " + e.getMessage());
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Erreur reseau avec " + clientId + ": " + e.getMessage(), e);
         } finally {
             this.out = null;
+            if (connectionToken != null) {
+                sessionManager.invalidateSession(connectionToken);
+                connectionToken = null;
+            }
             LOG.info("Client deconnecte: " + clientId);
         }
     }
@@ -232,7 +248,18 @@ public class ClientHandler implements Runnable {
      * Used as a gate at the top of every protected action handler.
      */
     private boolean requireValidToken(Request req) {
-        return sessionManager.isTokenValid(req.getToken());
+        String token = req.getToken();
+        boolean valid = sessionManager.isTokenValid(token);
+        if (valid && token != null) {
+            connectionToken = token;
+        }
+        return valid;
+    }
+
+    /** Best-effort UDP notification to the connected client. */
+    private void sendUdpNotification(String type, String message, String orderId) {
+        if (udpNotificationService == null || clientAddress == null) return;
+        udpNotificationService.sendNotification(clientAddress, type, message, orderId);
     }
 
     // ── AUTH handlers ─────────────────────────────────────────────────────────
@@ -265,6 +292,7 @@ public class ClientHandler implements Runnable {
             payload.put("role",     user.getRole().name());
 
             // token is sent as the top-level Response.token field
+            connectionToken = session.getToken();
             return new Response(true, "LOGIN_SUCCESS", payload, session.getToken());
 
         } catch (IllegalArgumentException e) {
@@ -306,6 +334,7 @@ public class ClientHandler implements Runnable {
             payload.put("email",    user.getEmail());
             payload.put("role",     user.getRole().name());
 
+            connectionToken = session.getToken();
             return new Response(true, "REGISTER_SUCCESS", payload, session.getToken());
 
         } catch (IllegalArgumentException e) {
@@ -323,6 +352,9 @@ public class ClientHandler implements Runnable {
      */
     private Response handleLogout(Request req) {
         sessionManager.invalidateSession(req.getToken());
+        if (req.getToken() != null && req.getToken().equals(connectionToken)) {
+            connectionToken = null;
+        }
         return Response.ok("LOGOUT_SUCCESS", null);
     }
 
@@ -461,7 +493,12 @@ public class ClientHandler implements Runnable {
             int userId = sessionManager.getUserFromToken(req.getToken())
                     .map(User::getUserId)
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-            return Response.ok(orderService.placeOrderFromCart(userId));
+            com.chrionline.model.Order order = orderService.placeOrderFromCart(userId);
+            sendUdpNotification(
+                    "ORDER_VALIDATED",
+                    "Commande " + order.getOrderId() + " validee.",
+                    order.getOrderId());
+            return Response.ok(order);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
@@ -500,6 +537,10 @@ public class ClientHandler implements Runnable {
                     userId, orderId, cardNumber, expiry, cvv);
 
             if (Boolean.TRUE.equals(result.get("success"))) {
+                sendUdpNotification(
+                        "PAYMENT_CONFIRMED",
+                        "Paiement confirme pour la commande " + orderId + ".",
+                        orderId);
                 return Response.ok("PAYMENT_OK", result);
             }
             String msg = result.get("message") != null ? String.valueOf(result.get("message")) : "Paiement refusé.";
@@ -555,6 +596,10 @@ public class ClientHandler implements Runnable {
                 return Response.error("Missing order_id or status");
             }
             orderService.updateOrderStatus(orderId, com.chrionline.model.OrderStatus.valueOf(status));
+            sendUdpNotification(
+                    "ORDER_STATUS_UPDATED",
+                    "Statut commande " + orderId + " -> " + status + ".",
+                    orderId);
             return Response.ok("STATUS_UPDATED", null);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());

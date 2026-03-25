@@ -79,7 +79,7 @@ public class SessionManager {
         LocalDateTime now       = LocalDateTime.now();
         LocalDateTime expiresAt = now.plusMinutes(SESSION_DURATION_MINUTES);
 
-        Session session = new Session(sessionId, user.getUserId(), token, now, expiresAt, true);
+        Session session = new Session(sessionId, user.getUserId(), user.getRole(), token, now, expiresAt, true);
 
         // 1. Persist to DB (source of truth)
         insertSessionToDb(session);
@@ -110,17 +110,20 @@ public class SessionManager {
             if (cached.isValid()) {
                 return true;
             }
-            // Session is in cache but expired/invalidated — remove it
-            activeSessions.remove(token);
+            // Session is in cache but expired/invalidated — revoke it
+            invalidateSession(token);
             return false;
         }
 
         // ② Cache miss → check DB
         Optional<Session> fromDb = findSessionInDb(token);
-        if (fromDb.isPresent() && fromDb.get().isValid()) {
-            // Reload into cache
-            activeSessions.put(token, fromDb.get());
-            return true;
+        if (fromDb.isPresent()) {
+            if (fromDb.get().isValid()) {
+                // Reload into cache
+                activeSessions.put(token, fromDb.get());
+                return true;
+            }
+            invalidateSession(token);
         }
 
         return false;
@@ -140,14 +143,21 @@ public class SessionManager {
         // ① HashMap first
         Session cached = activeSessions.get(token);
         if (cached != null) {
-            return cached.isValid() ? Optional.of(cached) : Optional.empty();
+            if (cached.isValid()) {
+                return Optional.of(cached);
+            }
+            invalidateSession(token);
+            return Optional.empty();
         }
 
         // ② Cache miss → DB
         Optional<Session> fromDb = findSessionInDb(token);
-        if (fromDb.isPresent() && fromDb.get().isValid()) {
-            activeSessions.put(token, fromDb.get());
-            return fromDb;
+        if (fromDb.isPresent()) {
+            if (fromDb.get().isValid()) {
+                activeSessions.put(token, fromDb.get());
+                return fromDb;
+            }
+            invalidateSession(token);
         }
         return Optional.empty();
     }
@@ -269,6 +279,7 @@ public class SessionManager {
                 s.setExpiresAt(expiresAt != null ? expiresAt.toLocalDateTime() : null);
 
                 s.setActive(rs.getBoolean("is_active"));
+                userDAO.findById(s.getUserId()).ifPresent(user -> s.setRole(user.getRole()));
                 return Optional.of(s);
             }
         } catch (SQLException e) {
