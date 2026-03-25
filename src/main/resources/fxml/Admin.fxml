@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.*?>
 
 <VBox xmlns="http://javafx.com/javafx/17"
@@ -50,7 +51,16 @@
                                 <HBox spacing="10">
                                     <TextField fx:id="prodPriceField" promptText="Prix" styleClass="auth-field" prefWidth="160"/>
                                     <TextField fx:id="prodStockField" promptText="Stock" styleClass="auth-field" prefWidth="160"/>
-                                    <TextField fx:id="prodImageField" promptText="Image URL (optionnel)" styleClass="auth-field" HBox.hgrow="ALWAYS"/>
+                                    <VBox spacing="8" alignment="CENTER_LEFT" prefWidth="260">
+                                        <HBox spacing="10" alignment="CENTER_LEFT">
+                                            <Button text="Choisir l'image" onAction="#handleChooseProductImage" styleClass="btn-secondary"/>
+                                            <Label fx:id="prodImageFileNameLabel" text="Aucune sélection" style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                                        </HBox>
+                                        <StackPane prefWidth="260" prefHeight="92" style="-fx-background-color: #f8fafc; -fx-background-radius: 12px; -fx-border-color: #e2e8f0; -fx-border-radius: 12px; -fx-border-width: 1.5px;">
+                                            <ImageView fx:id="prodImagePreview" fitWidth="260" fitHeight="92" preserveRatio="true"/>
+                                            <Label fx:id="prodImagePreviewPlaceholderLabel" text="Aucune image" styleClass="image-placeholder"/>
+                                        </StackPane>
+                                    </VBox>
                                 </HBox>
                                 <TextArea fx:id="prodDescField" promptText="Description" prefRowCount="2" wrapText="true"/>
                                 <HBox spacing="10" alignment="CENTER_RIGHT">
@@ -66,17 +76,18 @@
                 <Tab text="Commandes">
                     <VBox spacing="12">
                         <HBox alignment="CENTER_LEFT" spacing="10">
-                            <Label text="Liste des commandes" styleClass="field-label" style="-fx-font-size: 15px;"/>
+                            <Label text="Commandes" styleClass="field-label" style="-fx-font-size: 15px;"/>
                             <Region HBox.hgrow="ALWAYS"/>
-                            <Button text="Rafraîchir" onAction="#handleRefreshOrders" styleClass="btn-outline"/>
+                            <TextField fx:id="ordersSearchField" promptText="Rechercher (Order ID)" styleClass="search-bar" prefWidth="280"/>
+                            <ComboBox fx:id="ordersStatusFilter" prefWidth="220" styleClass="combo-box-premium"/>
                         </HBox>
                         <TableView fx:id="ordersTable" styleClass="table-premium" prefHeight="360">
                             <columns>
                                 <TableColumn fx:id="colOrderId" text="Order ID" prefWidth="230"/>
-                                <TableColumn fx:id="colOrderUser" text="User" prefWidth="80"/>
+                                <TableColumn fx:id="colOrderUser" text="User" prefWidth="90"/>
                                 <TableColumn fx:id="colOrderTotal" text="Total" prefWidth="110"/>
                                 <TableColumn fx:id="colOrderStatus" text="Statut" prefWidth="140"/>
-                                <TableColumn fx:id="colOrderAction" text="" prefWidth="150"/>
+                                <TableColumn fx:id="colOrderAction" text="" prefWidth="170"/>
                             </columns>
                         </TableView>
                     </VBox>
@@ -87,7 +98,9 @@
                         <HBox alignment="CENTER_LEFT" spacing="10">
                             <Label text="Liste des utilisateurs" styleClass="field-label" style="-fx-font-size: 15px;"/>
                             <Region HBox.hgrow="ALWAYS"/>
-                            <Button text="Rafraîchir" onAction="#handleRefreshUsers" styleClass="btn-outline"/>
+                            <TextField fx:id="usersSearchField" promptText="Rechercher (username/email)" styleClass="search-bar" prefWidth="320"/>
+                            <ComboBox fx:id="usersRoleFilter" prefWidth="170" styleClass="combo-box-premium"/>
+                            <ComboBox fx:id="usersSuspendedFilter" prefWidth="160" styleClass="combo-box-premium"/>
                         </HBox>
                         <TableView fx:id="usersTable" styleClass="table-premium" prefHeight="360">
                             <columns>

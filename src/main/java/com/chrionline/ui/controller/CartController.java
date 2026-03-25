@@ -121,7 +121,8 @@ public class CartController {
         }
         if (url != null && !url.isBlank() && !"null".equalsIgnoreCase(url)) {
             try {
-                Image im = new Image(url, true);
+                String normalized = normalizeImageUrlForLocalFiles(url);
+                Image im = new Image(normalized, true);
                 imgView.setImage(im);
                 imgPh.setVisible(false);
                 imgPh.setManaged(false);
@@ -259,9 +260,24 @@ public class CartController {
                 setMessage(r.getMessage().isBlank() ? "Commande échouée." : r.getMessage(), true);
                 return;
             }
-            setMessage("Commande validée avec succès.", false);
+            // Extract orderId from payload so Checkout can pay it.
+            try {
+                JSONObject payload = r.getPayloadAsJsonObject();
+                String orderId = payload.optString("orderId", payload.optString("order_id", ""));
+                if (orderId.isBlank() && payload.has("order") && !payload.isNull("order")) {
+                    Object orderObj = payload.get("order");
+                    JSONObject orderJson = orderObj instanceof JSONObject ? (JSONObject) orderObj : new JSONObject(orderObj.toString());
+                    orderId = orderJson.optString("orderId", orderJson.optString("order_id", ""));
+                }
+                if (!orderId.isBlank()) {
+                    com.chrionline.ui.ClientSession.getInstance().setCurrentOrderId(orderId);
+                }
+            } catch (Exception ignored) {}
+
+            setMessage("Commande créée. Redirection vers le paiement…", false);
             rows.clear();
             updateTotals();
+            javafx.application.Platform.runLater(com.chrionline.ui.SceneManager::showCheckout);
         });
         t.setOnFailed(e -> {
             checkoutButton.setDisable(false);
@@ -383,6 +399,15 @@ public class CartController {
         if (checkoutButton != null) {
             checkoutButton.setDisable(rows.isEmpty());
         }
+    }
+
+    private static String normalizeImageUrlForLocalFiles(String url) {
+        if (url == null) return null;
+        String u = url.trim();
+        if (u.isBlank() || "null".equalsIgnoreCase(u)) return null;
+        String lower = u.toLowerCase(java.util.Locale.US);
+        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("file:")) return u;
+        return new java.io.File(u).toURI().toString();
     }
 
     private void setMessage(String msg, boolean error) {

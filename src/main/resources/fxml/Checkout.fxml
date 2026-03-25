@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.geometry.Pos?>
+<?import javafx.scene.canvas.Canvas?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<StackPane xmlns="http://javafx.com/javafx/17"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.chrionline.ui.controller.CheckoutController"
+           styleClass="root-pane">
+
+    <!-- Main layout -->
+    <VBox spacing="0" StackPane.alignment="TOP_LEFT">
+        <!-- NAVBAR -->
+        <HBox alignment="CENTER" styleClass="navbar" prefHeight="72">
+            <HBox alignment="CENTER_LEFT" spacing="18" maxWidth="1200" HBox.hgrow="ALWAYS" style="-fx-padding: 0 40px;">
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="C" styleClass="logo-icon"/>
+                    <Label text="ChriOnline" styleClass="brand-title-small"/>
+                </HBox>
+                <Region HBox.hgrow="ALWAYS"/>
+
+                <HBox alignment="CENTER" spacing="22">
+                    <Button fx:id="navHomeBtn" text="Accueil" onAction="#goHome" styleClass="nav-pill"/>
+                    <Button fx:id="navCartBtn" text="Panier" onAction="#goCart" styleClass="nav-pill"/>
+                    <Button fx:id="navProfileBtn" text="Profil" onAction="#goProfile" styleClass="nav-pill"/>
+                    <Button fx:id="navOrdersBtn" text="Commandes" onAction="#goOrders" styleClass="nav-pill"/>
+                </HBox>
+
+                <Region HBox.hgrow="ALWAYS"/>
+
+                <HBox alignment="CENTER_RIGHT" spacing="12" styleClass="nav-actions">
+                    <Button fx:id="bellButton" onAction="#toggleNotifications" styleClass="nav-pill nav-pill-icon">
+                        <graphic>
+                            <StackPane>
+                                <FontIcon iconLiteral="fas-bell" iconSize="16" styleClass="ikonli-muted"/>
+                                <Label fx:id="unreadBadge" text="0"
+                                       visible="false" managed="false"
+                                       styleClass="badge-unread"
+                                       StackPane.alignment="TOP_RIGHT" />
+                            </StackPane>
+                        </graphic>
+                    </Button>
+                </HBox>
+            </HBox>
+        </HBox>
+
+        <!-- CONTENT -->
+        <VBox maxWidth="1200" spacing="18" style="-fx-padding: 28px 40px 40px 40px;" VBox.vgrow="ALWAYS" alignment="TOP_CENTER">
+            <HBox maxWidth="1200" spacing="22" alignment="TOP_LEFT">
+                <!-- LEFT: Order summary -->
+                <VBox styleClass="auth-card" spacing="14" HBox.hgrow="ALWAYS">
+                    <padding><Insets top="22" right="22" bottom="22" left="22"/></padding>
+
+                    <HBox alignment="CENTER_LEFT" spacing="10">
+                        <FontIcon iconLiteral="fas-receipt" iconSize="18" styleClass="ikonli-accent"/>
+                        <Label text="Order Summary" styleClass="section-title"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="orderIdLabel" text="Order —" style="-fx-text-fill: #64748b; -fx-font-weight: 700;"/>
+                    </HBox>
+
+                    <ListView fx:id="itemsList" prefHeight="360" styleClass="table-premium"/>
+
+                    <Separator/>
+
+                    <VBox spacing="10">
+                        <HBox>
+                            <Label text="Subtotal" styleClass="cart-summary-label"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="subtotalLabel" text="0.00 Dhs" styleClass="cart-summary-value"/>
+                        </HBox>
+                        <HBox>
+                            <Label text="Taxes (10%)" styleClass="cart-summary-label"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="taxLabel" text="0.00 Dhs" styleClass="cart-summary-value"/>
+                        </HBox>
+                        <Separator/>
+                        <HBox>
+                            <Label text="Total" styleClass="cart-summary-total-label"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="totalLabel" text="0.00 Dhs" styleClass="cart-summary-total-amount"/>
+                        </HBox>
+                    </VBox>
+                </VBox>
+
+                <!-- RIGHT: Payment form -->
+                <VBox styleClass="auth-card" spacing="14" prefWidth="420" minWidth="380">
+                    <padding><Insets top="22" right="22" bottom="22" left="22"/></padding>
+
+                    <HBox alignment="CENTER_LEFT" spacing="10">
+                        <FontIcon iconLiteral="fas-credit-card" iconSize="18" styleClass="ikonli-accent"/>
+                        <Label text="Payment" styleClass="section-title"/>
+                    </HBox>
+
+                    <VBox spacing="8">
+                        <Label text="Card number" styleClass="field-label"/>
+                        <StackPane alignment="CENTER_RIGHT">
+                            <TextField fx:id="cardNumberField" promptText="1234 5678 9012 3456" styleClass="auth-field" onKeyReleased="#handleCardNumberKeyTyped" style="-fx-padding: 0 96px 0 16px;"/>
+                            <StackPane fx:id="cardBrandContainer" alignment="CENTER" maxWidth="40" maxHeight="25" prefWidth="40" prefHeight="25" style="-fx-background-color: transparent; -fx-padding: 0 10px 0 0;" StackPane.alignment="CENTER_RIGHT">
+                                <Canvas fx:id="cardBrandCanvas" width="40" height="25"/>
+                            </StackPane>
+                        </StackPane>
+                        <Label fx:id="cardBrandLabel" text="Carte bancaire" style="-fx-text-fill: #64748b; -fx-font-size: 12px; -fx-font-weight: 600;"/>
+                        <Label fx:id="cardNumberError" text="" styleClass="error-label" visible="false" managed="false"/>
+                    </VBox>
+
+                    <HBox spacing="12">
+                        <VBox spacing="8" HBox.hgrow="ALWAYS">
+                            <Label text="Expiry (MM/YY)" styleClass="field-label"/>
+                            <TextField fx:id="expiryField" promptText="MM/YY" styleClass="auth-field"/>
+                            <Label fx:id="expiryError" text="" styleClass="error-label" visible="false" managed="false"/>
+                        </VBox>
+                        <VBox spacing="8" prefWidth="150">
+                            <Label text="CVV" styleClass="field-label"/>
+                            <PasswordField fx:id="cvvField" promptText="•••" styleClass="auth-field"/>
+                            <Label fx:id="cvvError" text="" styleClass="error-label" visible="false" managed="false"/>
+                        </VBox>
+                    </HBox>
+
+                    <Region prefHeight="8"/>
+
+                    <Button fx:id="payButton" onAction="#handlePay" styleClass="btn-primary" maxWidth="Infinity" prefHeight="52">
+                        <graphic>
+                            <HBox alignment="CENTER" spacing="8">
+                                <FontIcon iconLiteral="fas-lock" iconSize="14" styleClass="ikonli-on-primary"/>
+                                <Label text="Pay securely" style="-fx-text-fill: white; -fx-font-weight: 800; -fx-font-size: 15px;"/>
+                            </HBox>
+                        </graphic>
+                    </Button>
+
+                    <Label fx:id="globalMessage" text="" visible="false" managed="false" wrapText="true"/>
+                </VBox>
+            </HBox>
+        </VBox>
+    </VBox>
+
+    <!-- Toast layer (bottom-right) -->
+    <VBox fx:id="toastLayer" spacing="10" pickOnBounds="false"
+          StackPane.alignment="BOTTOM_RIGHT"
+          style="-fx-padding: 0 18px 18px 0;"/>
+
+    <StackPane fx:id="drawerScrim" visible="false" managed="false"
+               onMouseClicked="#closeNotifications"
+               style="-fx-background-color: rgba(0,0,0,0.22);"/>
+    <VBox fx:id="drawerPanel" visible="false" managed="false" spacing="10"
+          StackPane.alignment="CENTER_RIGHT"
+          style="-fx-pref-width: 360px; -fx-max-width: 360px; -fx-background-color: #ffffff; -fx-border-color: #e2e8f0; -fx-border-width: 0 0 0 1; -fx-padding: 16px;">
+        <HBox alignment="CENTER_LEFT" spacing="8">
+            <Label text="Notifications" styleClass="section-title"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Fermer" onAction="#closeNotifications" styleClass="btn-outline"/>
+        </HBox>
+        <Button text="Marquer tout comme lu" onAction="#markAllRead" styleClass="btn-outline"/>
+        <ListView fx:id="notificationsList" prefHeight="480" styleClass="table-premium"/>
+    </VBox>
+
+    <!-- Full-screen result overlay -->
+    <StackPane fx:id="resultOverlay" visible="false" managed="false"
+               style="-fx-background-color: rgba(0,0,0,0.68);">
+        <VBox fx:id="resultCard" alignment="CENTER" spacing="14"
+              style="-fx-background-color: rgba(255,255,255,0.98); -fx-background-radius: 20px; -fx-border-color: rgba(15,23,42,0.12); -fx-border-radius: 20px; -fx-padding: 28px 32px;">
+            <FontIcon fx:id="resultIcon" iconLiteral="fas-check-circle" iconSize="64" iconColor="#22c55e"/>
+            <Label fx:id="resultTitle" text="Payment successful" styleClass="section-title"/>
+            <Label fx:id="resultBody" text="" styleClass="body-text" wrapText="true" maxWidth="420"/>
+            <HBox spacing="12" alignment="CENTER">
+                <Button fx:id="invoiceButton" text="Facture PDF" onAction="#downloadInvoice" styleClass="btn-outline" prefWidth="160" visible="false" managed="false"/>
+                <Button text="Continuer" onAction="#closeResultOverlay" styleClass="btn-primary" prefWidth="220"/>
+            </HBox>
+        </VBox>
+    </StackPane>
+
+</StackPane>
+

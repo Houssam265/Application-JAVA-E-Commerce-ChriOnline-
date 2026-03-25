@@ -25,6 +25,8 @@ public final class ClientSession {
     private String username;
     private String email;
     private User.Role role;
+    /** Last order created from cart (used by Checkout screen). */
+    private String currentOrderId;
 
     private ClientSession() {}
 
@@ -33,6 +35,7 @@ public final class ClientSession {
         this.username = null;
         this.email = null;
         this.role = null;
+        this.currentOrderId = null;
     }
 
     public boolean isLoggedIn() {
@@ -73,6 +76,14 @@ public final class ClientSession {
 
     public void setRole(User.Role role) {
         this.role = role;
+    }
+
+    public String getCurrentOrderId() {
+        return currentOrderId;
+    }
+
+    public void setCurrentOrderId(String currentOrderId) {
+        this.currentOrderId = currentOrderId;
     }
 }
 

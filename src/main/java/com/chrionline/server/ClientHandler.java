@@ -20,13 +20,21 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.Socket;
+import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Base64;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.UUID;
 
 /**
  * Handles one TCP client connection on its own thread.
@@ -168,6 +176,12 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_LOGOUT:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleLogout(req);
+            case MessageProtocol.ACTION_UPDATE_PROFILE:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleUpdateProfile(req);
+            case MessageProtocol.ACTION_CHANGE_PASSWORD:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleChangePassword(req);
 
             // ── Catalogue (token required) ────────────────────────────────
             case MessageProtocol.ACTION_GET_PRODUCTS:
@@ -207,6 +221,9 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_GET_ORDERS:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetOrders(req);
+            case MessageProtocol.ACTION_GET_ORDER_DETAILS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetOrderDetails(req);
             case MessageProtocol.ACTION_UPDATE_ORDER_STATUS:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleUpdateOrderStatus(req);
@@ -324,6 +341,58 @@ public class ClientHandler implements Runnable {
     private Response handleLogout(Request req) {
         sessionManager.invalidateSession(req.getToken());
         return Response.ok("LOGOUT_SUCCESS", null);
+    }
+
+    private Response handleUpdateProfile(Request req) {
+        try {
+            User user = sessionManager.getUserFromToken(req.getToken())
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            String newUsername = getPayloadString(req, "username");
+            String newEmail = getPayloadString(req, "email");
+            if (newUsername == null || newUsername.isBlank()) {
+                return Response.error("Le champ 'username' est requis.");
+            }
+            if (newEmail == null || newEmail.isBlank()) {
+                return Response.error("Le champ 'email' est requis.");
+            }
+            User updated = authService.updateProfile(user.getUserId(), newUsername, newEmail);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("userId", updated.getUserId());
+            payload.put("username", updated.getUsername());
+            payload.put("email", updated.getEmail());
+            payload.put("role", updated.getRole().name());
+            return Response.ok("PROFILE_UPDATED", payload);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[PROFILE] Unexpected error: " + e.getMessage(), e);
+            String msg = e.getMessage();
+            return Response.error(msg != null && !msg.isBlank() ? msg : "Erreur serveur lors de la mise à jour du profil.");
+        }
+    }
+
+    private Response handleChangePassword(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            String oldPassword = getPayloadString(req, "old_password");
+            String newPassword = getPayloadString(req, "new_password");
+            if (oldPassword == null || oldPassword.isBlank()) {
+                return Response.error("Le champ 'old_password' est requis.");
+            }
+            if (newPassword == null || newPassword.isBlank()) {
+                return Response.error("Le champ 'new_password' est requis.");
+            }
+            authService.changePassword(userId, oldPassword, newPassword);
+            return Response.ok("PASSWORD_CHANGED", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[PROFILE] Unexpected error: " + e.getMessage(), e);
+            String msg = e.getMessage();
+            return Response.error(msg != null && !msg.isBlank() ? msg : "Erreur serveur lors du changement de mot de passe.");
+        }
     }
 
     // ── CATALOGUE handlers ────────────────────────────────────────────────────
@@ -542,6 +611,65 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private Response handleGetOrderDetails(Request req) {
+        try {
+            User user = sessionManager.getUserFromToken(req.getToken())
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            String orderId = firstNonBlank(getPayloadString(req, "order_id"), getPayloadString(req, "orderId"));
+            if (orderId == null || orderId.isBlank()) {
+                return Response.error("Missing order_id");
+            }
+
+            com.chrionline.dao.OrderDAO orderDAO = new com.chrionline.dao.OrderDAO();
+            com.chrionline.model.Order order = orderDAO.findById(orderId)
+                    .orElseThrow(() -> new IllegalArgumentException("Commande introuvable."));
+
+            // Authorization: admin can see all, client only their own orders.
+            if (!authService.isAdmin(user) && order.getUserId() != user.getUserId()) {
+                return Response.error("Accès refusé.");
+            }
+
+            // Add UI-friendly extras (shipping address + status timeline mock)
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("order", order);
+            payload.put("shippingAddress", "—"); // not stored in schema yet
+
+            java.util.List<java.util.Map<String, Object>> timeline = new java.util.ArrayList<>();
+            java.time.LocalDateTime created = order.getCreatedAt() != null ? order.getCreatedAt() : java.time.LocalDateTime.now();
+            java.time.LocalDateTime updated = order.getUpdatedAt() != null ? order.getUpdatedAt() : created;
+
+            timeline.add(step("EN_ATTENTE", created));
+            com.chrionline.model.OrderStatus st = order.getStatus();
+            if (st == com.chrionline.model.OrderStatus.VALIDATED
+                    || st == com.chrionline.model.OrderStatus.SHIPPED
+                    || st == com.chrionline.model.OrderStatus.DELIVERED) {
+                timeline.add(step("VALIDEE", updated));
+            }
+            if (st == com.chrionline.model.OrderStatus.SHIPPED || st == com.chrionline.model.OrderStatus.DELIVERED) {
+                timeline.add(step("EXPEDIEE", updated));
+            }
+            if (st == com.chrionline.model.OrderStatus.DELIVERED) {
+                timeline.add(step("LIVREE", updated));
+            }
+            payload.put("timeline", timeline);
+
+            return Response.ok("ORDER_DETAILS", payload);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
+            String msg = e.getMessage();
+            return Response.error(msg != null && !msg.isBlank() ? msg : "Erreur serveur lors du chargement du détail commande.");
+        }
+    }
+
+    private static java.util.Map<String, Object> step(String status, java.time.LocalDateTime at) {
+        java.util.Map<String, Object> s = new java.util.HashMap<>();
+        s.put("status", status);
+        s.put("at", at);
+        return s;
+    }
+
     private Response handleUpdateOrderStatus(Request req) {
         try {
             User user = sessionManager.getUserFromToken(req.getToken())
@@ -554,13 +682,39 @@ public class ClientHandler implements Runnable {
             if (orderId == null || status == null) {
                 return Response.error("Missing order_id or status");
             }
+            com.chrionline.dao.OrderDAO orderDAO = new com.chrionline.dao.OrderDAO();
+            com.chrionline.model.Order order = orderDAO.findById(orderId)
+                    .orElseThrow(() -> new IllegalArgumentException("Commande introuvable."));
             orderService.updateOrderStatus(orderId, com.chrionline.model.OrderStatus.valueOf(status));
+            sendUdpStatusNotification(order.getUserId(), orderId, status);
             return Response.ok("STATUS_UPDATED", null);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
             return Response.error("Erreur serveur lors de la mise à jour du statut.");
+        }
+    }
+
+    private void sendUdpStatusNotification(int userId, String orderId, String status) {
+        try {
+            String fr = switch (status) {
+                case "PENDING" -> "EN_ATTENTE";
+                case "VALIDATED" -> "VALIDEE";
+                case "SHIPPED" -> "EXPEDIEE";
+                case "DELIVERED" -> "LIVREE";
+                default -> status;
+            };
+            String msg = "Commande " + orderId + " mise à jour: " + fr;
+            byte[] data = msg.getBytes(StandardCharsets.UTF_8);
+            DatagramPacket packet = new DatagramPacket(
+                    data, data.length, InetAddress.getByName("127.0.0.1"), 9090);
+            try (DatagramSocket socket = new DatagramSocket()) {
+                socket.send(packet);
+            }
+            LOG.info("[UDP] Notification envoyée à userId=" + userId + " : " + msg);
+        } catch (Exception e) {
+            LOG.log(Level.INFO, "[UDP] Notification non envoyée: " + e.getMessage());
         }
     }
 
@@ -578,6 +732,8 @@ public class ClientHandler implements Runnable {
                     Integer categoryId = req.getPayloadInt("category_id");
                     String name = getPayloadString(req, "name");
                     Object desc = req.getPayload() != null ? req.getPayload().get("description") : null;
+                    Object imgBase64 = req.getPayload() != null ? req.getPayload().get("image_base64") : null;
+                    Object imgFilename = req.getPayload() != null ? req.getPayload().get("image_filename") : null;
                     Object img  = req.getPayload() != null ? req.getPayload().get("image_url") : null;
                     Object price = req.getPayload() != null ? req.getPayload().get("price") : null;
                     Object stock = req.getPayload() != null ? req.getPayload().get("stock") : null;
@@ -586,7 +742,11 @@ public class ClientHandler implements Runnable {
                     p.setCategoryId(categoryId);
                     p.setName(name);
                     p.setDescription(desc != null ? String.valueOf(desc) : "");
-                    p.setImageUrl(img == null || "null".equals(String.valueOf(img)) ? null : String.valueOf(img));
+                    if (imgBase64 != null) {
+                        p.setImageUrl(saveProductImageBase64(String.valueOf(imgBase64), String.valueOf(imgFilename)));
+                    } else {
+                        p.setImageUrl(img == null || "null".equals(String.valueOf(img)) ? null : String.valueOf(img));
+                    }
                     if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
                     if (stock instanceof Number) p.setStock(((Number) stock).intValue());
                     return Response.ok(adminService.createProduct(p));
@@ -596,6 +756,8 @@ public class ClientHandler implements Runnable {
                     Integer categoryId = req.getPayloadInt("category_id");
                     String name = getPayloadString(req, "name");
                     Object desc = req.getPayload() != null ? req.getPayload().get("description") : null;
+                    Object imgBase64 = req.getPayload() != null ? req.getPayload().get("image_base64") : null;
+                    Object imgFilename = req.getPayload() != null ? req.getPayload().get("image_filename") : null;
                     Object img  = req.getPayload() != null ? req.getPayload().get("image_url") : null;
                     Object price = req.getPayload() != null ? req.getPayload().get("price") : null;
                     Object stock = req.getPayload() != null ? req.getPayload().get("stock") : null;
@@ -605,7 +767,11 @@ public class ClientHandler implements Runnable {
                     p.setCategoryId(categoryId);
                     p.setName(name);
                     p.setDescription(desc != null ? String.valueOf(desc) : "");
-                    p.setImageUrl(img == null || "null".equals(String.valueOf(img)) ? null : String.valueOf(img));
+                    if (imgBase64 != null) {
+                        p.setImageUrl(saveProductImageBase64(String.valueOf(imgBase64), String.valueOf(imgFilename)));
+                    } else {
+                        p.setImageUrl(img == null || "null".equals(String.valueOf(img)) ? null : String.valueOf(img));
+                    }
                     if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
                     if (stock instanceof Number) p.setStock(((Number) stock).intValue());
                     adminService.updateProduct(p);
@@ -636,8 +802,55 @@ public class ClientHandler implements Runnable {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "[ADMIN] Unexpected error: " + e.getMessage(), e);
-            return Response.error("Erreur serveur admin.");
+            String msg = e.getMessage();
+            return Response.error(msg != null && !msg.isBlank() ? msg : "Erreur serveur admin.");
         }
+    }
+
+    /**
+     * Saves an uploaded base64 image in {@code uploads/images} and returns a relative
+     * path to be stored in {@code products.image_url}.
+     */
+    private String saveProductImageBase64(String base64, String originalFilename) {
+        if (base64 == null) return null;
+        String b64 = base64.trim();
+        if (b64.isBlank() || "null".equalsIgnoreCase(b64)) return null;
+
+        // Accept "data:image/png;base64,...." too (client may include prefix later).
+        int comma = b64.indexOf(',');
+        if (comma >= 0) b64 = b64.substring(comma + 1);
+
+        byte[] decoded;
+        try {
+            decoded = Base64.getDecoder().decode(b64);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Image upload invalide (base64).");
+        }
+
+        String safeName = originalFilename == null ? "image" : originalFilename;
+        safeName = safeName.replaceAll("[\\\\/]+", "_");
+        String ext = "png";
+        int dot = safeName.lastIndexOf('.');
+        if (dot >= 0 && dot < safeName.length() - 1) {
+            ext = safeName.substring(dot + 1).toLowerCase();
+        }
+
+        // Whitelist common formats
+        if (!ext.equals("png") && !ext.equals("jpg") && !ext.equals("jpeg") && !ext.equals("gif") && !ext.equals("webp")) {
+            ext = "png";
+        }
+
+        String newName = UUID.randomUUID() + "." + ext;
+        Path dir = Paths.get("uploads", "images");
+        try {
+            Files.createDirectories(dir);
+            Path out = dir.resolve(newName);
+            Files.write(out, decoded);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Impossible de sauvegarder l'image sur le serveur.");
+        }
+
+        return "uploads/images/" + newName;
     }
 
     // ── Payload extraction helpers ────────────────────────────────────────────

@@ -45,6 +45,7 @@ public class Client {
     private Socket         socket;
     private BufferedWriter writer;
     private BufferedReader reader;
+    private final Object ioLock = new Object();
 
     /** Token de session récupéré après LOGIN — null si non connecté. */
     private String sessionToken;
@@ -59,26 +60,30 @@ public class Client {
      * @throws IOException si le serveur est injoignable
      */
     public void connect() throws IOException {
-        if (isConnected()) return;
+        synchronized (ioLock) {
+            if (isConnected()) return;
 
-        socket = new Socket(HOST, PORT);
-        socket.setSoTimeout(TIMEOUT_MS);
+            socket = new Socket(HOST, PORT);
+            socket.setSoTimeout(TIMEOUT_MS);
 
-        writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"));
-        reader = new BufferedReader(new InputStreamReader(socket.getInputStream(),  "UTF-8"));
+            writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"));
+            reader = new BufferedReader(new InputStreamReader(socket.getInputStream(),  "UTF-8"));
+        }
     }
 
     /**
      * Ferme proprement la connexion TCP.
      */
     public void disconnect() {
-        sessionToken = null;
-        try {
-            if (socket != null && !socket.isClosed()) socket.close();
-        } catch (IOException ignored) {}
-        socket = null;
-        writer = null;
-        reader = null;
+        synchronized (ioLock) {
+            sessionToken = null;
+            try {
+                if (socket != null && !socket.isClosed()) socket.close();
+            } catch (IOException ignored) {}
+            socket = null;
+            writer = null;
+            reader = null;
+        }
     }
 
     /**
@@ -100,34 +105,36 @@ public class Client {
      * @throws IOException en cas de problème réseau ou timeout
      */
     public Response send(Request request) throws IOException {
-        if (!isConnected()) {
-            throw new IOException("Non connecté au serveur. Appelez connect() d'abord.");
+        synchronized (ioLock) {
+            if (!isConnected()) {
+                throw new IOException("Non connecté au serveur. Appelez connect() d'abord.");
+            }
+
+            // Envoi de la requête JSON (newline-delimited)
+            writer.write(request.toJson()); // toJson() inclut déjà '\n'
+            writer.flush();
+
+            // Lecture de la réponse ligne par ligne
+            String responseLine;
+            try {
+                responseLine = reader.readLine();
+            } catch (SocketTimeoutException e) {
+                throw new IOException("Délai d'attente dépassé — le serveur ne répond pas.", e);
+            }
+
+            if (responseLine == null) {
+                throw new IOException("Le serveur a fermé la connexion.");
+            }
+
+            Response response = Response.fromJson(responseLine);
+
+            // Mise à jour du token de session après un LOGIN réussi
+            if (response.isSuccess() && response.getToken() != null) {
+                this.sessionToken = response.getToken();
+            }
+
+            return response;
         }
-
-        // Envoi de la requête JSON (newline-delimited)
-        writer.write(request.toJson()); // toJson() inclut déjà '\n'
-        writer.flush();
-
-        // Lecture de la réponse ligne par ligne
-        String responseLine;
-        try {
-            responseLine = reader.readLine();
-        } catch (SocketTimeoutException e) {
-            throw new IOException("Délai d'attente dépassé — le serveur ne répond pas.", e);
-        }
-
-        if (responseLine == null) {
-            throw new IOException("Le serveur a fermé la connexion.");
-        }
-
-        Response response = Response.fromJson(responseLine);
-
-        // Mise à jour du token de session après un LOGIN réussi
-        if (response.isSuccess() && response.getToken() != null) {
-            this.sessionToken = response.getToken();
-        }
-
-        return response;
     }
 
     // ── Token de session ─────────────────────────────────────────────────────

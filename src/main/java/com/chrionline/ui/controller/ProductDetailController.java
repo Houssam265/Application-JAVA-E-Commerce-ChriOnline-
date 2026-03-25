@@ -57,7 +57,8 @@ public class ProductDetailController {
             boolean hasUrl = url != null && !url.isBlank() && !"null".equalsIgnoreCase(url);
             if (hasUrl) {
                 try {
-                    Image image = new Image(url, true); // background loading
+                    String normalized = normalizeImageUrlForLocalFiles(url);
+                    Image image = new Image(normalized, true); // background loading
                     productImageView.setImage(image);
                     image.progressProperty().addListener((obs, ov, nv) -> {
                         if (nv != null && nv.doubleValue() >= 1.0) {
@@ -156,6 +157,15 @@ public class ProductDetailController {
             case 3: return "Accessoires";
             default: return "Autre";
         }
+    }
+
+    private static String normalizeImageUrlForLocalFiles(String url) {
+        if (url == null) return null;
+        String u = url.trim();
+        if (u.isBlank() || "null".equalsIgnoreCase(u)) return null;
+        String lower = u.toLowerCase(java.util.Locale.US);
+        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("file:")) return u;
+        return new java.io.File(u).toURI().toString();
     }
 
     /**

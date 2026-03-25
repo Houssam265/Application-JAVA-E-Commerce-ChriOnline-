@@ -44,6 +44,18 @@ public final class SceneManager {
         loadScene("/fxml/Cart.fxml", "ChriOnline — Panier");
     }
 
+    public static void showCheckout() {
+        loadScene("/fxml/Checkout.fxml", "ChriOnline — Checkout");
+    }
+
+    public static void showOrderHistory() {
+        loadScene("/fxml/OrderHistory.fxml", "ChriOnline — Mes commandes");
+    }
+
+    public static void showProfile() {
+        loadScene("/fxml/Profile.fxml", "ChriOnline — Profil");
+    }
+
     public static void showAdmin() {
         loadScene("/fxml/Admin.fxml", "ChriOnline — Administration");
     }

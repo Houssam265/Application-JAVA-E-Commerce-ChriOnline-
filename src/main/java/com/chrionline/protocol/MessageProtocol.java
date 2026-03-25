@@ -34,6 +34,10 @@ public final class MessageProtocol {
     // Payment (KAN-7) — payload: order_id, card_number, expiry (MM/YY), cvv
     public static final String ACTION_PAYMENT = "PAYMENT";
 
+    // Profile
+    public static final String ACTION_UPDATE_PROFILE  = "UPDATE_PROFILE";
+    public static final String ACTION_CHANGE_PASSWORD = "CHANGE_PASSWORD";
+
     // Notifications
     public static final String ACTION_GET_NOTIFICATIONS       = "GET_NOTIFICATIONS";
     public static final String ACTION_MARK_NOTIFICATION_READ  = "MARK_NOTIFICATION_READ";

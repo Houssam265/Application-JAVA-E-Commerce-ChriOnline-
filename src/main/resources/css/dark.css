@@ -1,0 +1,153 @@
+/* =====================================================================
+   ChriOnline — Dark Theme Overrides (KAN-22/29/30/31)
+   Loaded AFTER style.css to override palette and components.
+   ===================================================================== */
+
+.root {
+    -accent:        #ff7a45;
+    -accent-hover:  #ff9a5a;
+    -accent-dark:   #ff5c1a;
+
+    -bg-darkest:    #070a12;
+    -bg-dark:       #0b1020;
+    -bg-card:       rgba(255,255,255,0.06);
+    -bg-card-2:     rgba(255,255,255,0.04);
+    -bg-surface:    rgba(255,255,255,0.08);
+
+    -text-primary:  #eaf0ff;
+    -text-secondary:#b6c2e2;
+    -text-muted:    #8ea1c9;
+
+    -border:        rgba(255,255,255,0.10);
+    -border-accent: rgba(255, 122, 69, 0.55);
+}
+
+.root-pane,
+.split-pane-root {
+    -fx-background-color: radial-gradient(center 20% 10%, radius 70%, rgba(255,122,69,0.20), transparent),
+                         radial-gradient(center 80% 0%, radius 70%, rgba(124,58,237,0.20), transparent),
+                         linear-gradient(to bottom right, #060915, #0b1020, #070a12);
+}
+
+.navbar {
+    -fx-background-color: rgba(10, 14, 30, 0.78);
+    -fx-border-color: transparent transparent rgba(255,255,255,0.08) transparent;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 18, 0, 0, 6);
+}
+
+.brand-title-small,
+.page-title,
+.section-title,
+.field-label,
+.body-text {
+    -fx-text-fill: -text-primary;
+}
+
+.brand-subtitle,
+.trust-subtitle,
+.footer-text,
+.nav-link {
+    -fx-text-fill: -text-secondary;
+}
+
+.auth-card {
+    -fx-background-color: rgba(255,255,255,0.06);
+    -fx-border-color: rgba(255,255,255,0.10);
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 30, 0, 0, 10);
+}
+
+.auth-field,
+.search-bar,
+.combo-box-premium,
+.text-area,
+.text-area .content {
+    -fx-background-color: rgba(255,255,255,0.06);
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: rgba(234,240,255,0.45);
+    -fx-border-color: rgba(255,255,255,0.10);
+}
+
+.auth-field:focused,
+.search-bar:focused {
+    -fx-background-color: rgba(255, 122, 69, 0.10);
+    -fx-border-color: rgba(255, 122, 69, 0.55);
+    -fx-effect: dropshadow(gaussian, rgba(255, 122, 69, 0.18), 16, 0, 0, 0);
+}
+
+.table-premium {
+    -fx-background-color: rgba(255,255,255,0.05);
+    -fx-border-color: rgba(255,255,255,0.10);
+}
+.table-premium .column-header-background {
+    -fx-background-color: rgba(255,255,255,0.04);
+    -fx-border-color: transparent transparent rgba(255,255,255,0.10) transparent;
+}
+.table-premium .column-header .label {
+    -fx-text-fill: rgba(234,240,255,0.70);
+}
+.table-premium .table-cell {
+    -fx-text-fill: rgba(234,240,255,0.85);
+}
+.table-premium .table-row-cell {
+    -fx-border-color: rgba(255,255,255,0.06) transparent transparent transparent;
+}
+.table-premium .table-row-cell:filled:selected,
+.table-premium .table-row-cell:filled:hover {
+    -fx-background-color: rgba(255, 122, 69, 0.10);
+}
+
+.btn-outline {
+    -fx-background-color: rgba(255,255,255,0.02);
+    -fx-border-color: rgba(255,255,255,0.14);
+    -fx-text-fill: rgba(234,240,255,0.88);
+}
+.btn-outline:hover {
+    -fx-border-color: rgba(255, 122, 69, 0.55);
+    -fx-background-color: rgba(255, 122, 69, 0.08);
+}
+
+.btn-secondary {
+    -fx-background-color: rgba(255,255,255,0.06);
+    -fx-border-color: rgba(255,255,255,0.12);
+    -fx-text-fill: rgba(234,240,255,0.90);
+}
+
+.global-error {
+    -fx-background-color: rgba(239, 68, 68, 0.10);
+    -fx-border-color: rgba(239, 68, 68, 0.35);
+    -fx-text-fill: #fecaca;
+}
+.success-label {
+    -fx-background-color: rgba(34, 197, 94, 0.12);
+    -fx-border-color: rgba(34, 197, 94, 0.35);
+    -fx-text-fill: #bbf7d0;
+}
+
+/* Toast + drawer */
+.toast-card {
+    -fx-background-color: rgba(10, 14, 30, 0.86);
+    -fx-background-radius: 14px;
+    -fx-border-color: rgba(255,255,255,0.12);
+    -fx-border-radius: 14px;
+    -fx-padding: 14px 16px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 20, 0, 0, 8);
+}
+.toast-title {
+    -fx-text-fill: -text-primary;
+    -fx-font-weight: 800;
+}
+.toast-body {
+    -fx-text-fill: rgba(234,240,255,0.80);
+}
+
+.drawer-scrim {
+    -fx-background-color: rgba(0,0,0,0.55);
+}
+.drawer-panel {
+    -fx-background-color: rgba(10, 14, 30, 0.92);
+    -fx-border-color: rgba(255,255,255,0.10);
+    -fx-border-width: 0 0 0 1px;
+    -fx-padding: 18px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.60), 24, 0, 0, 0);
+}
+

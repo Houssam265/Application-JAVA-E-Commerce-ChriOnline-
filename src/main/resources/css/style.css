@@ -502,6 +502,57 @@
     -fx-effect: dropshadow(gaussian, rgba(15, 23, 42, 0.08), 16, 0, 0, 2);
 }
 
+.nav-actions {
+    -fx-alignment: center-right;
+}
+
+.nav-pill {
+    -fx-background-color: rgba(148, 163, 184, 0.12);
+    -fx-background-radius: 999px;
+    -fx-border-color: rgba(148, 163, 184, 0.25);
+    -fx-border-radius: 999px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #334155;
+    -fx-font-size: 13.5px;
+    -fx-font-weight: 700;
+    -fx-pref-height: 40px;
+    -fx-padding: 0 16px;
+    -fx-cursor: hand;
+}
+
+.nav-pill:hover {
+    -fx-background-color: rgba(244, 106, 61, 0.10);
+    -fx-text-fill: #ea580c;
+    -fx-border-color: rgba(244, 106, 61, 0.35);
+}
+
+.nav-pill:pressed {
+    -fx-background-color: rgba(244, 106, 61, 0.16);
+    -fx-scale-x: 0.98;
+    -fx-scale-y: 0.98;
+}
+
+.nav-pill-active {
+    -fx-background-color: rgba(244, 106, 61, 0.14);
+    -fx-border-color: rgba(244, 106, 61, 0.55);
+    -fx-text-fill: #c2410c;
+}
+
+.nav-pill-icon {
+    -fx-padding: 0 10px;
+    -fx-min-width: 40px;
+}
+
+.badge-unread {
+    -fx-background-color: #ef4444;
+    -fx-text-fill: white;
+    -fx-font-size: 11px;
+    -fx-font-weight: 900;
+    -fx-background-radius: 999px;
+    -fx-padding: 2px 7px;
+    -fx-effect: dropshadow(gaussian, rgba(239,68,68,0.35), 10, 0, 0, 2);
+}
+
 .nav-link {
     -fx-font-size: 14px;
     -fx-text-fill: #475569;
@@ -1260,4 +1311,102 @@
     -fx-border-width: 0;
     -fx-cursor: hand;
     -fx-padding: 4px 0;
+}
+
+/* =====================================================================
+   Order status pills (ADMIN)
+   ===================================================================== */
+.order-status-pill {
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+    -fx-background-radius: 999px;
+    -fx-border-radius: 999px;
+    -fx-border-width: 1px;
+    -fx-padding: 4px 14px;
+    -fx-alignment: center;
+}
+
+.pill-pending {
+    -fx-text-fill: #b45309;
+    -fx-background-color: rgba(245, 158, 11, 0.14);
+    -fx-border-color: rgba(245, 158, 11, 0.45);
+}
+
+.pill-validated {
+    -fx-text-fill: #15803d;
+    -fx-background-color: rgba(34, 197, 94, 0.12);
+    -fx-border-color: rgba(34, 197, 94, 0.40);
+}
+
+.pill-shipped {
+    -fx-text-fill: #1d4ed8;
+    -fx-background-color: rgba(29, 78, 216, 0.12);
+    -fx-border-color: rgba(29, 78, 216, 0.40);
+}
+
+.pill-delivered {
+    -fx-text-fill: #7c3aed;
+    -fx-background-color: rgba(124, 58, 237, 0.12);
+    -fx-border-color: rgba(124, 58, 237, 0.40);
+}
+
+.pill-cancelled {
+    -fx-text-fill: #dc2626;
+    -fx-background-color: rgba(239, 68, 68, 0.10);
+    -fx-border-color: rgba(239, 68, 68, 0.35);
+}
+
+/* =====================================================================
+   Admin user badges (Utilisateurs tab)
+   ===================================================================== */
+.role-pill-client {
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+    -fx-background-radius: 999px;
+    -fx-border-radius: 999px;
+    -fx-border-width: 1px;
+    -fx-padding: 4px 14px;
+    -fx-alignment: center;
+    -fx-text-fill: #1d4ed8;
+    -fx-background-color: rgba(29, 78, 216, 0.10);
+    -fx-border-color: rgba(29, 78, 216, 0.35);
+}
+
+.role-pill-admin {
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+    -fx-background-radius: 999px;
+    -fx-border-radius: 999px;
+    -fx-border-width: 1px;
+    -fx-padding: 4px 14px;
+    -fx-alignment: center;
+    -fx-text-fill: #7c3aed;
+    -fx-background-color: rgba(124, 58, 237, 0.10);
+    -fx-border-color: rgba(124, 58, 237, 0.35);
+}
+
+.suspended-pill-yes {
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+    -fx-background-radius: 999px;
+    -fx-border-radius: 999px;
+    -fx-border-width: 1px;
+    -fx-padding: 4px 14px;
+    -fx-alignment: center;
+    -fx-text-fill: #dc2626;
+    -fx-background-color: rgba(239, 68, 68, 0.10);
+    -fx-border-color: rgba(239, 68, 68, 0.35);
+}
+
+.suspended-pill-no {
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+    -fx-background-radius: 999px;
+    -fx-border-radius: 999px;
+    -fx-border-width: 1px;
+    -fx-padding: 4px 14px;
+    -fx-alignment: center;
+    -fx-text-fill: #15803d;
+    -fx-background-color: rgba(34, 197, 94, 0.12);
+    -fx-border-color: rgba(34, 197, 94, 0.40);
 }
