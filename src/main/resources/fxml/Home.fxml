@@ -55,22 +55,7 @@
                                 </HBox>
                             </graphic>
                         </Button>
-                        <Button onAction="#handleOpenOrders" styleClass="btn-outline">
-                            <graphic>
-                                <HBox alignment="CENTER" spacing="6">
-                                    <FontIcon iconLiteral="fas-receipt" iconSize="14" styleClass="ikonli-muted"/>
-                                    <Label text="Orders" style="-fx-text-fill: #64748b; -fx-font-weight: 600;"/>
-                                </HBox>
-                            </graphic>
-                        </Button>
-                        <Button fx:id="cartButton" onAction="#handleOpenCart" styleClass="btn-outline">
-                            <graphic>
-                                <HBox alignment="CENTER" spacing="6">
-                                    <FontIcon iconLiteral="fas-shopping-cart" iconSize="14" styleClass="ikonli-muted"/>
-                                    <Label text="Cart" style="-fx-text-fill: #64748b; -fx-font-weight: 600;"/>
-                                </HBox>
-                            </graphic>
-                        </Button>
+
                     </HBox>
                 </HBox>
             </HBox>

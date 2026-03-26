@@ -226,6 +226,17 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_UPDATE_ORDER_STATUS:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleUpdateOrderStatus(req);
+            case MessageProtocol.ACTION_GET_ORDER_DETAILS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetOrderDetails(req);
+
+            // ── Profile (token required) ──────────────────────────────────
+            case MessageProtocol.ACTION_UPDATE_PROFILE:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleUpdateProfile(req);
+            case MessageProtocol.ACTION_CHANGE_PASSWORD:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleChangePassword(req);
 
             // ── Admin (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_ADMIN_CREATE_PRODUCT:
@@ -233,6 +244,9 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_ADMIN_DELETE_PRODUCT:
             case MessageProtocol.ACTION_ADMIN_LIST_USERS:
             case MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED:
+            case MessageProtocol.ACTION_ADMIN_ADD_CATEGORY:
+            case MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY:
+            case MessageProtocol.ACTION_ADMIN_DELETE_CATEGORY:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleAdmin(req);
 
@@ -609,6 +623,85 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    // ── ORDER DETAILS handler ─────────────────────────────────────────────
+
+    /**
+     * GET_ORDER_DETAILS — payload.order_id required.
+     * Returns a map with "order" and "items" keys.
+     */
+    private Response handleGetOrderDetails(Request req) {
+        String orderId = getPayloadString(req, "order_id");
+        if (orderId == null || orderId.isBlank()) {
+            return Response.error("Missing order_id");
+        }
+        try {
+            return orderService.getOrderDetails(orderId)
+                    .map(Response::ok)
+                    .orElse(Response.error("Order not found: " + orderId));
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[ORDER_DETAILS] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du chargement de la commande.");
+        }
+    }
+
+    // ── PROFILE handlers ──────────────────────────────────────────────────
+
+    /**
+     * UPDATE_PROFILE — payload: "username", "email".
+     * Returns updated username + email so the client can refresh ClientSession.
+     */
+    private Response handleUpdateProfile(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(com.chrionline.model.User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            String username = getPayloadString(req, "username");
+            String email    = getPayloadString(req, "email");
+            if (username == null || username.isBlank()) {
+                return Response.error("Le champ 'username' est requis.");
+            }
+            if (email == null || email.isBlank()) {
+                return Response.error("Le champ 'email' est requis.");
+            }
+            com.chrionline.model.User updated = authService.updateProfile(userId, username, email);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("username", updated.getUsername());
+            payload.put("email",    updated.getEmail());
+            return Response.ok("PROFILE_UPDATED", payload);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[PROFILE] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la mise à jour du profil.");
+        }
+    }
+
+    /**
+     * CHANGE_PASSWORD — payload: "old_password", "new_password".
+     */
+    private Response handleChangePassword(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(com.chrionline.model.User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            String oldPwd = getPayloadString(req, "old_password");
+            String newPwd = getPayloadString(req, "new_password");
+            if (oldPwd == null || oldPwd.isBlank()) {
+                return Response.error("Le champ 'old_password' est requis.");
+            }
+            if (newPwd == null || newPwd.isBlank()) {
+                return Response.error("Le champ 'new_password' est requis.");
+            }
+            authService.changePassword(userId, oldPwd, newPwd);
+            return Response.ok("PASSWORD_CHANGED", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[PASSWORD] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du changement de mot de passe.");
+        }
+    }
+
     private Response handleAdmin(Request req) {
         try {
             User admin = sessionManager.getUserFromToken(req.getToken())
@@ -673,6 +766,24 @@ public class ClientHandler implements Runnable {
                     if (userId == admin.getUserId()) return Response.error("Impossible de suspendre votre propre compte.");
                     adminService.setUserSuspended(userId, isSuspended);
                     return Response.ok("USER_UPDATED", null);
+                }
+                // ── Admin Category CRUD (KAN-18) ──────────────────────────
+                case MessageProtocol.ACTION_ADMIN_ADD_CATEGORY: {
+                    String name = getPayloadString(req, "name");
+                    String desc = getPayloadString(req, "description");
+                    return adminService.addCategory(name, desc);
+                }
+                case MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY: {
+                    Integer id  = req.getPayloadInt("id");
+                    String name = getPayloadString(req, "name");
+                    String desc = getPayloadString(req, "description");
+                    if (id == null || id <= 0) return Response.error("Missing id");
+                    return adminService.updateCategory(id, name, desc);
+                }
+                case MessageProtocol.ACTION_ADMIN_DELETE_CATEGORY: {
+                    Integer id = req.getPayloadInt("id");
+                    if (id == null || id <= 0) return Response.error("Missing id");
+                    return adminService.deleteCategory(id);
                 }
                 default:
                     return Response.error("Unsupported admin action");

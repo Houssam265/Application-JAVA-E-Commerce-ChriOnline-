@@ -22,6 +22,10 @@ import javafx.scene.control.*;
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.Parent;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.layout.HBox;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -126,6 +130,23 @@ public class AdminController {
     @FXML private Label messageLabel;
     @FXML private TabPane tabPane;
 
+    // ── Modal overlays (centered add forms) ────────────────────────────────
+    @FXML private VBox productFormContainer;
+    @FXML private StackPane productModalOverlay;
+    @FXML private VBox productModalFormHost;
+
+    @FXML private VBox categoryFormContainer;
+    @FXML private StackPane categoryModalOverlay;
+    @FXML private VBox categoryModalFormHost;
+
+    private Parent productFormOriginalParent;
+    private int productFormOriginalIndex = -1;
+    private Parent categoryFormOriginalParent;
+    private int categoryFormOriginalIndex = -1;
+
+    private boolean productModalOpen = false;
+    private boolean categoryModalOpen = false;
+
     private final ObservableList<ProductRow>  productRows  = FXCollections.observableArrayList();
     private final ObservableList<OrderRow>    orderRows    = FXCollections.observableArrayList();
     private final ObservableList<UserRow>     userRows     = FXCollections.observableArrayList();
@@ -170,6 +191,13 @@ public class AdminController {
         if (tabPane != null) {
             tabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldV, newV) -> {
                 setMessage(null, false);
+                int idx = tabPane.getSelectionModel().getSelectedIndex();
+                switch (idx) {
+                    case 0 -> refreshProducts();
+                    case 1 -> refreshOrders();
+                    case 2 -> refreshUsers();
+                    case 3 -> refreshCategories();
+                }
             });
         }
     }
@@ -206,9 +234,44 @@ public class AdminController {
         });
     }
 
-    @FXML
-    private void handleNewProduct() {
-        setMessage(null, false);
+    private void showProductModal() {
+        if (productModalOverlay == null || productModalFormHost == null || productFormContainer == null) return;
+        if (!productModalOpen) {
+            productFormOriginalParent = productFormContainer.getParent();
+            productFormOriginalIndex = -1;
+            if (productFormOriginalParent instanceof Pane pane) {
+                productFormOriginalIndex = pane.getChildren().indexOf(productFormContainer);
+            }
+        }
+
+        productModalFormHost.getChildren().setAll(productFormContainer);
+        productModalOverlay.setVisible(true);
+        productModalOverlay.setManaged(true);
+        productModalOpen = true;
+    }
+
+    private void hideProductModal() {
+        if (!productModalOpen) return;
+        if (productModalFormHost != null) {
+            productModalFormHost.getChildren().clear();
+        }
+
+        if (productFormOriginalParent instanceof Pane pane && productFormContainer != null) {
+            if (productFormOriginalIndex >= 0 && productFormOriginalIndex <= pane.getChildren().size()) {
+                pane.getChildren().add(productFormOriginalIndex, productFormContainer);
+            } else {
+                pane.getChildren().add(productFormContainer);
+            }
+        }
+
+        if (productModalOverlay != null) {
+            productModalOverlay.setVisible(false);
+            productModalOverlay.setManaged(false);
+        }
+        productModalOpen = false;
+    }
+
+    private void resetProductForm(boolean showModal) {
         editingProductId = null;
         editingImageUrl = null;
         selectedProductImageFile = null;
@@ -218,6 +281,7 @@ public class AdminController {
         prodPriceField.clear();
         prodStockField.clear();
         prodDescField.clear();
+
         if (prodImagePreview != null) prodImagePreview.setImage(null);
         if (prodImagePreviewPlaceholderLabel != null) {
             prodImagePreviewPlaceholderLabel.setVisible(true);
@@ -225,6 +289,19 @@ public class AdminController {
         }
         if (prodImageFileNameLabel != null) prodImageFileNameLabel.setText("Aucune sélection");
         productsTable.getSelectionModel().clearSelection();
+
+        if (showModal) showProductModal();
+    }
+
+    @FXML
+    private void handleCancelProductModal() {
+        hideProductModal();
+    }
+
+    @FXML
+    private void handleNewProduct() {
+        setMessage(null, false);
+        resetProductForm(true);
     }
 
     @FXML
@@ -332,6 +409,10 @@ public class AdminController {
             }
             setMessage(isCreate ? "Produit créé." : "Produit mis à jour.", false);
             refreshProducts();
+            if (productModalOpen) {
+                hideProductModal();
+                if (isCreate) resetProductForm(false);
+            }
         });
         t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::handleSaveProduct));
         runTask(t);
@@ -365,7 +446,10 @@ public class AdminController {
                 return;
             }
             setMessage("Produit supprimé.", false);
-            handleNewProduct();
+            if (productModalOpen) {
+                hideProductModal();
+            }
+            resetProductForm(false);
             refreshProducts();
         });
         t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::handleDeleteProduct));
@@ -897,12 +981,59 @@ public class AdminController {
         refreshCategories();
     }
 
-    @FXML
-    private void handleNewCategory() {
+    private void showCategoryModal() {
+        if (categoryModalOverlay == null || categoryModalFormHost == null || categoryFormContainer == null) return;
+        if (!categoryModalOpen) {
+            categoryFormOriginalParent = categoryFormContainer.getParent();
+            categoryFormOriginalIndex = -1;
+            if (categoryFormOriginalParent instanceof Pane pane) {
+                categoryFormOriginalIndex = pane.getChildren().indexOf(categoryFormContainer);
+            }
+        }
+
+        categoryModalFormHost.getChildren().setAll(categoryFormContainer);
+        categoryModalOverlay.setVisible(true);
+        categoryModalOverlay.setManaged(true);
+        categoryModalOpen = true;
+    }
+
+    private void hideCategoryModal() {
+        if (!categoryModalOpen) return;
+        if (categoryModalFormHost != null) {
+            categoryModalFormHost.getChildren().clear();
+        }
+
+        if (categoryFormOriginalParent instanceof Pane pane && categoryFormContainer != null) {
+            if (categoryFormOriginalIndex >= 0 && categoryFormOriginalIndex <= pane.getChildren().size()) {
+                pane.getChildren().add(categoryFormOriginalIndex, categoryFormContainer);
+            } else {
+                pane.getChildren().add(categoryFormContainer);
+            }
+        }
+
+        if (categoryModalOverlay != null) {
+            categoryModalOverlay.setVisible(false);
+            categoryModalOverlay.setManaged(false);
+        }
+        categoryModalOpen = false;
+    }
+
+    private void resetCategoryForm(boolean showModal) {
         editingCategoryId = null;
         catNameField.clear();
         catDescField.clear();
         categoriesTable.getSelectionModel().clearSelection();
+        if (showModal) showCategoryModal();
+    }
+
+    @FXML
+    private void handleCancelCategoryModal() {
+        hideCategoryModal();
+    }
+
+    @FXML
+    private void handleNewCategory() {
+        resetCategoryForm(true);
     }
 
     @FXML
@@ -943,7 +1074,10 @@ public class AdminController {
                 return;
             }
             setMessage(isCreate ? "Catégorie créée." : "Catégorie mise à jour.", false);
-            handleNewCategory();
+            if (categoryModalOpen) {
+                hideCategoryModal();
+            }
+            resetCategoryForm(false);
             refreshCategories();
         });
         t.setOnFailed(e -> setMessage("Erreur réseau lors de l'enregistrement.", true));
@@ -976,7 +1110,10 @@ public class AdminController {
                 return;
             }
             setMessage("Catégorie supprimée.", false);
-            handleNewCategory();
+            if (categoryModalOpen) {
+                hideCategoryModal();
+            }
+            resetCategoryForm(false);
             refreshCategories();
         });
         t.setOnFailed(e -> setMessage("Erreur réseau lors de la suppression.", true));

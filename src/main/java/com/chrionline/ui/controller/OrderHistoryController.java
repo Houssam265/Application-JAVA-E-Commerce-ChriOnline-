@@ -308,8 +308,11 @@ public class OrderHistoryController {
             JSONObject payload = r.getPayloadAsJsonObject();
             JSONObject order = payload.optJSONObject("order");
             if (order == null) {
-                // gson may serialize order as map-like
                 try { order = new JSONObject(payload.get("order").toString()); } catch (Exception ignored) {}
+            }
+            // Server returns the Order object directly (no "order" wrapper key)
+            if (order == null) {
+                order = payload;
             }
             showDetails(orderId, payload, order);
         });
@@ -334,7 +337,11 @@ public class OrderHistoryController {
                     int qty = it.optInt("quantity", 1);
                     double unit = it.optDouble("unitPrice", it.optDouble("unit_price", 0.0));
                     int pid = it.optInt("productId", it.optInt("product_id", 0));
-                    detailsItems.getItems().add("Produit #" + pid + " · x" + qty + " · " + String.format(Locale.US, "%.2f Dhs", unit));
+                    String pName = it.optString("productName",
+                            it.optString("product_name",
+                                    pid > 0 ? "Produit #" + pid : "Article"));
+                    detailsItems.getItems().add(
+                            pName + " · x" + qty + " · " + String.format(Locale.US, "%.2f Dhs", unit));
                 }
             } catch (Exception ignored) {
                 detailsItems.getItems().add("Items indisponibles.");

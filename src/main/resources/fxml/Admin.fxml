@@ -29,7 +29,8 @@
         <TabPane fx:id="tabPane" tabClosingPolicy="UNAVAILABLE" styleClass="tab-premium" VBox.vgrow="ALWAYS">
             <tabs>
                 <Tab text="Produits">
-                    <VBox spacing="10" VBox.vgrow="ALWAYS">
+                    <StackPane>
+                        <VBox spacing="10" VBox.vgrow="ALWAYS">
                         <TableView fx:id="productsTable" styleClass="table-premium" minHeight="350" VBox.vgrow="ALWAYS">
                             <columns>
                                 <TableColumn fx:id="colProdId" text="ID" prefWidth="70"/>
@@ -42,7 +43,7 @@
 
                         <!-- Scroll le formulaire pour ne pas “écraser” la table -->
                         <ScrollPane fitToWidth="true" VBox.vgrow="NEVER" prefViewportHeight="260">
-                            <VBox spacing="10">
+                            <VBox fx:id="productFormContainer" spacing="10">
                                 <Separator/>
                                 <HBox spacing="10">
                                     <TextField fx:id="prodNameField" promptText="Nom" styleClass="auth-field" HBox.hgrow="ALWAYS"/>
@@ -70,7 +71,22 @@
                                 </HBox>
                             </VBox>
                         </ScrollPane>
-                    </VBox>
+                        </VBox>
+
+                        <!-- Centered modal for adding/editing products -->
+                        <StackPane fx:id="productModalOverlay" visible="false" managed="false" pickOnBounds="true"
+                                   style="-fx-background-color: rgba(15, 23, 42, 0.35);" alignment="CENTER">
+                            <VBox spacing="12" alignment="CENTER" styleClass="auth-card"
+                                  style="-fx-padding: 22px; -fx-max-width: 720px;">
+                                <Label text="Ajouter / Modifier un produit" styleClass="brand-title"/>
+                                <Label text="Formulaire au centre" style="-fx-text-fill: #64748b; -fx-font-size: 12px; -fx-font-weight: 600;"/>
+                                <VBox fx:id="productModalFormHost" spacing="10" alignment="CENTER"/>
+                                <HBox spacing="10" alignment="CENTER_RIGHT">
+                                    <Button text="Annuler" onAction="#handleCancelProductModal" styleClass="btn-secondary"/>
+                                </HBox>
+                            </VBox>
+                        </StackPane>
+                    </StackPane>
                 </Tab>
 
                 <Tab text="Commandes">
@@ -116,7 +132,8 @@
                 </Tab>
 
                 <Tab text="Catégories">
-                    <BorderPane>
+                    <StackPane>
+                        <BorderPane>
                         <center>
                             <TableView fx:id="categoriesTable" styleClass="table-premium" prefHeight="300">
                                 <columns>
@@ -134,8 +151,8 @@
                                 <Button text="Rafraîchir" onAction="#handleRefreshCategories" styleClass="btn-outline"/>
                             </HBox>
                         </top>
-                        <bottom>
-                            <VBox spacing="10">
+                            <bottom>
+                                <VBox fx:id="categoryFormContainer" spacing="10">
                                 <padding><Insets top="10"/></padding>
                                 <Separator/>
                                 <HBox spacing="10">
@@ -150,6 +167,22 @@
                             </VBox>
                         </bottom>
                     </BorderPane>
+
+                    <!-- Centered modal for adding/editing categories -->
+                    <StackPane fx:id="categoryModalOverlay" visible="false" managed="false" pickOnBounds="true"
+                               style="-fx-background-color: rgba(15, 23, 42, 0.35);" alignment="CENTER">
+                        <VBox spacing="12" alignment="CENTER" styleClass="auth-card"
+                              style="-fx-padding: 22px; -fx-max-width: 640px;">
+                            <Label text="Ajouter / Modifier une catégorie" styleClass="brand-title" />
+                            <Label text="Formulaire au centre puis cliquez sur Enregistrer."
+                                   style="-fx-text-fill: #64748b; -fx-font-size: 12px; -fx-font-weight: 600;"/>
+                            <VBox fx:id="categoryModalFormHost" spacing="10" alignment="CENTER"/>
+                            <HBox spacing="10" alignment="CENTER_RIGHT" VBox.vgrow="NEVER">
+                                <Button text="Annuler" onAction="#handleCancelCategoryModal" styleClass="btn-secondary"/>
+                            </HBox>
+                        </VBox>
+                    </StackPane>
+                </StackPane>
                 </Tab>
             </tabs>
         </TabPane>

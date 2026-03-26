@@ -31,5 +31,13 @@ public class OrderService {
     public void updateOrderStatus(String orderId, OrderStatus status) {
         orderDAO.updateStatus(orderId, status);
     }
+
+    /**
+     * Returns the full order (header + items) for the given order UUID,
+     * or empty if not found.
+     */
+    public java.util.Optional<Order> getOrderDetails(String orderId) {
+        return orderDAO.findById(orderId);
+    }
 }
 
