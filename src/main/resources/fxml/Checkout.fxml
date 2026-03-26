@@ -4,6 +4,8 @@
 <?import javafx.geometry.Pos?>
 <?import javafx.scene.canvas.Canvas?>
 <?import javafx.scene.control.*?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.*?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
 
@@ -18,7 +20,11 @@
         <HBox alignment="CENTER" styleClass="navbar" prefHeight="72">
             <HBox alignment="CENTER_LEFT" spacing="18" maxWidth="1200" HBox.hgrow="ALWAYS" style="-fx-padding: 0 40px;">
                 <HBox alignment="CENTER_LEFT" spacing="10">
-                    <Label text="C" styleClass="logo-icon"/>
+                    <ImageView fitWidth="46" fitHeight="46" preserveRatio="true" styleClass="app-logo-image">
+                        <image>
+                            <Image url="@/images/ChriOnline_logo.png"/>
+                        </image>
+                    </ImageView>
                     <Label text="ChriOnline" styleClass="brand-title-small"/>
                 </HBox>
                 <Region HBox.hgrow="ALWAYS"/>

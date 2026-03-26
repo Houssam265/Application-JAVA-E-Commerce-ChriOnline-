@@ -18,7 +18,11 @@
 
             <!-- Logo area -->
             <HBox alignment="CENTER_LEFT" spacing="12">
-                <Label text="C" styleClass="logo-icon"/>
+                <ImageView fitWidth="52" fitHeight="52" preserveRatio="true" styleClass="app-logo-image">
+                    <image>
+                        <Image url="@/images/ChriOnline_logo.png"/>
+                    </image>
+                </ImageView>
                 <Label text="ChriOnline" styleClass="brand-title-small"/>
             </HBox>
 

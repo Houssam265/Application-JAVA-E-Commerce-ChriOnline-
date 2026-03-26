@@ -13,10 +13,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * KAN-7 — Paiement simulé : validation carte (Luhn, expiration, CVV), tirage 90 % / 10 %,
- * enregistrement en {@code payments} avec statut et horodatage.
- */
 public class PaymentService {
 
     private final PaymentDAO paymentDAO = new PaymentDAO();
@@ -24,22 +20,12 @@ public class PaymentService {
 
     private static final double SIMULATION_SUCCESS_RATE = 0.90;
 
-    /**
-     * Traite un paiement carte pour une commande appartenant à l'utilisateur.
-     *
-     * @param userId        utilisateur authentifié
-     * @param orderId       UUID commande
-     * @param cardNumberRaw numéro (espaces autorisés)
-     * @param expiryMmYy    format MM/YY
-     * @param cvv           3 chiffres
-     * @return map décrivant le résultat (payload JSON côté TCP)
-     */
     public Map<String, Object> processSimulatedCardPayment(int userId,
-                                                           String orderId,
+                                                           int orderId,
                                                            String cardNumberRaw,
                                                            String expiryMmYy,
                                                            String cvv) {
-        if (orderId == null || orderId.isBlank()) {
+        if (orderId <= 0) {
             throw new IllegalArgumentException("order_id requis.");
         }
 
@@ -66,14 +52,7 @@ public class PaymentService {
 
         if (!luhnOk || !expiryOk || !cvvOk) {
             String reason = buildValidationErrorMessage(luhnOk, expiryOk, cvvOk);
-            paymentDAO.upsertPayment(
-                    orderId,
-                    Payment.Method.CREDIT_CARD,
-                    Payment.Status.FAILED,
-                    amount,
-                    null,
-                    now
-            );
+            paymentDAO.upsertPayment(orderId, Payment.Method.CREDIT_CARD, Payment.Status.FAILED, amount, null, now);
             Payment saved = paymentDAO.findByOrderId(orderId).orElseThrow();
             Map<String, Object> err = new HashMap<>();
             err.put("success", false);
@@ -91,14 +70,7 @@ public class PaymentService {
 
         if (!accepted) {
             String failTx = "SIM_REFUSED_" + UUID.randomUUID().toString().substring(0, 8);
-            paymentDAO.upsertPayment(
-                    orderId,
-                    Payment.Method.CREDIT_CARD,
-                    Payment.Status.FAILED,
-                    amount,
-                    failTx,
-                    now
-            );
+            paymentDAO.upsertPayment(orderId, Payment.Method.CREDIT_CARD, Payment.Status.FAILED, amount, failTx, now);
             Payment saved = paymentDAO.findByOrderId(orderId).orElseThrow();
             Map<String, Object> res = new HashMap<>();
             res.put("success", false);
@@ -113,12 +85,7 @@ public class PaymentService {
         }
 
         try {
-            orderDAO.completePaymentWithStockDecrement(
-                    orderId,
-                    Payment.Method.CREDIT_CARD,
-                    amount,
-                    txId,
-                    now);
+            orderDAO.completePaymentWithStockDecrement(orderId, Payment.Method.CREDIT_CARD, amount, txId, now);
         } catch (IllegalArgumentException e) {
             Map<String, Object> stockErr = new HashMap<>();
             stockErr.put("success", false);

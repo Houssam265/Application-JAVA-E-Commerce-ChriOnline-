@@ -91,6 +91,7 @@ public class HomeController {
         updateUnreadBadge(nc.unreadCountProperty().get());
 
         if (notificationsList != null) {
+            notificationsList.setFixedCellSize(-1);
             notificationsList.setCellFactory(lv -> new ListCell<>() {
                 {
                     // Click on a cell → mark ONLY that notification as read
@@ -132,7 +133,9 @@ public class HomeController {
 
                     // Text block
                     VBox textBox = new VBox(2);
+                    textBox.setMaxWidth(Double.MAX_VALUE);
                     HBox.setHgrow(textBox, Priority.ALWAYS);
+                    row.setMaxWidth(Double.MAX_VALUE);
 
                     String hhmm = item.getTimestamp().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
                     Label timeLabel = new Label(hhmm);
@@ -141,6 +144,7 @@ public class HomeController {
                     Label msgLabel = new Label(item.getMessage());
                     msgLabel.setWrapText(true);
                     msgLabel.setMaxWidth(Double.MAX_VALUE);
+                    msgLabel.setPrefWidth(Math.max(220, lv.getWidth() - 90));
                     msgLabel.setStyle(item.isRead()
                             ? "-fx-font-size: 12px; -fx-text-fill: #94a3b8;"
                             : "-fx-font-size: 12px; -fx-text-fill: #1e293b; -fx-font-weight: 600;");
@@ -150,6 +154,9 @@ public class HomeController {
 
                     setText(null);
                     setGraphic(row);
+                    setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                    setPrefHeight(USE_COMPUTED_SIZE);
+                    setMinHeight(USE_PREF_SIZE);
                     setOpacity(item.isRead() ? 0.65 : 1.0);
                     setStyle("-fx-cursor: hand; -fx-padding: 8px 12px; -fx-background-color: "
                             + (item.isRead() ? "transparent" : "rgba(244,106,61,0.04)") + ";");
@@ -470,6 +477,16 @@ public class HomeController {
                 pr.setStock(p.optInt("stock", 0));
                 pr.setAvailable(p.optBoolean("available", p.optBoolean("isAvailable", pr.getStock() > 0)));
                 pr.setImageUrl(p.optString("imageUrl", p.optString("image_url", "")));
+                org.json.JSONArray images = p.optJSONArray("imageUrls");
+                if (images == null) images = p.optJSONArray("image_urls");
+                if (images != null) {
+                    java.util.List<String> urls = new java.util.ArrayList<>();
+                    for (int j = 0; j < images.length(); j++) {
+                        String url = images.optString(j, "");
+                        if (!url.isBlank()) urls.add(url);
+                    }
+                    pr.setImageUrls(urls);
+                }
                 list.add(pr);
             }
             Platform.runLater(() -> {

@@ -5,8 +5,9 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
-import com.chrionline.ui.SceneManager;
 import com.chrionline.ui.ErrorHandler;
+import com.chrionline.ui.OrderDisplayUtil;
+import com.chrionline.ui.SceneManager;
 import com.chrionline.ui.notifications.AppNotification;
 import com.chrionline.ui.notifications.NotificationCenter;
 import javafx.animation.*;
@@ -16,6 +17,7 @@ import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.layout.HBox;
@@ -46,6 +48,7 @@ public class OrderHistoryController {
 
     // Navbar active state
     @FXML private Button navOrdersBtn;
+    @FXML private Button adminButton;
 
     // Details
     @FXML private javafx.scene.layout.StackPane detailsOverlay;
@@ -77,6 +80,11 @@ public class OrderHistoryController {
 
     @FXML
     public void initialize() {
+        ClientSession session = ClientSession.getInstance();
+        if (session.isAdmin() && adminButton != null) {
+            adminButton.setVisible(true);
+            adminButton.setManaged(true);
+        }
         setupFilter();
         bindNotifications();
         setActiveNav();
@@ -96,16 +104,46 @@ public class OrderHistoryController {
         updateUnreadBadge(nc.unreadCountProperty().get());
 
         if (notificationsList != null) {
+            notificationsList.setFixedCellSize(-1);
             notificationsList.setCellFactory(lv -> new javafx.scene.control.ListCell<>() {
                 @Override protected void updateItem(AppNotification item, boolean empty) {
                     super.updateItem(item, empty);
                     if (empty || item == null) {
                         setText(null);
+                        setGraphic(null);
                         return;
                     }
+
+                    HBox row = new HBox(8);
+                    row.setAlignment(javafx.geometry.Pos.TOP_LEFT);
+                    row.setMaxWidth(Double.MAX_VALUE);
+
+                    VBox textBox = new VBox(2);
+                    textBox.setMaxWidth(Double.MAX_VALUE);
+                    HBox.setHgrow(textBox, javafx.scene.layout.Priority.ALWAYS);
+
                     String hhmm = item.getTimestamp().format(DateTimeFormatter.ofPattern("HH:mm"));
-                    setText("[" + hhmm + "] " + item.getMessage());
-                    setOpacity(item.isRead() ? 0.55 : 1.0);
+                    Label timeLabel = new Label(hhmm);
+                    timeLabel.setStyle("-fx-font-size: 10px; -fx-text-fill: #94a3b8;");
+
+                    Label msgLabel = new Label(item.getMessage());
+                    msgLabel.setWrapText(true);
+                    msgLabel.setMaxWidth(Double.MAX_VALUE);
+                    msgLabel.setPrefWidth(Math.max(220, lv.getWidth() - 70));
+                    msgLabel.setStyle(item.isRead()
+                            ? "-fx-font-size: 12px; -fx-text-fill: #94a3b8;"
+                            : "-fx-font-size: 12px; -fx-text-fill: #1e293b; -fx-font-weight: 600;");
+
+                    textBox.getChildren().addAll(timeLabel, msgLabel);
+                    row.getChildren().add(textBox);
+
+                    setText(null);
+                    setGraphic(row);
+                    setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                    setPrefHeight(USE_COMPUTED_SIZE);
+                    setMinHeight(USE_PREF_SIZE);
+                    setOpacity(item.isRead() ? 0.65 : 1.0);
+                    setStyle("-fx-padding: 8px 12px;");
                 }
             });
         }
@@ -215,6 +253,7 @@ public class OrderHistoryController {
     @FXML private void goHome() { SceneManager.showHome(); }
     @FXML private void goCart() { SceneManager.showCart(); }
     @FXML private void goProfile() { SceneManager.showProfile(); }
+    @FXML private void handleOpenAdmin() { SceneManager.showAdmin(); }
 
     private void loadOrders() {
         Task<Response> t = new Task<>() {
@@ -282,9 +321,10 @@ public class OrderHistoryController {
         VBox card = new VBox(10);
         card.getStyleClass().add("auth-card");
         card.setStyle("-fx-padding: 16px 18px;");
+        card.setMaxWidth(Double.MAX_VALUE);
 
         HBox top = new HBox(10);
-        Label id = new Label("Order · " + (orderId.isBlank() ? "—" : orderId));
+        Label id = new Label(orderId.isBlank() ? "Order #—" : OrderDisplayUtil.formatLabel(orderId));
         id.setStyle("-fx-text-fill: #334155; -fx-font-weight: 800;");
         Label date = new Label(dateStr);
         date.setStyle("-fx-text-fill: #64748b; -fx-font-weight: 600;");
@@ -351,7 +391,7 @@ public class OrderHistoryController {
     private void showDetails(String orderId, JSONObject payload, JSONObject order) {
         if (detailsOverlay == null) return;
 
-        detailsTitle.setText("Order · " + orderId);
+        detailsTitle.setText(OrderDisplayUtil.formatLabel(orderId));
         String status = order != null ? mapStatusToFrench(order.optString("status", "PENDING")) : "—";
         if (detailsStatusBadge != null) {
             detailsStatusBadge.setText(status);

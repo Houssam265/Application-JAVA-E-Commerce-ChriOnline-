@@ -1,7 +1,7 @@
 -- ============================================================
 --  ChriOnline E-Commerce — MySQL Schema
 --  Matches the UML class diagram
---  v2 — Added: server_logs table · indexes · plain UUID orders
+--  v2 — Added: server_logs table · indexes · auto-increment integer orders
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS chrionline
@@ -84,6 +84,23 @@ CREATE TABLE products (
 -- Category filter on the product catalogue
 CREATE INDEX idx_product_category ON products(category_id);
 
+--  4.b PRODUCT IMAGES
+--  Multiple images per product with one primary image.
+CREATE TABLE product_images (
+    product_image_id INT           NOT NULL AUTO_INCREMENT,
+    product_id       INT           NOT NULL,
+    image_url        VARCHAR(300)  NOT NULL,
+    display_order    INT           NOT NULL DEFAULT 0,
+    is_primary       BOOLEAN       NOT NULL DEFAULT FALSE,
+
+    PRIMARY KEY (product_image_id),
+    CONSTRAINT fk_productimage_product
+        FOREIGN KEY (product_id) REFERENCES products(product_id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_productimage_product ON product_images(product_id);
+
 -- ─────────────────────────────────────────
 --  5. CARTS
 -- ─────────────────────────────────────────
@@ -126,7 +143,7 @@ CREATE TABLE cart_items (
 --  7. ORDERS
 -- ─────────────────────────────────────────
 CREATE TABLE orders (
-    order_id      CHAR(36)       NOT NULL,          -- plain UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    order_id      INT            NOT NULL AUTO_INCREMENT,
     user_id       INT            NOT NULL,
     status        ENUM('PENDING','VALIDATED','SHIPPED','DELIVERED','CANCELLED')
                                  NOT NULL DEFAULT 'PENDING',
@@ -149,7 +166,7 @@ CREATE INDEX idx_order_user ON orders(user_id);
 -- ─────────────────────────────────────────
 CREATE TABLE order_items (
     order_item_id  INT            NOT NULL AUTO_INCREMENT,
-    order_id       CHAR(36)       NOT NULL,
+    order_id       INT            NOT NULL,
     product_id     INT            NOT NULL,
     quantity       INT            NOT NULL CHECK (quantity > 0),
     unit_price     DECIMAL(10,2)  NOT NULL,         -- price snapshot at order time
@@ -172,7 +189,7 @@ CREATE INDEX idx_orderitem_product ON order_items(product_id);
 -- ─────────────────────────────────────────
 CREATE TABLE payments (
     payment_id      INT            NOT NULL AUTO_INCREMENT,
-    order_id        CHAR(36)       NOT NULL UNIQUE,  -- one payment per order
+    order_id        INT            NOT NULL UNIQUE,  -- one payment per order
     method          ENUM('CREDIT_CARD','SIMULATED') NOT NULL,
     status          ENUM('PENDING','SUCCESS','FAILED') NOT NULL DEFAULT 'PENDING',
     amount          DECIMAL(10,2)  NOT NULL,

@@ -16,6 +16,7 @@ import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
 import javafx.scene.control.*;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import org.json.JSONObject;
@@ -45,6 +46,7 @@ public class ProfileController {
     @FXML private Node strengthBar;
     @FXML private Label strengthLabel;
     @FXML private Label globalMessage;
+    @FXML private Button adminButton;
 
     // Notifications
     @FXML private Button bellButton;
@@ -61,6 +63,11 @@ public class ProfileController {
 
     @FXML
     public void initialize() {
+        ClientSession session = ClientSession.getInstance();
+        if (session.isAdmin() && adminButton != null) {
+            adminButton.setVisible(true);
+            adminButton.setManaged(true);
+        }
         hydrateFromSession();
         bindNotifications();
         setActiveNav();
@@ -115,16 +122,46 @@ public class ProfileController {
         updateUnreadBadge(nc.unreadCountProperty().get());
 
         if (notificationsList != null) {
+            notificationsList.setFixedCellSize(-1);
             notificationsList.setCellFactory(lv -> new ListCell<>() {
                 @Override protected void updateItem(AppNotification item, boolean empty) {
                     super.updateItem(item, empty);
                     if (empty || item == null) {
                         setText(null);
+                        setGraphic(null);
                         return;
                     }
+
+                    HBox row = new HBox(8);
+                    row.setAlignment(javafx.geometry.Pos.TOP_LEFT);
+                    row.setMaxWidth(Double.MAX_VALUE);
+
+                    VBox textBox = new VBox(2);
+                    textBox.setMaxWidth(Double.MAX_VALUE);
+                    HBox.setHgrow(textBox, javafx.scene.layout.Priority.ALWAYS);
+
                     String hhmm = item.getTimestamp().format(DateTimeFormatter.ofPattern("HH:mm"));
-                    setText("[" + hhmm + "] " + item.getMessage());
-                    setOpacity(item.isRead() ? 0.55 : 1.0);
+                    Label timeLabel = new Label(hhmm);
+                    timeLabel.setStyle("-fx-font-size: 10px; -fx-text-fill: #94a3b8;");
+
+                    Label msgLabel = new Label(item.getMessage());
+                    msgLabel.setWrapText(true);
+                    msgLabel.setMaxWidth(Double.MAX_VALUE);
+                    msgLabel.setPrefWidth(Math.max(220, lv.getWidth() - 70));
+                    msgLabel.setStyle(item.isRead()
+                            ? "-fx-font-size: 12px; -fx-text-fill: #94a3b8;"
+                            : "-fx-font-size: 12px; -fx-text-fill: #1e293b; -fx-font-weight: 600;");
+
+                    textBox.getChildren().addAll(timeLabel, msgLabel);
+                    row.getChildren().add(textBox);
+
+                    setText(null);
+                    setGraphic(row);
+                    setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                    setPrefHeight(USE_COMPUTED_SIZE);
+                    setMinHeight(USE_PREF_SIZE);
+                    setOpacity(item.isRead() ? 0.65 : 1.0);
+                    setStyle("-fx-padding: 8px 12px;");
                 }
             });
         }
@@ -428,6 +465,7 @@ public class ProfileController {
     @FXML private void goHome() { SceneManager.showHome(); }
     @FXML private void goCart() { SceneManager.showCart(); }
     @FXML private void goOrders() { SceneManager.showOrderHistory(); }
+    @FXML private void handleOpenAdmin() { SceneManager.showAdmin(); }
 
     private void fadeOutThen(Runnable after) {
         // Fade the whole screen if possible

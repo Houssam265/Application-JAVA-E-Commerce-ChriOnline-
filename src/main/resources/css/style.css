@@ -82,6 +82,10 @@
     -fx-effect: dropshadow(gaussian, rgba(244, 106, 61, 0.35), 12, 0, 0, 2);
 }
 
+.app-logo-image {
+    -fx-effect: dropshadow(gaussian, rgba(244, 106, 61, 0.22), 12, 0, 0, 2);
+}
+
 .brand-title-small {
     -fx-font-size: 22px;
     -fx-font-weight: 800;

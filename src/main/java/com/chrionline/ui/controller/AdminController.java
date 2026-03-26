@@ -36,7 +36,9 @@ import javafx.stage.Window;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -54,6 +56,42 @@ public class AdminController {
         final IntegerProperty stock = new SimpleIntegerProperty();
         final StringProperty description = new SimpleStringProperty();
         final StringProperty imageUrl = new SimpleStringProperty();
+        final List<String> imageUrls = new ArrayList<>();
+    }
+
+    private static final class ProductImageDraft {
+        private final String existingUrl;
+        private final File file;
+        private final String base64;
+        private final String fileName;
+
+        private ProductImageDraft(String existingUrl, File file, String base64, String fileName) {
+            this.existingUrl = existingUrl;
+            this.file = file;
+            this.base64 = base64;
+            this.fileName = fileName;
+        }
+
+        static ProductImageDraft existing(String url) {
+            return new ProductImageDraft(url, null, null, extractFileName(url));
+        }
+
+        static ProductImageDraft uploaded(File file, String base64) {
+            return new ProductImageDraft(null, file, base64, file != null ? file.getName() : "image");
+        }
+
+        boolean isExisting() {
+            return existingUrl != null;
+        }
+
+        String previewUrl() {
+            return isExisting() ? existingUrl : (file != null ? file.toURI().toString() : null);
+        }
+
+        String displayLabel(boolean primary) {
+            String prefix = primary ? "[Principale] " : "";
+            return prefix + (fileName == null || fileName.isBlank() ? "image" : fileName);
+        }
     }
 
     public static final class OrderRow {
@@ -96,6 +134,7 @@ public class AdminController {
     @FXML private Label prodImageFileNameLabel;
     @FXML private ImageView prodImagePreview;
     @FXML private Label prodImagePreviewPlaceholderLabel;
+    @FXML private ListView<String> prodImagesList;
 
     // ── FXML: Orders ─────────────────────────────────────────────────────────
     @FXML private TextField ordersSearchField;
@@ -158,8 +197,8 @@ public class AdminController {
 
     private Integer editingProductId = null;
     private String editingImageUrl = null;
-    private File selectedProductImageFile = null;
-    private String selectedProductImageBase64 = null;
+    private final List<ProductImageDraft> productImageDrafts = new ArrayList<>();
+    private int primaryProductImageIndex = 0;
 
     private Integer editingCategoryId = null;
 
@@ -179,6 +218,7 @@ public class AdminController {
         prodPriceField.setTextFormatter(new TextFormatter<>(change -> change.getControlNewText().matches("\\d*([\\.]\\d*)?") ? change : null));
 
         initProductsTable();
+        initProductImagesList();
         initProductCategoryCombo();
         initOrdersTable();
         initUsersTable();
@@ -294,11 +334,16 @@ public class AdminController {
 
         // Keep the existing image URL unless the admin uploads a new file.
         editingImageUrl = row.imageUrl.get();
-        selectedProductImageFile = null;
-        selectedProductImageBase64 = null;
-
-        updateProductImagePreview(editingImageUrl);
-        updateProductImageFileNameLabel(editingImageUrl);
+        productImageDrafts.clear();
+        if (!row.imageUrls.isEmpty()) {
+            for (String url : row.imageUrls) {
+                productImageDrafts.add(ProductImageDraft.existing(url));
+            }
+        } else if (editingImageUrl != null && !editingImageUrl.isBlank()) {
+            productImageDrafts.add(ProductImageDraft.existing(editingImageUrl));
+        }
+        primaryProductImageIndex = 0;
+        refreshProductImagesUi();
         prodDescField.setText(row.description.get() == null ? "" : row.description.get());
 
         showProductModal();
@@ -445,20 +490,15 @@ public class AdminController {
     private void resetProductForm(boolean showModal) {
         editingProductId = null;
         editingImageUrl = null;
-        selectedProductImageFile = null;
-        selectedProductImageBase64 = null;
+        productImageDrafts.clear();
+        primaryProductImageIndex = 0;
         prodNameField.clear();
         if (prodCategoryCombo != null) prodCategoryCombo.getSelectionModel().clearSelection();
         prodPriceField.clear();
         prodStockField.clear();
         prodDescField.clear();
 
-        if (prodImagePreview != null) prodImagePreview.setImage(null);
-        if (prodImagePreviewPlaceholderLabel != null) {
-            prodImagePreviewPlaceholderLabel.setVisible(true);
-            prodImagePreviewPlaceholderLabel.setManaged(true);
-        }
-        if (prodImageFileNameLabel != null) prodImageFileNameLabel.setText("Aucune sélection");
+        refreshProductImagesUi();
         productsTable.getSelectionModel().clearSelection();
 
         if (showModal) showProductModal();
@@ -482,53 +522,89 @@ public class AdminController {
     }
 
     @FXML
-    private void handleChooseProductImage() {
+    private void handleChooseProductImages() {
         Window window = null;
         if (productsTable != null && productsTable.getScene() != null) {
             window = productsTable.getScene().getWindow();
         }
 
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("Uploader une image produit");
+        chooser.setTitle("Uploader des images produit");
         chooser.getExtensionFilters().add(
                 new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp")
         );
 
-        File file = chooser.showOpenDialog(window);
-        if (file == null) return;
+        List<File> files = chooser.showOpenMultipleDialog(window);
+        if (files == null || files.isEmpty()) return;
 
-        // Keep the payload reasonable (TCP line-based JSON protocol).
-        long maxBytes = 1_500_000; // ~1.5MB
-        if (file.length() > maxBytes) {
-            setMessage("Image trop volumineuse (max ~1.5MB).", true);
-            return;
+        long maxBytes = 1_500_000; // ~1.5MB par image
+        for (File file : files) {
+            if (file.length() > maxBytes) {
+                setMessage("Une des images est trop volumineuse (max ~1.5MB).", true);
+                return;
+            }
         }
 
-        final String[] base64Ref = new String[1];
+        final List<ProductImageDraft> loadedDrafts = new ArrayList<>();
         Task<Void> t = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                byte[] bytes = Files.readAllBytes(file.toPath());
-                base64Ref[0] = Base64.getEncoder().encodeToString(bytes);
+                for (File file : files) {
+                    byte[] bytes = Files.readAllBytes(file.toPath());
+                    String base64 = Base64.getEncoder().encodeToString(bytes);
+                    loadedDrafts.add(ProductImageDraft.uploaded(file, base64));
+                }
                 return null;
             }
         };
 
         t.setOnSucceeded(e -> {
-            selectedProductImageFile = file;
-            selectedProductImageBase64 = base64Ref[0];
-            if (prodImageFileNameLabel != null) prodImageFileNameLabel.setText(file.getName());
-            if (prodImagePreview != null) {
-                prodImagePreview.setImage(new Image(file.toURI().toString(), true));
+            productImageDrafts.addAll(loadedDrafts);
+            if (productImageDrafts.size() == loadedDrafts.size()) {
+                primaryProductImageIndex = 0;
             }
-            if (prodImagePreviewPlaceholderLabel != null) {
-                prodImagePreviewPlaceholderLabel.setVisible(false);
-                prodImagePreviewPlaceholderLabel.setManaged(false);
+            refreshProductImagesUi();
+            if (prodImagesList != null && !loadedDrafts.isEmpty()) {
+                int firstNewIndex = productImageDrafts.size() - loadedDrafts.size();
+                prodImagesList.getSelectionModel().select(firstNewIndex);
             }
         });
         t.setOnFailed(e -> setMessage("Erreur lors du chargement de l'image.", true));
 
         runTask(t);
+    }
+
+    @FXML
+    private void handleSetPrimaryProductImage() {
+        if (prodImagesList == null) return;
+        int idx = prodImagesList.getSelectionModel().getSelectedIndex();
+        if (idx < 0 || idx >= productImageDrafts.size()) {
+            setMessage("Sélectionne une image à définir comme principale.", true);
+            return;
+        }
+        primaryProductImageIndex = idx;
+        refreshProductImagesUi();
+    }
+
+    @FXML
+    private void handleRemoveSelectedProductImage() {
+        if (prodImagesList == null) return;
+        int idx = prodImagesList.getSelectionModel().getSelectedIndex();
+        if (idx < 0 || idx >= productImageDrafts.size()) {
+            setMessage("Sélectionne une image à supprimer.", true);
+            return;
+        }
+        productImageDrafts.remove(idx);
+        if (productImageDrafts.isEmpty()) {
+            primaryProductImageIndex = 0;
+        } else if (primaryProductImageIndex >= productImageDrafts.size()) {
+            primaryProductImageIndex = productImageDrafts.size() - 1;
+        } else if (idx < primaryProductImageIndex) {
+            primaryProductImageIndex--;
+        } else if (idx == primaryProductImageIndex) {
+            primaryProductImageIndex = 0;
+        }
+        refreshProductImagesUi();
     }
 
     @FXML
@@ -548,10 +624,8 @@ public class AdminController {
 
         boolean isCreate = editingProductId == null;
         final Integer editingProductIdSnapshot = editingProductId;
-        final String editingImageUrlSnapshot = editingImageUrl;
-        final String imageBase64Snapshot = selectedProductImageBase64;
-        final String imageFilenameSnapshot =
-                selectedProductImageFile != null ? selectedProductImageFile.getName() : "image";
+        final List<ProductImageDraft> imageDraftsSnapshot = new ArrayList<>(productImageDrafts);
+        final int primaryImageIndexSnapshot = primaryProductImageIndex;
         Task<Response> t = new Task<>() {
             @Override protected Response call() throws Exception {
                 Client client = Client.getInstance();
@@ -563,14 +637,21 @@ public class AdminController {
                 payload.put("description", desc);
                 payload.put("price", price);
                 payload.put("stock", stock);
-                // Image upload: either send base64 (new file) or keep the current image_url (edit).
-                if (imageBase64Snapshot != null) {
-                    payload.put("image_base64", imageBase64Snapshot);
-                    payload.put("image_filename", imageFilenameSnapshot);
-                } else {
-                    payload.put("image_url",
-                            (editingImageUrlSnapshot == null || editingImageUrlSnapshot.isBlank()) ? JSONObject.NULL : editingImageUrlSnapshot);
+                JSONArray images = new JSONArray();
+                for (ProductImageDraft draft : imageDraftsSnapshot) {
+                    JSONObject image = new JSONObject();
+                    if (draft.isExisting()) {
+                        image.put("kind", "existing");
+                        image.put("image_url", draft.existingUrl);
+                    } else {
+                        image.put("kind", "new");
+                        image.put("image_base64", draft.base64);
+                        image.put("image_filename", draft.fileName);
+                    }
+                    images.put(image);
                 }
+                payload.put("images", images);
+                payload.put("primary_image_index", Math.max(0, Math.min(primaryImageIndexSnapshot, Math.max(0, imageDraftsSnapshot.size() - 1))));
 
                 String action = isCreate ? MessageProtocol.ACTION_ADMIN_CREATE_PRODUCT : MessageProtocol.ACTION_ADMIN_UPDATE_PRODUCT;
                 return client.send(new Request(action, payload, client.getSessionToken()));
@@ -674,6 +755,18 @@ public class AdminController {
             row.price.set(p.optDouble("price", 0.0));
             row.stock.set(p.optInt("stock", 0));
             row.imageUrl.set(p.optString("imageUrl", p.optString("image_url", "")));
+            row.imageUrls.clear();
+            JSONArray images = p.optJSONArray("imageUrls");
+            if (images == null) images = p.optJSONArray("image_urls");
+            if (images != null) {
+                for (int j = 0; j < images.length(); j++) {
+                    String url = images.optString(j, "");
+                    if (!url.isBlank()) row.imageUrls.add(url);
+                }
+            }
+            if (row.imageUrls.isEmpty() && row.imageUrl.get() != null && !row.imageUrl.get().isBlank()) {
+                row.imageUrls.add(row.imageUrl.get());
+            }
             list.add(row);
         }
         return list;
@@ -916,6 +1009,47 @@ public class AdminController {
         prodImageFileNameLabel.setText(name);
     }
 
+    private void initProductImagesList() {
+        if (prodImagesList == null) return;
+        prodImagesList.getSelectionModel().selectedIndexProperty().addListener((obs, oldV, newV) -> {
+            int idx = newV == null ? -1 : newV.intValue();
+            if (idx < 0 || idx >= productImageDrafts.size()) {
+                updateProductImagePreview(null);
+                updateProductImageFileNameLabel(null);
+                return;
+            }
+            ProductImageDraft draft = productImageDrafts.get(idx);
+            updateProductImagePreview(draft.previewUrl());
+            updateProductImageFileNameLabel(draft.fileName);
+        });
+    }
+
+    private void refreshProductImagesUi() {
+        if (prodImagesList != null) {
+            prodImagesList.getItems().clear();
+            for (int i = 0; i < productImageDrafts.size(); i++) {
+                prodImagesList.getItems().add(productImageDrafts.get(i).displayLabel(i == primaryProductImageIndex));
+            }
+        }
+
+        if (productImageDrafts.isEmpty()) {
+            updateProductImagePreview(null);
+            updateProductImageFileNameLabel(null);
+            return;
+        }
+
+        int selectedIndex = prodImagesList != null ? prodImagesList.getSelectionModel().getSelectedIndex() : -1;
+        if (selectedIndex < 0 || selectedIndex >= productImageDrafts.size()) {
+            selectedIndex = primaryProductImageIndex;
+            if (prodImagesList != null) {
+                prodImagesList.getSelectionModel().select(selectedIndex);
+            }
+        }
+        ProductImageDraft draft = productImageDrafts.get(selectedIndex);
+        updateProductImagePreview(draft.previewUrl());
+        updateProductImageFileNameLabel(draft.fileName);
+    }
+
     private static String normalizeImageUrlForLocalFiles(String url) {
         if (url == null) return null;
         String u = url.trim();
@@ -929,6 +1063,13 @@ public class AdminController {
 
         // Treat it as a local filesystem path (absolute or relative).
         return new File(u).toURI().toString();
+    }
+
+    private static String extractFileName(String url) {
+        if (url == null || url.isBlank()) return "image";
+        String u = url.trim();
+        int idx = Math.max(u.lastIndexOf('/'), u.lastIndexOf('\\'));
+        return idx >= 0 ? u.substring(idx + 1) : u;
     }
 
     private static String orderStatusToFrench(String status) {

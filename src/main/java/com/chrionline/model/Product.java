@@ -1,5 +1,8 @@
 package com.chrionline.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Maps to the {@code products} table.
  *
@@ -18,6 +21,7 @@ public class Product {
     /** Mis à false automatiquement lorsque le stock atteint 0 (KAN-19). */
     private boolean available = true;
     private String imageUrl;      // nullable VARCHAR(300)
+    private List<String> imageUrls = new ArrayList<>();
 
     // ── Constructors ────────────────────────────────────────────────────────
 
@@ -60,6 +64,11 @@ public class Product {
 
     public String getImageUrl()          { return imageUrl; }
     public void   setImageUrl(String v)  { this.imageUrl = v; }
+
+    public List<String> getImageUrls() { return imageUrls; }
+    public void setImageUrls(List<String> imageUrls) {
+        this.imageUrls = imageUrls != null ? new ArrayList<>(imageUrls) : new ArrayList<>();
+    }
 
     // ── toString ────────────────────────────────────────────────────────────
 

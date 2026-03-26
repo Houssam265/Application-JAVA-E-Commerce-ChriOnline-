@@ -3,117 +3,191 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.Separator?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.layout.StackPane?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
 
-<VBox xmlns="http://javafx.com/javafx/17"
-      xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.chrionline.ui.controller.CartController"
-      styleClass="cart-page"
-      spacing="0">
+<StackPane xmlns="http://javafx.com/javafx/17"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.chrionline.ui.controller.CartController"
+           styleClass="cart-page">
 
-    <padding>
-        <Insets top="36" right="48" bottom="40" left="48"/>
-    </padding>
+<VBox spacing="0" StackPane.alignment="TOP_LEFT">
 
-    <!-- Titre -->
-    <VBox spacing="6" style="-fx-padding: 0 0 28 0;">
-        <Label text="Shopping Cart" styleClass="cart-page-title"/>
-        <Label text="Review your items and complete your order" styleClass="cart-page-subtitle"/>
-    </VBox>
-
-    <!-- Deux colonnes : articles | récap -->
-    <HBox spacing="32" alignment="TOP_LEFT" VBox.vgrow="ALWAYS">
-        <!-- Colonne gauche : liste d'articles -->
-        <ScrollPane fitToWidth="true" styleClass="cart-scroll" HBox.hgrow="ALWAYS" minViewportHeight="400">
-            <VBox fx:id="cartItemsContainer" spacing="16" styleClass="cart-items-column">
-                <padding>
-                    <Insets bottom="8"/>
-                </padding>
-            </VBox>
-        </ScrollPane>
-
-        <!-- Colonne droite : récap commande -->
-        <VBox styleClass="cart-order-summary" prefWidth="340" minWidth="300" spacing="0">
-            <padding>
-                <Insets top="24" right="24" bottom="24" left="24"/>
-            </padding>
-
-            <Label text="Order Summary" styleClass="cart-summary-title"/>
-
-            <Region prefHeight="20"/>
-
-            <HBox alignment="CENTER_LEFT">
-                <Label text="Subtotal" styleClass="cart-summary-label"/>
-                <Region HBox.hgrow="ALWAYS"/>
-                <Label fx:id="subtotalLabel" text="0.00 Dhs" styleClass="cart-summary-value"/>
+    <!-- NAVBAR (same visual pattern as Home) -->
+    <HBox alignment="CENTER" styleClass="navbar" prefHeight="72">
+        <HBox alignment="CENTER_LEFT" spacing="18" maxWidth="1200" HBox.hgrow="ALWAYS" style="-fx-padding: 0 40px;">
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <ImageView fitWidth="46" fitHeight="46" preserveRatio="true" styleClass="app-logo-image">
+                    <image>
+                        <Image url="@/images/ChriOnline_logo.png"/>
+                    </image>
+                </ImageView>
+                <Label text="ChriOnline" styleClass="brand-title-small"/>
             </HBox>
 
-            <Region prefHeight="14"/>
+            <Region HBox.hgrow="ALWAYS"/>
 
-            <HBox alignment="CENTER_LEFT">
-                <Label text="Shipping" styleClass="cart-summary-label"/>
-                <Region HBox.hgrow="ALWAYS"/>
-                <Label fx:id="shippingLabel" text="Free" styleClass="cart-summary-value cart-summary-shipping"/>
+            <HBox alignment="CENTER" spacing="22">
+                <Button fx:id="navHomeBtn" text="Accueil" onAction="#goHome" styleClass="nav-pill"/>
+                <Button fx:id="navCartBtn" text="Panier" onAction="#noop" styleClass="nav-pill"/>
+                <Button fx:id="navProfileBtn" text="Profil" onAction="#goProfile" styleClass="nav-pill"/>
+                <Button fx:id="navOrdersBtn" text="Commandes" onAction="#goOrders" styleClass="nav-pill"/>
             </HBox>
 
-            <Region prefHeight="14"/>
+            <Region HBox.hgrow="ALWAYS"/>
 
-            <HBox alignment="CENTER_LEFT">
-                <Label text="Tax" styleClass="cart-summary-label"/>
-                <Region HBox.hgrow="ALWAYS"/>
-                <Label fx:id="taxLabel" text="0.00 Dhs" styleClass="cart-summary-value"/>
-            </HBox>
-
-            <Separator styleClass="cart-summary-sep"/>
-
-            <HBox alignment="CENTER_LEFT">
-                <Label text="Total" styleClass="cart-summary-total-label"/>
-                <Region HBox.hgrow="ALWAYS"/>
-                <Label fx:id="grandTotalLabel" text="0.00 Dhs" styleClass="cart-summary-total-amount"/>
-            </HBox>
-
-            <Region prefHeight="24"/>
-
-            <Button fx:id="checkoutButton" onAction="#handleCheckout" styleClass="btn-cart-checkout" maxWidth="Infinity" prefHeight="52">
-                <graphic>
-                    <HBox alignment="CENTER" spacing="10">
-                        <Label text="Proceed to Checkout" style="-fx-text-fill: white; -fx-font-weight: 700; -fx-font-size: 15px;"/>
-                        <Label text="→" style="-fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: 700;"/>
-                    </HBox>
-                </graphic>
-            </Button>
-
-            <Region prefHeight="12"/>
-
-            <Button onAction="#handleContinueShopping" styleClass="btn-cart-continue" maxWidth="Infinity" prefHeight="48">
-                <graphic>
-                    <HBox alignment="CENTER" spacing="8">
-                        <FontIcon iconLiteral="fas-arrow-left" iconSize="13" styleClass="ikonli-muted"/>
-                        <Label text="Continue Shopping" style="-fx-text-fill: #475569; -fx-font-weight: 600; -fx-font-size: 14px;"/>
-                    </HBox>
-                </graphic>
-            </Button>
-
-            <Region prefHeight="16"/>
-
-            <HBox alignment="CENTER_RIGHT">
-                <Button onAction="#handleClearCart" styleClass="btn-cart-clear-text">
+            <HBox alignment="CENTER_RIGHT" spacing="12" styleClass="nav-actions">
+                <Button fx:id="bellButton" onAction="#toggleNotifications" styleClass="nav-pill nav-pill-icon">
+                    <graphic>
+                        <StackPane>
+                            <FontIcon iconLiteral="fas-bell" iconSize="14" styleClass="ikonli-muted"/>
+                            <Label fx:id="unreadBadge" text="0"
+                                   visible="false" managed="false"
+                                   styleClass="badge-unread"
+                                   StackPane.alignment="TOP_RIGHT"/>
+                        </StackPane>
+                    </graphic>
+                </Button>
+                <Button onAction="#handleLogout" styleClass="nav-pill nav-pill-icon">
+                    <graphic>
+                        <FontIcon iconLiteral="fas-sign-out-alt" iconSize="14" styleClass="ikonli-muted"/>
+                    </graphic>
+                </Button>
+                <Button fx:id="adminButton" onAction="#handleOpenAdmin" styleClass="btn-outline" visible="false" managed="false">
                     <graphic>
                         <HBox alignment="CENTER" spacing="6">
-                            <FontIcon iconLiteral="fas-trash-alt" iconSize="12" styleClass="ikonli-danger"/>
-                            <Label text="Clear cart" style="-fx-text-fill: #dc2626; -fx-font-size: 12px;"/>
+                            <FontIcon iconLiteral="fas-user-shield" iconSize="14" styleClass="ikonli-muted"/>
+                            <Label text="Admin" style="-fx-text-fill: #64748b; -fx-font-weight: 600;"/>
                         </HBox>
                     </graphic>
                 </Button>
             </HBox>
-
-            <Label fx:id="messageLabel" visible="false" managed="false" wrapText="true" maxWidth="Infinity" style="-fx-padding: 12 0 0 0;"/>
-        </VBox>
+        </HBox>
     </HBox>
+
+    <VBox spacing="0" style="-fx-padding: 24 48 40 48;" VBox.vgrow="ALWAYS">
+        <!-- Titre -->
+        <VBox spacing="6" style="-fx-padding: 0 0 28 0;">
+            <Label text="Shopping Cart" styleClass="cart-page-title"/>
+            <Label text="Review your items and complete your order" styleClass="cart-page-subtitle"/>
+        </VBox>
+
+        <!-- Deux colonnes : articles | récap -->
+        <HBox spacing="32" alignment="TOP_LEFT" VBox.vgrow="ALWAYS">
+            <!-- Colonne gauche : liste d'articles -->
+            <ScrollPane fitToWidth="true" styleClass="cart-scroll" HBox.hgrow="ALWAYS" minViewportHeight="400">
+                <VBox fx:id="cartItemsContainer" spacing="16" styleClass="cart-items-column">
+                    <padding>
+                        <Insets bottom="8"/>
+                    </padding>
+                </VBox>
+            </ScrollPane>
+
+            <!-- Colonne droite : récap commande -->
+            <VBox styleClass="cart-order-summary" prefWidth="340" minWidth="300" spacing="0">
+                <padding>
+                    <Insets top="24" right="24" bottom="24" left="24"/>
+                </padding>
+
+                <Label text="Order Summary" styleClass="cart-summary-title"/>
+
+                <Region prefHeight="20"/>
+
+                <HBox alignment="CENTER_LEFT">
+                    <Label text="Subtotal" styleClass="cart-summary-label"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="subtotalLabel" text="0.00 Dhs" styleClass="cart-summary-value"/>
+                </HBox>
+
+                <Region prefHeight="14"/>
+
+                <HBox alignment="CENTER_LEFT">
+                    <Label text="Shipping" styleClass="cart-summary-label"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="shippingLabel" text="Free" styleClass="cart-summary-value cart-summary-shipping"/>
+                </HBox>
+
+                <Region prefHeight="14"/>
+
+                <HBox alignment="CENTER_LEFT">
+                    <Label text="Tax" styleClass="cart-summary-label"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="taxLabel" text="0.00 Dhs" styleClass="cart-summary-value"/>
+                </HBox>
+
+                <Separator styleClass="cart-summary-sep"/>
+
+                <HBox alignment="CENTER_LEFT">
+                    <Label text="Total" styleClass="cart-summary-total-label"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="grandTotalLabel" text="0.00 Dhs" styleClass="cart-summary-total-amount"/>
+                </HBox>
+
+                <Region prefHeight="24"/>
+
+                <Button fx:id="checkoutButton" onAction="#handleCheckout" styleClass="btn-cart-checkout" maxWidth="Infinity" prefHeight="52">
+                    <graphic>
+                        <HBox alignment="CENTER" spacing="10">
+                            <Label text="Proceed to Checkout" style="-fx-text-fill: white; -fx-font-weight: 700; -fx-font-size: 15px;"/>
+                            <Label text="→" style="-fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: 700;"/>
+                        </HBox>
+                    </graphic>
+                </Button>
+
+                <Region prefHeight="12"/>
+
+                <Button onAction="#handleContinueShopping" styleClass="btn-cart-continue" maxWidth="Infinity" prefHeight="48">
+                    <graphic>
+                        <HBox alignment="CENTER" spacing="8">
+                            <FontIcon iconLiteral="fas-arrow-left" iconSize="13" styleClass="ikonli-muted"/>
+                            <Label text="Continue Shopping" style="-fx-text-fill: #475569; -fx-font-weight: 600; -fx-font-size: 14px;"/>
+                        </HBox>
+                    </graphic>
+                </Button>
+
+                <Region prefHeight="16"/>
+
+                <HBox alignment="CENTER_RIGHT">
+                    <Button onAction="#handleClearCart" styleClass="btn-cart-clear-text">
+                        <graphic>
+                            <HBox alignment="CENTER" spacing="6">
+                                <FontIcon iconLiteral="fas-trash-alt" iconSize="12" styleClass="ikonli-danger"/>
+                                <Label text="Clear cart" style="-fx-text-fill: #dc2626; -fx-font-size: 12px;"/>
+                            </HBox>
+                        </graphic>
+                    </Button>
+                </HBox>
+
+                <Label fx:id="messageLabel" visible="false" managed="false" wrapText="true" maxWidth="Infinity" style="-fx-padding: 12 0 0 0;"/>
+            </VBox>
+        </HBox>
+    </VBox>
 </VBox>
+
+<VBox fx:id="toastLayer" spacing="10" pickOnBounds="false"
+      StackPane.alignment="BOTTOM_RIGHT"
+      style="-fx-padding: 0 18px 18px 0;"/>
+
+<StackPane fx:id="drawerScrim" visible="false" managed="false"
+           onMouseClicked="#closeNotifications"
+           style="-fx-background-color: rgba(0,0,0,0.22);"/>
+<VBox fx:id="drawerPanel" visible="false" managed="false" spacing="10"
+      StackPane.alignment="CENTER_RIGHT"
+      style="-fx-pref-width: 360px; -fx-max-width: 360px; -fx-background-color: #ffffff; -fx-border-color: #e2e8f0; -fx-border-width: 0 0 0 1; -fx-padding: 16px;">
+    <HBox alignment="CENTER_LEFT" spacing="8">
+        <Label text="Notifications" styleClass="section-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="Fermer" onAction="#closeNotifications" styleClass="btn-outline"/>
+    </HBox>
+    <Button text="Marquer tout comme lu" onAction="#markAllRead" styleClass="btn-outline"/>
+    <ListView fx:id="notificationsList" prefHeight="480" styleClass="table-premium"/>
+</VBox>
+</StackPane>

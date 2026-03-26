@@ -78,17 +78,17 @@ Le `token` est requis pour toutes les actions sauf `LOGIN` et `REGISTER`.
 ```
 - `GET_ORDER_DETAILS`
 ```json
-{"action":"GET_ORDER_DETAILS","payload":{"order_id":"<uuid>"},"token":"<session_token>"}
+{"action":"GET_ORDER_DETAILS","payload":{"order_id":123},"token":"<session_token>"}
 ```
 - `UPDATE_ORDER_STATUS`
 ```json
-{"action":"UPDATE_ORDER_STATUS","payload":{"order_id":"<uuid>","status":"SHIPPED"},"token":"<session_token>"}
+{"action":"UPDATE_ORDER_STATUS","payload":{"order_id":123,"status":"SHIPPED"},"token":"<session_token>"}
 ```
 
 ### Paiement
 - `PAYMENT`
 ```json
-{"action":"PAYMENT","payload":{"order_id":"<uuid>","method":"SIMULATED","amount":199.99},"token":"<session_token>"}
+{"action":"PAYMENT","payload":{"order_id":123,"method":"SIMULATED","amount":199.99},"token":"<session_token>"}
 ```
 
 ### Notifications

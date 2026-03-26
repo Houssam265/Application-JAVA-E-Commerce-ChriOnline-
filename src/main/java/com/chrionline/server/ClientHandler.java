@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -545,7 +546,7 @@ public class ClientHandler implements Runnable {
             sendUdpNotification(
                     "ORDER_VALIDATED",
                     "Commande " + order.getOrderId() + " validee.",
-                    order.getOrderId());
+                    String.valueOf(order.getOrderId()));
             return Response.ok(order);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -563,9 +564,9 @@ public class ClientHandler implements Runnable {
             int userId = sessionManager.getUserFromToken(req.getToken())
                     .map(User::getUserId)
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-            String orderId = firstNonBlank(
-                    getPayloadString(req, "order_id"),
-                    getPayloadString(req, "orderId"));
+            Integer orderId = firstNonBlankInt(
+                    req.getPayloadInt("order_id"),
+                    req.getPayloadInt("orderId"));
             String cardNumber = firstNonBlank(
                     getPayloadString(req, "card_number"),
                     getPayloadString(req, "cardNumber"));
@@ -574,7 +575,7 @@ public class ClientHandler implements Runnable {
                     getPayloadString(req, "expiryMmYy"));
             String cvv = payloadValueAsString(req, "cvv");
 
-            if (orderId == null || orderId.isBlank()
+            if (orderId == null || orderId <= 0
                     || cardNumber == null || cardNumber.isBlank()
                     || expiry == null || expiry.isBlank()
                     || cvv == null || cvv.isBlank()) {
@@ -588,7 +589,7 @@ public class ClientHandler implements Runnable {
                 sendUdpNotification(
                         "PAYMENT_CONFIRMED",
                         "Paiement confirme pour la commande " + orderId + ".",
-                        orderId);
+                        String.valueOf(orderId));
                 return Response.ok("PAYMENT_OK", result);
             }
             String msg = result.get("message") != null ? String.valueOf(result.get("message")) : "Paiement refusé.";
@@ -604,6 +605,12 @@ public class ClientHandler implements Runnable {
     private static String firstNonBlank(String a, String b) {
         if (a != null && !a.isBlank()) return a.trim();
         if (b != null && !b.isBlank()) return b.trim();
+        return null;
+    }
+
+    private static Integer firstNonBlankInt(Integer a, Integer b) {
+        if (a != null && a > 0) return a;
+        if (b != null && b > 0) return b;
         return null;
     }
 
@@ -635,9 +642,9 @@ public class ClientHandler implements Runnable {
             if (!authService.isAdmin(admin)) {
                 return Response.error("Accès refusé (ADMIN uniquement).");
             }
-            String orderId = getPayloadString(req, "order_id");
+            Integer orderId = req.getPayloadInt("order_id");
             String status  = getPayloadString(req, "status");
-            if (orderId == null || status == null) {
+            if (orderId == null || orderId <= 0 || status == null) {
                 return Response.error("Missing order_id or status");
             }
             orderService.updateOrderStatus(orderId, com.chrionline.model.OrderStatus.valueOf(status));
@@ -653,7 +660,7 @@ public class ClientHandler implements Runnable {
                     default          -> status;
                 };
                 String msg = "Votre commande est maintenant : " + friendlyStatus + ".";
-                sendUdpNotificationToUser(ownerId, "ORDER_STATUS_UPDATED", msg, orderId);
+                sendUdpNotificationToUser(ownerId, "ORDER_STATUS_UPDATED", msg, String.valueOf(orderId));
             });
 
             return Response.ok("STATUS_UPDATED", null);
@@ -672,8 +679,8 @@ public class ClientHandler implements Runnable {
      * Returns a map with "order" and "items" keys.
      */
     private Response handleGetOrderDetails(Request req) {
-        String orderId = getPayloadString(req, "order_id");
-        if (orderId == null || orderId.isBlank()) {
+        Integer orderId = req.getPayloadInt("order_id");
+        if (orderId == null || orderId <= 0) {
             return Response.error("Missing order_id");
         }
         try {
@@ -766,7 +773,7 @@ public class ClientHandler implements Runnable {
                     p.setCategoryId(categoryId);
                     p.setName(name);
                     p.setDescription(desc != null ? String.valueOf(desc) : "");
-                    p.setImageUrl(resolveProductImageUrl(req, img));
+                    applyProductImages(req, p, img);
                     if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
                     if (stock instanceof Number) p.setStock(((Number) stock).intValue());
                     return Response.ok(adminService.createProduct(p));
@@ -785,7 +792,7 @@ public class ClientHandler implements Runnable {
                     p.setCategoryId(categoryId);
                     p.setName(name);
                     p.setDescription(desc != null ? String.valueOf(desc) : "");
-                    p.setImageUrl(resolveProductImageUrl(req, img));
+                    applyProductImages(req, p, img);
                     if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
                     if (stock instanceof Number) p.setStock(((Number) stock).intValue());
                     adminService.updateProduct(p);
@@ -853,6 +860,12 @@ public class ClientHandler implements Runnable {
         return v instanceof String ? ((String) v).trim() : null;
     }
 
+    private void applyProductImages(Request req, com.chrionline.model.Product product, Object currentImageUrlObj) {
+        List<String> imageUrls = resolveProductImageUrls(req, currentImageUrlObj);
+        product.setImageUrls(imageUrls);
+        product.setImageUrl(imageUrls.isEmpty() ? null : imageUrls.get(0));
+    }
+
     /**
      * If image_base64 is provided by admin UI, stores the file under uploads/images
      * and returns the absolute path to persist in image_url.
@@ -884,6 +897,76 @@ public class ClientHandler implements Runnable {
         return currentImageUrlObj == null || "null".equals(String.valueOf(currentImageUrlObj))
                 ? null
                 : String.valueOf(currentImageUrlObj);
+    }
+
+    private List<String> resolveProductImageUrls(Request req, Object currentImageUrlObj) {
+        List<String> resolved = new ArrayList<>();
+        if (req.getPayload() == null) {
+            String single = resolveProductImageUrl(req, currentImageUrlObj);
+            if (single != null && !single.isBlank()) resolved.add(single);
+            return resolved;
+        }
+
+        Object imagesObj = req.getPayload().get("images");
+        Integer primaryIndex = req.getPayloadInt("primary_image_index");
+        if (imagesObj instanceof List<?> images && !images.isEmpty()) {
+            for (Object item : images) {
+                if (!(item instanceof Map<?, ?> map)) continue;
+                Object kindObj = map.get("kind");
+                String kind = kindObj == null ? "" : String.valueOf(kindObj);
+                if ("existing".equalsIgnoreCase(kind)) {
+                    Object urlObj = map.get("image_url");
+                    if (urlObj != null) {
+                        String url = String.valueOf(urlObj).trim();
+                        if (!url.isBlank() && !"null".equalsIgnoreCase(url)) {
+                            resolved.add(url);
+                        }
+                    }
+                    continue;
+                }
+                if ("new".equalsIgnoreCase(kind)) {
+                    Object b64Obj = map.get("image_base64");
+                    if (b64Obj == null) continue;
+                    String b64 = String.valueOf(b64Obj).trim();
+                    if (b64.isBlank()) continue;
+                    String filename = map.get("image_filename") == null ? null : String.valueOf(map.get("image_filename"));
+                    resolved.add(storeProductImage(b64, filename));
+                }
+            }
+        }
+
+        if (resolved.isEmpty()) {
+            String single = resolveProductImageUrl(req, currentImageUrlObj);
+            if (single != null && !single.isBlank()) {
+                resolved.add(single);
+            }
+        }
+
+        if (!resolved.isEmpty() && primaryIndex != null && primaryIndex >= 0 && primaryIndex < resolved.size()) {
+            String primary = resolved.remove((int) primaryIndex);
+            resolved.add(0, primary);
+        }
+
+        return resolved;
+    }
+
+    private String storeProductImage(String base64, String originalName) {
+        try {
+            byte[] bytes = Base64.getDecoder().decode(base64);
+            String ext = extractImageExtension(originalName);
+
+            Path uploadDir = Paths.get("uploads", "images").toAbsolutePath().normalize();
+            Files.createDirectories(uploadDir);
+
+            String storedName = UUID.randomUUID() + ext;
+            Path target = uploadDir.resolve(storedName).normalize();
+            Files.write(target, bytes);
+            return target.toString();
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Image invalide (base64).");
+        } catch (Exception e) {
+            throw new RuntimeException("Erreur lors de l'enregistrement de l'image: " + e.getMessage(), e);
+        }
     }
 
     private String extractImageExtension(String filename) {

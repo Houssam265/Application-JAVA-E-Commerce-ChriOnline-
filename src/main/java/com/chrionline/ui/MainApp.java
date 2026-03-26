@@ -2,21 +2,23 @@ package com.chrionline.ui;
 
 import atlantafx.base.theme.PrimerLight;
 import javafx.application.Application;
+import javafx.scene.image.Image;
 import javafx.stage.Stage;
 
 import java.io.IOException;
+import java.io.InputStream;
 
 /**
- * Point d'entrée de l'application JavaFX ChriOnline.
+ * Point d'entree de l'application JavaFX ChriOnline.
  *
- * Démarre sur l'écran de connexion (Login.fxml).
- * La navigation entre écrans est gérée via {@link SceneManager}.
- * Utilise le thème AtlantaFX Primer Light (interface claire).
+ * Demarre sur l'ecran de connexion (Login.fxml).
+ * La navigation entre ecrans est geree via {@link SceneManager}.
+ * Utilise le theme AtlantaFX Primer Light (interface claire).
  */
 public class MainApp extends Application {
 
-    /** Largeur et hauteur par défaut de la fenêtre. */
-    public static final double WIDTH  = 1024;
+    /** Largeur et hauteur par defaut de la fenetre. */
+    public static final double WIDTH = 1024;
     public static final double HEIGHT = 680;
 
     private static Stage primaryStage;
@@ -26,7 +28,12 @@ public class MainApp extends Application {
         Application.setUserAgentStylesheet(new PrimerLight().getUserAgentStylesheet());
 
         primaryStage = stage;
-        stage.setTitle("ChriOnline — E-Commerce");
+        try (InputStream logoStream = MainApp.class.getResourceAsStream("/images/ChriOnline_logo.png")) {
+            if (logoStream != null) {
+                stage.getIcons().setAll(new Image(logoStream));
+            }
+        }
+        stage.setTitle("ChriOnline - E-Commerce");
         stage.setMinWidth(860);
         stage.setMinHeight(580);
         stage.setResizable(true);

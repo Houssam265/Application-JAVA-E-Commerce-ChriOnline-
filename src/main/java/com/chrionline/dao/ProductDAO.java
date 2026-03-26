@@ -2,6 +2,7 @@ package com.chrionline.dao;
 
 import com.chrionline.database.DatabaseConnection;
 import com.chrionline.model.Product;
+import com.chrionline.model.ProductImage;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -14,6 +15,8 @@ import java.util.Optional;
  * All JDBC resources are closed via try-with-resources.
  */
 public class ProductDAO {
+
+    private final ProductImageDAO productImageDAO = new ProductImageDAO();
 
     // ── Connection helper ───────────────────────────────────────────────────
     private Connection conn() {
@@ -46,6 +49,7 @@ public class ProductDAO {
                     product.setProductId(generated.getInt(1));
                 }
             }
+            persistImages(product);
             return product;
 
         } catch (SQLException e) {
@@ -131,6 +135,7 @@ public class ProductDAO {
             ps.setString(7, product.getImageUrl());
             ps.setInt(8, product.getProductId());
             ps.executeUpdate();
+            persistImages(product);
         } catch (SQLException e) {
             throw new RuntimeException("ProductDAO.update failed for productId=" + product.getProductId() + ": " + e.getMessage(), e);
         }
@@ -197,6 +202,49 @@ public class ProductDAO {
         p.setStock(rs.getInt("stock"));
         p.setAvailable(rs.getBoolean("is_available"));
         p.setImageUrl(rs.getString("image_url"));
+        List<ProductImage> images = productImageDAO.findByProductId(p.getProductId());
+        if (!images.isEmpty()) {
+            List<String> urls = new ArrayList<>();
+            for (ProductImage image : images) {
+                urls.add(image.getImageUrl());
+                if (image.isPrimary()) {
+                    p.setImageUrl(image.getImageUrl());
+                }
+            }
+            p.setImageUrls(urls);
+        } else if (p.getImageUrl() != null && !p.getImageUrl().isBlank()) {
+            p.setImageUrls(List.of(p.getImageUrl()));
+        }
         return p;
+    }
+
+    private void persistImages(Product product) {
+        if (product.getProductId() <= 0) return;
+
+        List<String> urls = product.getImageUrls();
+        if ((urls == null || urls.isEmpty()) && product.getImageUrl() != null && !product.getImageUrl().isBlank()) {
+            urls = List.of(product.getImageUrl());
+        }
+
+        List<ProductImage> images = new ArrayList<>();
+        if (urls != null) {
+            String primary = product.getImageUrl();
+            for (int i = 0; i < urls.size(); i++) {
+                String url = urls.get(i);
+                if (url == null || url.isBlank()) continue;
+                ProductImage image = new ProductImage();
+                image.setProductId(product.getProductId());
+                image.setImageUrl(url);
+                image.setDisplayOrder(i);
+                image.setPrimary(primary != null && primary.equals(url));
+                images.add(image);
+            }
+            if (!images.isEmpty() && images.stream().noneMatch(ProductImage::isPrimary)) {
+                images.get(0).setPrimary(true);
+                product.setImageUrl(images.get(0).getImageUrl());
+            }
+        }
+
+        productImageDAO.replaceForProduct(product.getProductId(), images);
     }
 }

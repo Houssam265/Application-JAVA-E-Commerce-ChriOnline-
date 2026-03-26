@@ -19,7 +19,7 @@
     <HBox alignment="CENTER_LEFT" spacing="12">
         <Label text="Administration" styleClass="brand-title page-title"/>
         <Region HBox.hgrow="ALWAYS"/>
-        <Button text="← Retour catalogue" onAction="#handleBackToHome" styleClass="btn-outline"/>
+        <Button text="&#8592; Retour catalogue" onAction="#handleBackToHome" styleClass="btn-outline"/>
         <Button onAction="#handleLogout" styleClass="btn-outline">
             <graphic>
                 <HBox alignment="CENTER" spacing="6">
@@ -40,60 +40,67 @@
                 <Tab text="Produits">
                     <StackPane>
                         <VBox spacing="10" VBox.vgrow="ALWAYS">
-                        <HBox alignment="CENTER_LEFT" spacing="10">
-                            <Label text="Produits" styleClass="field-label" style="-fx-font-size: 15px;"/>
-                            <Region HBox.hgrow="ALWAYS"/>
-                            <Button text="Ajouter produit" onAction="#handleAddProductButton" styleClass="btn-primary" prefWidth="180"/>
-                        </HBox>
-                        <TableView fx:id="productsTable" styleClass="table-premium" minHeight="350" VBox.vgrow="ALWAYS">
-                            <columns>
-                                <TableColumn fx:id="colProdId" text="ID" prefWidth="70"/>
-                                <TableColumn fx:id="colProdName" text="Nom" prefWidth="220"/>
-                                <TableColumn fx:id="colProdCategory" text="Cat." prefWidth="90"/>
-                                <TableColumn fx:id="colProdPrice" text="Prix" prefWidth="110"/>
-                                <TableColumn fx:id="colProdStock" text="Stock" prefWidth="90"/>
-                                <TableColumn fx:id="colProdAction" text="Actions" prefWidth="220" style="-fx-alignment: CENTER;"/>
-                            </columns>
-                        </TableView>
+                            <HBox alignment="CENTER_LEFT" spacing="10">
+                                <Label text="Produits" styleClass="field-label" style="-fx-font-size: 15px;"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Button text="Ajouter produit" onAction="#handleAddProductButton" styleClass="btn-primary" prefWidth="180"/>
+                            </HBox>
+                            <TableView fx:id="productsTable" styleClass="table-premium" minHeight="350" VBox.vgrow="ALWAYS">
+                                <columns>
+                                    <TableColumn fx:id="colProdId" text="ID" prefWidth="70"/>
+                                    <TableColumn fx:id="colProdName" text="Nom" prefWidth="220"/>
+                                    <TableColumn fx:id="colProdCategory" text="Cat." prefWidth="90"/>
+                                    <TableColumn fx:id="colProdPrice" text="Prix" prefWidth="110"/>
+                                    <TableColumn fx:id="colProdStock" text="Stock" prefWidth="90"/>
+                                    <TableColumn fx:id="colProdAction" text="Actions" prefWidth="220" style="-fx-alignment: CENTER;"/>
+                                </columns>
+                            </TableView>
 
-                        <!-- Scroll le formulaire pour ne pas “écraser” la table -->
-                        <ScrollPane fitToWidth="true" VBox.vgrow="NEVER" prefViewportHeight="260" visible="false" managed="false">
-                            <VBox fx:id="productFormContainer" spacing="10">
-                                <Separator/>
-                                <HBox spacing="10">
-                                    <TextField fx:id="prodNameField" promptText="Nom" styleClass="auth-field" HBox.hgrow="ALWAYS"/>
-                                    <ComboBox fx:id="prodCategoryCombo" promptText="Catégorie" styleClass="combo-box-premium" prefWidth="220"/>
-                                </HBox>
-                                <HBox spacing="10">
-                                    <TextField fx:id="prodPriceField" promptText="Prix" styleClass="auth-field" prefWidth="160"/>
-                                    <TextField fx:id="prodStockField" promptText="Stock" styleClass="auth-field" prefWidth="160"/>
-                                    <VBox spacing="8" alignment="CENTER_LEFT" prefWidth="260">
-                                        <HBox spacing="10" alignment="CENTER_LEFT">
-                                            <Button text="Choisir l'image" onAction="#handleChooseProductImage" styleClass="btn-secondary"/>
-                                            <Label fx:id="prodImageFileNameLabel" text="Aucune sélection" style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                                        </HBox>
-                                        <StackPane prefWidth="260" prefHeight="92" style="-fx-background-color: #f8fafc; -fx-background-radius: 12px; -fx-border-color: #e2e8f0; -fx-border-radius: 12px; -fx-border-width: 1.5px;">
-                                            <ImageView fx:id="prodImagePreview" fitWidth="260" fitHeight="92" preserveRatio="true"/>
-                                            <Label fx:id="prodImagePreviewPlaceholderLabel" text="Aucune image" styleClass="image-placeholder"/>
-                                        </StackPane>
-                                    </VBox>
-                                </HBox>
-                                <TextArea fx:id="prodDescField" promptText="Description" prefRowCount="2" wrapText="true"/>
-                                <HBox spacing="10" alignment="CENTER_RIGHT">
-                                    <Button text="Enregistrer" onAction="#handleSaveProduct" styleClass="btn-primary" prefWidth="160"/>
-                                </HBox>
-                            </VBox>
-                        </ScrollPane>
+                            <ScrollPane fitToWidth="true" VBox.vgrow="NEVER" prefViewportHeight="260" visible="false" managed="false">
+                                <VBox fx:id="productFormContainer" spacing="14" fillWidth="true" maxWidth="Infinity">
+                                    <Separator/>
+                                    <HBox spacing="18" alignment="TOP_LEFT" fillHeight="true">
+                                        <VBox spacing="12" alignment="TOP_LEFT" HBox.hgrow="ALWAYS" maxWidth="Infinity">
+                                            <TextField fx:id="prodNameField" promptText="Nom" styleClass="auth-field" maxWidth="Infinity"/>
+                                            <ComboBox fx:id="prodCategoryCombo" promptText="Categorie" styleClass="combo-box-premium" maxWidth="Infinity"/>
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <TextField fx:id="prodPriceField" promptText="Prix" styleClass="auth-field" HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
+                                                <TextField fx:id="prodStockField" promptText="Stock" styleClass="auth-field" HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
+                                            </HBox>
+                                            <TextArea fx:id="prodDescField" promptText="Description" prefRowCount="8" wrapText="true" VBox.vgrow="ALWAYS"/>
+                                        </VBox>
+                                        <VBox spacing="8" alignment="TOP_LEFT" prefWidth="340" minWidth="340">
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Button text="Ajouter des images" onAction="#handleChooseProductImages" styleClass="btn-secondary"/>
+                                                <Label fx:id="prodImageFileNameLabel" text="Aucune selection" style="-fx-font-size: 12px; -fx-text-fill: #64748b;" maxWidth="150"/>
+                                            </HBox>
+                                            <HBox spacing="8" alignment="CENTER_LEFT">
+                                                <Button text="Definir principale" onAction="#handleSetPrimaryProductImage" styleClass="btn-outline"/>
+                                                <Button text="Supprimer" onAction="#handleRemoveSelectedProductImage" styleClass="btn-secondary"/>
+                                            </HBox>
+                                            <ListView fx:id="prodImagesList" minHeight="150" prefHeight="150" prefWidth="340" styleClass="table-premium"/>
+                                            <StackPane prefWidth="340" prefHeight="180" style="-fx-background-color: #f8fafc; -fx-background-radius: 12px; -fx-border-color: #e2e8f0; -fx-border-radius: 12px; -fx-border-width: 1.5px;">
+                                                <ImageView fx:id="prodImagePreview" fitWidth="320" fitHeight="160" preserveRatio="true"/>
+                                                <Label fx:id="prodImagePreviewPlaceholderLabel" text="Aucune image" styleClass="image-placeholder"/>
+                                            </StackPane>
+                                        </VBox>
+                                    </HBox>
+                                </VBox>
+                            </ScrollPane>
                         </VBox>
 
-                        <!-- Centered modal for adding/editing products -->
                         <StackPane fx:id="productModalOverlay" visible="false" managed="false" pickOnBounds="true"
                                    style="-fx-background-color: rgba(15, 23, 42, 0.35);" alignment="CENTER">
-                            <VBox spacing="12" alignment="CENTER" styleClass="auth-card"
-                                  style="-fx-padding: 18px; -fx-max-width: 520px; -fx-max-height: 520px;">
+                            <VBox spacing="12" alignment="TOP_CENTER" styleClass="auth-card"
+                                  style="-fx-padding: 18px; -fx-max-width: 780px; -fx-max-height: 760px;">
                                 <Label text="Ajouter / Modifier" styleClass="brand-title"/>
-                                <VBox fx:id="productModalFormHost" spacing="10" alignment="CENTER"/>
+                                <ScrollPane fitToWidth="true" prefViewportWidth="700" prefViewportHeight="520"
+                                            hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                                            style="-fx-background-color: transparent; -fx-background-insets: 0;">
+                                    <VBox fx:id="productModalFormHost" spacing="10" alignment="TOP_LEFT" fillWidth="true"/>
+                                </ScrollPane>
                                 <HBox spacing="10" alignment="CENTER_RIGHT">
+                                    <Button text="Enregistrer" onAction="#handleSaveProduct" styleClass="btn-primary" prefWidth="160"/>
                                     <Button text="Annuler" onAction="#handleCancelProductModal" styleClass="btn-secondary"/>
                                 </HBox>
                             </VBox>
@@ -135,7 +142,7 @@
                                 <TableColumn fx:id="colUserId" text="ID" prefWidth="70"/>
                                 <TableColumn fx:id="colUsername" text="Username" prefWidth="170"/>
                                 <TableColumn fx:id="colEmail" text="Email" prefWidth="220"/>
-                                <TableColumn fx:id="colRole" text="Rôle" prefWidth="90"/>
+                                <TableColumn fx:id="colRole" text="Role" prefWidth="90"/>
                                 <TableColumn fx:id="colSuspended" text="Suspendu" prefWidth="100"/>
                                 <TableColumn fx:id="colUserAction" text="Actions" prefWidth="160" style="-fx-alignment: CENTER;"/>
                             </columns>
@@ -143,56 +150,54 @@
                     </VBox>
                 </Tab>
 
-                <Tab text="Catégories">
+                <Tab text="Categories">
                     <StackPane>
                         <BorderPane>
-                        <center>
-                            <TableView fx:id="categoriesTable" styleClass="table-premium" prefHeight="300">
-                                <columns>
-                                    <TableColumn fx:id="colCatId"   text="ID"          prefWidth="70"/>
-                                    <TableColumn fx:id="colCatName" text="Nom"         prefWidth="220"/>
-                                    <TableColumn fx:id="colCatDesc" text="Description" prefWidth="380"/>
-                                    <TableColumn fx:id="colCatAction" text="Actions" prefWidth="160" style="-fx-alignment: CENTER;"/>
-                                </columns>
-                            </TableView>
-                        </center>
-                        <top>
-                            <HBox alignment="CENTER_LEFT" spacing="10" BorderPane.alignment="CENTER_LEFT">
-                                <padding><Insets bottom="10"/></padding>
-                                <Label text="Gestion des catégories" styleClass="field-label" style="-fx-font-size: 15px;"/>
-                                <Region HBox.hgrow="ALWAYS"/>
-                                <Button text="Ajouter catégorie" onAction="#handleAddCategoryButton" styleClass="btn-primary" prefWidth="190"/>
-                            </HBox>
-                        </top>
+                            <center>
+                                <TableView fx:id="categoriesTable" styleClass="table-premium" prefHeight="300">
+                                    <columns>
+                                        <TableColumn fx:id="colCatId" text="ID" prefWidth="70"/>
+                                        <TableColumn fx:id="colCatName" text="Nom" prefWidth="220"/>
+                                        <TableColumn fx:id="colCatDesc" text="Description" prefWidth="380"/>
+                                        <TableColumn fx:id="colCatAction" text="Actions" prefWidth="160" style="-fx-alignment: CENTER;"/>
+                                    </columns>
+                                </TableView>
+                            </center>
+                            <top>
+                                <HBox alignment="CENTER_LEFT" spacing="10" BorderPane.alignment="CENTER_LEFT">
+                                    <padding><Insets bottom="10"/></padding>
+                                    <Label text="Gestion des categories" styleClass="field-label" style="-fx-font-size: 15px;"/>
+                                    <Region HBox.hgrow="ALWAYS"/>
+                                    <Button text="Ajouter categorie" onAction="#handleAddCategoryButton" styleClass="btn-primary" prefWidth="190"/>
+                                </HBox>
+                            </top>
                             <bottom>
                                 <VBox fx:id="categoryFormContainer" spacing="10" visible="false" managed="false">
-                                <padding><Insets top="10"/></padding>
-                                <Separator/>
-                                <HBox spacing="10">
-                                    <TextField fx:id="catNameField"  promptText="Nom de la catégorie"     styleClass="auth-field" prefWidth="240"/>
-                                    <TextField fx:id="catDescField"  promptText="Description (optionnel)" styleClass="auth-field" HBox.hgrow="ALWAYS"/>
-                                </HBox>
-                                <HBox spacing="10" alignment="CENTER_RIGHT">
-                                    <Button text="Enregistrer"  onAction="#handleSaveCategory"   styleClass="btn-primary" prefWidth="160"/>
+                                    <padding><Insets top="10"/></padding>
+                                    <Separator/>
+                                    <HBox spacing="10">
+                                        <TextField fx:id="catNameField" promptText="Nom de la categorie" styleClass="auth-field" prefWidth="240"/>
+                                        <TextField fx:id="catDescField" promptText="Description (optionnel)" styleClass="auth-field" HBox.hgrow="ALWAYS"/>
+                                    </HBox>
+                                    <HBox spacing="10" alignment="CENTER_RIGHT">
+                                        <Button text="Enregistrer" onAction="#handleSaveCategory" styleClass="btn-primary" prefWidth="160"/>
+                                    </HBox>
+                                </VBox>
+                            </bottom>
+                        </BorderPane>
+
+                        <StackPane fx:id="categoryModalOverlay" visible="false" managed="false" pickOnBounds="true"
+                                   style="-fx-background-color: rgba(15, 23, 42, 0.35);" alignment="CENTER">
+                            <VBox spacing="12" alignment="CENTER" styleClass="auth-card"
+                                  style="-fx-padding: 18px; -fx-max-width: 480px; -fx-max-height: 420px;">
+                                <Label text="Ajouter / Modifier" styleClass="brand-title"/>
+                                <VBox fx:id="categoryModalFormHost" spacing="10" alignment="CENTER"/>
+                                <HBox spacing="10" alignment="CENTER_RIGHT" VBox.vgrow="NEVER">
+                                    <Button text="Annuler" onAction="#handleCancelCategoryModal" styleClass="btn-secondary"/>
                                 </HBox>
                             </VBox>
-                        </bottom>
-                    </BorderPane>
-
-                    <!-- Centered modal for adding/editing categories -->
-                    <StackPane fx:id="categoryModalOverlay" visible="false" managed="false" pickOnBounds="true"
-                               style="-fx-background-color: rgba(15, 23, 42, 0.35);" alignment="CENTER">
-                        <VBox spacing="12" alignment="CENTER" styleClass="auth-card"
-                              style="-fx-padding: 18px; -fx-max-width: 480px; -fx-max-height: 420px;">
-                            <Label text="Ajouter / Modifier" styleClass="brand-title" />
-        
-                            <VBox fx:id="categoryModalFormHost" spacing="10" alignment="CENTER"/>
-                            <HBox spacing="10" alignment="CENTER_RIGHT" VBox.vgrow="NEVER">
-                                <Button text="Annuler" onAction="#handleCancelCategoryModal" styleClass="btn-secondary"/>
-                            </HBox>
-                        </VBox>
+                        </StackPane>
                     </StackPane>
-                </StackPane>
                 </Tab>
             </tabs>
         </TabPane>
@@ -200,4 +205,3 @@
         <Label fx:id="messageLabel" visible="false" managed="false" wrapText="true" maxWidth="Infinity"/>
     </VBox>
 </VBox>
-
