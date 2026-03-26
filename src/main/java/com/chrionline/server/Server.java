@@ -11,6 +11,7 @@ import com.chrionline.service.ProductService;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -65,6 +66,8 @@ public class Server {
         LOG.info("[SERVER] Cleaning expired sessions...");
         sessionManager.cleanExpiredSessions();
 
+        UDPNotificationService udpNotificationService = new UDPNotificationService(UDPNotificationService.DEFAULT_PORT);
+
         // ── Thread pool ───────────────────────────────────────────────────────
         int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
         ExecutorService pool = Executors.newFixedThreadPool(poolSize);
@@ -78,7 +81,10 @@ public class Server {
                 try {
                     Socket clientSocket = serverSocket.accept();
                     // Pass the SAME shared instances — no new service created per thread
-                    pool.execute(new ClientHandler(clientSocket, authService, sessionManager, productService, cartService, orderService, paymentService, adminService));
+                    pool.execute(new ClientHandler(clientSocket, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService));
+                } catch (SocketException e) {
+                    if (serverSocket.isClosed()) break;
+                    LOG.log(Level.INFO, "SocketException pendant accept(): " + e.getMessage(), e);
                 } catch (IOException e) {
                     if (serverSocket.isClosed()) break;
                     LOG.log(Level.WARNING, "Erreur lors de accept()", e);
@@ -88,6 +94,7 @@ public class Server {
         } catch (IOException e) {
             LOG.log(Level.SEVERE, "Impossible de demarrer le serveur", e);
         } finally {
+            udpNotificationService.close();
             shutdown(null, pool);
         }
     }
