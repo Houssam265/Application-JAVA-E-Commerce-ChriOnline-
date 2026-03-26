@@ -82,8 +82,7 @@
                                    style="-fx-background-color: rgba(15, 23, 42, 0.35);" alignment="CENTER">
                             <VBox spacing="12" alignment="CENTER" styleClass="auth-card"
                                   style="-fx-padding: 18px; -fx-max-width: 520px; -fx-max-height: 520px;">
-                                <Label text="Ajouter / Modifier un produit" styleClass="brand-title"/>
-                                <Label text="Formulaire au centre" style="-fx-text-fill: #64748b; -fx-font-size: 12px; -fx-font-weight: 600;"/>
+                                <Label text="Ajouter / Modifier" styleClass="brand-title"/>
                                 <VBox fx:id="productModalFormHost" spacing="10" alignment="CENTER"/>
                                 <HBox spacing="10" alignment="CENTER_RIGHT">
                                     <Button text="Annuler" onAction="#handleCancelProductModal" styleClass="btn-secondary"/>
@@ -176,9 +175,8 @@
                                style="-fx-background-color: rgba(15, 23, 42, 0.35);" alignment="CENTER">
                         <VBox spacing="12" alignment="CENTER" styleClass="auth-card"
                               style="-fx-padding: 18px; -fx-max-width: 480px; -fx-max-height: 420px;">
-                            <Label text="Ajouter / Modifier une catégorie" styleClass="brand-title" />
-                            <Label text="Formulaire au centre puis cliquez sur Enregistrer."
-                                   style="-fx-text-fill: #64748b; -fx-font-size: 12px; -fx-font-weight: 600;"/>
+                            <Label text="Ajouter / Modifier" styleClass="brand-title" />
+        
                             <VBox fx:id="categoryModalFormHost" spacing="10" alignment="CENTER"/>
                             <HBox spacing="10" alignment="CENTER_RIGHT" VBox.vgrow="NEVER">
                                 <Button text="Annuler" onAction="#handleCancelCategoryModal" styleClass="btn-secondary"/>

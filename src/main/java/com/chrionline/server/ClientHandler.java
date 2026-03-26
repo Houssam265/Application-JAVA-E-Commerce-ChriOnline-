@@ -24,9 +24,14 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -761,7 +766,7 @@ public class ClientHandler implements Runnable {
                     p.setCategoryId(categoryId);
                     p.setName(name);
                     p.setDescription(desc != null ? String.valueOf(desc) : "");
-                    p.setImageUrl(img == null || "null".equals(String.valueOf(img)) ? null : String.valueOf(img));
+                    p.setImageUrl(resolveProductImageUrl(req, img));
                     if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
                     if (stock instanceof Number) p.setStock(((Number) stock).intValue());
                     return Response.ok(adminService.createProduct(p));
@@ -780,7 +785,7 @@ public class ClientHandler implements Runnable {
                     p.setCategoryId(categoryId);
                     p.setName(name);
                     p.setDescription(desc != null ? String.valueOf(desc) : "");
-                    p.setImageUrl(img == null || "null".equals(String.valueOf(img)) ? null : String.valueOf(img));
+                    p.setImageUrl(resolveProductImageUrl(req, img));
                     if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
                     if (stock instanceof Number) p.setStock(((Number) stock).intValue());
                     adminService.updateProduct(p);
@@ -846,5 +851,50 @@ public class ClientHandler implements Runnable {
         if (req.getPayload() == null) return null;
         Object v = req.getPayload().get(key);
         return v instanceof String ? ((String) v).trim() : null;
+    }
+
+    /**
+     * If image_base64 is provided by admin UI, stores the file under uploads/images
+     * and returns the absolute path to persist in image_url.
+     * Otherwise, falls back to payload.image_url.
+     */
+    private String resolveProductImageUrl(Request req, Object currentImageUrlObj) {
+        if (req.getPayload() != null) {
+            Object b64Obj = req.getPayload().get("image_base64");
+            if (b64Obj instanceof String b64 && !b64.isBlank()) {
+                try {
+                    byte[] bytes = Base64.getDecoder().decode(b64);
+                    String originalName = getPayloadString(req, "image_filename");
+                    String ext = extractImageExtension(originalName);
+
+                    Path uploadDir = Paths.get("uploads", "images").toAbsolutePath().normalize();
+                    Files.createDirectories(uploadDir);
+
+                    String storedName = UUID.randomUUID() + ext;
+                    Path target = uploadDir.resolve(storedName).normalize();
+                    Files.write(target, bytes);
+                    return target.toString();
+                } catch (IllegalArgumentException e) {
+                    throw new IllegalArgumentException("Image invalide (base64).");
+                } catch (Exception e) {
+                    throw new RuntimeException("Erreur lors de l'enregistrement de l'image: " + e.getMessage(), e);
+                }
+            }
+        }
+        return currentImageUrlObj == null || "null".equals(String.valueOf(currentImageUrlObj))
+                ? null
+                : String.valueOf(currentImageUrlObj);
+    }
+
+    private String extractImageExtension(String filename) {
+        if (filename == null) return ".png";
+        String name = filename.trim().toLowerCase();
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot == name.length() - 1) return ".png";
+        String ext = name.substring(dot);
+        return switch (ext) {
+            case ".png", ".jpg", ".jpeg", ".gif", ".webp" -> ext;
+            default -> ".png";
+        };
     }
 }
