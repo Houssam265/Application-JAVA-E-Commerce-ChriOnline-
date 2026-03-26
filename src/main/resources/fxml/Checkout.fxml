@@ -44,6 +44,11 @@
                             </StackPane>
                         </graphic>
                     </Button>
+                    <Button onAction="#handleLogout" styleClass="nav-pill nav-pill-icon">
+                        <graphic>
+                            <FontIcon iconLiteral="fas-sign-out-alt" iconSize="16" styleClass="ikonli-muted"/>
+                        </graphic>
+                    </Button>
                 </HBox>
             </HBox>
         </HBox>

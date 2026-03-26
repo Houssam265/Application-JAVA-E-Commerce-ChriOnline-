@@ -9,7 +9,7 @@
            xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.chrionline.ui.controller.HomeController"
            styleClass="root-pane">
-    <ScrollPane fitToWidth="true" styleClass="content-scroll" StackPane.alignment="TOP_LEFT">
+    <ScrollPane fx:id="homeScroll" fitToWidth="true" styleClass="content-scroll" StackPane.alignment="TOP_LEFT">
         <content>
             <VBox spacing="0" style="-fx-background-color: transparent;">
 
@@ -47,6 +47,11 @@
                                 </StackPane>
                             </graphic>
                         </Button>
+                        <Button onAction="#handleLogout" styleClass="nav-pill nav-pill-icon">
+                            <graphic>
+                                <FontIcon iconLiteral="fas-sign-out-alt" iconSize="14" styleClass="ikonli-muted"/>
+                            </graphic>
+                        </Button>
                         <Button fx:id="adminButton" onAction="#handleOpenAdmin" styleClass="btn-outline" visible="false" managed="false">
                             <graphic>
                                 <HBox alignment="CENTER" spacing="6">
@@ -67,7 +72,7 @@
                     <Label text="Discover products&#10;you'll love" styleClass="hero-super-title"/>
                     <Label text="Curated collections from premium brands. Quality you can&#10;trust, prices you'll appreciate." styleClass="hero-subtitle"/>
                     <HBox alignment="CENTER_LEFT" spacing="14" style="-fx-padding: 10px 0 0 0;">
-                        <Button styleClass="btn-primary">
+                        <Button onAction="#handleShopNow" styleClass="btn-primary">
                             <graphic>
                                 <HBox alignment="CENTER" spacing="8">
                                     <FontIcon iconLiteral="fas-bolt" iconSize="14" styleClass="ikonli-on-primary"/>
@@ -75,7 +80,6 @@
                                 </HBox>
                             </graphic>
                         </Button>
-                        <Button text="Browse Catalogue" styleClass="btn-hero-secondary" />
                     </HBox>
                 </VBox>
             </StackPane>
@@ -149,7 +153,7 @@
                     </HBox>
 
                     <!-- Products Grid -->
-                    <VBox spacing="20">
+                    <VBox fx:id="productsSection" spacing="20">
                         <HBox alignment="CENTER_LEFT" spacing="8">
                             <FontIcon iconLiteral="fas-fire" iconSize="18" styleClass="ikonli-accent"/>
                             <Label text="Featured Products" styleClass="section-title"/>
@@ -159,24 +163,6 @@
                         </FlowPane>
                     </VBox>
 
-                    <!-- CTA Banner -->
-                    <StackPane styleClass="cta-banner">
-                        <VBox alignment="CENTER" spacing="18" style="-fx-padding: 60px 32px;">
-                            <Label text="🎁  Get 20% off your first order" styleClass="cta-title"/>
-                            <Label text="Subscribe to our newsletter and receive an exclusive discount code." styleClass="cta-subtitle"/>
-                            <HBox alignment="CENTER" spacing="14">
-                                <TextField promptText="Enter your email..." styleClass="cta-input" prefWidth="360"/>
-                                <Button styleClass="btn-dark">
-                                    <graphic>
-                                        <HBox alignment="CENTER" spacing="8">
-                                            <FontIcon iconLiteral="fas-paper-plane" iconSize="13" styleClass="ikonli-on-primary"/>
-                                            <Label text="Subscribe" style="-fx-text-fill: white; -fx-font-weight: 700;"/>
-                                        </HBox>
-                                    </graphic>
-                                </Button>
-                            </HBox>
-                        </VBox>
-                    </StackPane>
                 </VBox>
             </VBox>
 

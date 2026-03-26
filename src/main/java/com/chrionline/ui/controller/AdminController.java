@@ -211,6 +211,29 @@ public class AdminController {
         SceneManager.showHome();
     }
 
+    @FXML
+    private void handleLogout() {
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                return client.send(new Request(MessageProtocol.ACTION_LOGOUT, new JSONObject(), client.getSessionToken()));
+            }
+        };
+
+        t.setOnSucceeded(e -> {
+            Client.getInstance().disconnect();
+            ClientSession.getInstance().clear();
+            SceneManager.showLogin();
+        });
+        t.setOnFailed(e -> {
+            if (tabPane != null && tabPane.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(tabPane.getScene(), this::handleLogout);
+            }
+        });
+        runTask(t);
+    }
+
     // ── Products tab ─────────────────────────────────────────────────────────
     private void initProductsTable() {
         productsTable.setItems(productRows);

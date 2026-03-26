@@ -530,6 +530,29 @@ public class CheckoutController {
         else openNotifications();
     }
 
+    @FXML
+    private void handleLogout() {
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                return client.send(new Request(MessageProtocol.ACTION_LOGOUT, new JSONObject(), client.getSessionToken()));
+            }
+        };
+
+        t.setOnSucceeded(e -> {
+            Client.getInstance().disconnect();
+            ClientSession.getInstance().clear();
+            SceneManager.showLogin();
+        });
+        t.setOnFailed(e -> {
+            if (bellButton != null && bellButton.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(bellButton.getScene(), this::handleLogout);
+            }
+        });
+        runTask(t);
+    }
+
     private void openNotifications() {
         if (drawerPanel == null || drawerScrim == null) return;
         drawerScrim.setVisible(true);

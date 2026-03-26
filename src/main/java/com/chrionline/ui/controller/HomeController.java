@@ -6,6 +6,7 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
+import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
 import javafx.animation.*;
 import javafx.application.Platform;
@@ -45,7 +46,9 @@ public class HomeController {
 
     @FXML private TextField searchField;
     @FXML private FlowPane categoryPills;
+    @FXML private ScrollPane homeScroll;
     @FXML private FlowPane productsGrid;
+    @FXML private VBox productsSection;
     @FXML private Button adminButton;
     @FXML private Button bellButton;
     @FXML private Button navHomeBtn;
@@ -204,6 +207,48 @@ public class HomeController {
     }
 
     @FXML
+    private void handleShopNow() {
+        if (homeScroll == null || productsSection == null || homeScroll.getContent() == null) return;
+        Platform.runLater(() -> {
+            javafx.scene.Node content = homeScroll.getContent();
+            double contentHeight = content.getLayoutBounds().getHeight();
+            double viewportHeight = homeScroll.getViewportBounds().getHeight();
+            if (contentHeight <= viewportHeight) return;
+
+            double contentMinY = content.localToScene(content.getBoundsInLocal()).getMinY();
+            double targetMinY = productsSection.localToScene(productsSection.getBoundsInLocal()).getMinY();
+            double y = Math.max(0, targetMinY - contentMinY - 12);
+            double v = y / (contentHeight - viewportHeight);
+            if (v < 0) v = 0;
+            if (v > 1) v = 1;
+            homeScroll.setVvalue(v);
+        });
+    }
+
+    @FXML
+    private void handleLogout() {
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                return client.send(new Request(MessageProtocol.ACTION_LOGOUT, new JSONObject(), client.getSessionToken()));
+            }
+        };
+
+        t.setOnSucceeded(e -> {
+            Client.getInstance().disconnect();
+            ClientSession.getInstance().clear();
+            SceneManager.showLogin();
+        });
+        t.setOnFailed(e -> {
+            if (bellButton != null && bellButton.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(bellButton.getScene(), this::handleLogout);
+            }
+        });
+        runTask(t);
+    }
+
+    @FXML
     private void toggleNotifications() {
         boolean open = drawerPanel != null && drawerPanel.isVisible();
         if (open) closeNotifications();
@@ -285,6 +330,12 @@ public class HomeController {
         );
         out.setOnFinished(e -> toastLayer.getChildren().remove(card));
         new SequentialTransition(in, stay, out).play();
+    }
+
+    private void runTask(Task<?> t) {
+        Thread th = new Thread(t);
+        th.setDaemon(true);
+        th.start();
     }
 
     /**

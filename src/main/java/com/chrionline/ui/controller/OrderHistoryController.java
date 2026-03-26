@@ -4,6 +4,7 @@ import com.chrionline.client.Client;
 import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
+import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.SceneManager;
 import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.notifications.AppNotification;
@@ -150,6 +151,29 @@ public class OrderHistoryController {
         boolean open = drawerPanel != null && drawerPanel.isVisible();
         if (open) closeNotifications();
         else openNotifications();
+    }
+
+    @FXML
+    private void handleLogout() {
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                return client.send(new Request(MessageProtocol.ACTION_LOGOUT, new JSONObject(), client.getSessionToken()));
+            }
+        };
+
+        t.setOnSucceeded(e -> {
+            Client.getInstance().disconnect();
+            ClientSession.getInstance().clear();
+            SceneManager.showLogin();
+        });
+        t.setOnFailed(e -> {
+            if (bellButton != null && bellButton.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(bellButton.getScene(), this::handleLogout);
+            }
+        });
+        runTask(t);
     }
 
     @FXML
