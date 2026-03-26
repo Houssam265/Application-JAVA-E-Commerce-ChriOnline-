@@ -11,6 +11,9 @@ import com.chrionline.service.CartService;
 import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
+import com.chrionline.service.LogService;
+import com.chrionline.dao.LogDAO;
+import com.chrionline.model.ServerLog;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
@@ -76,6 +79,7 @@ public class ClientHandler implements Runnable {
     private final PaymentService paymentService;
     private final AdminService   adminService;
     private final UDPNotificationService udpNotificationService;
+    private final LogService     logService;
 
     // ── Per-connection state ──────────────────────────────────────────────────
     private final Socket socket;
@@ -106,6 +110,7 @@ public class ClientHandler implements Runnable {
                          OrderService orderService,
                          PaymentService paymentService,
                          AdminService adminService,
+                         LogService logService,
                          UDPNotificationService udpNotificationService) {
         this.socket         = socket;
         this.clientAddress  = socket.getInetAddress();
@@ -116,7 +121,20 @@ public class ClientHandler implements Runnable {
         this.orderService   = orderService;
         this.paymentService = paymentService;
         this.adminService   = adminService;
+        this.logService     = logService;
         this.udpNotificationService = udpNotificationService;
+    }
+
+    public ClientHandler(Socket socket,
+                         AuthService authService,
+                         SessionManager sessionManager,
+                         ProductService productService,
+                         CartService cartService,
+                         OrderService orderService,
+                         PaymentService paymentService,
+                         AdminService adminService,
+                         UDPNotificationService udpNotificationService) {
+        this(socket, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, new LogService(new LogDAO()), udpNotificationService);
     }
 
     // ── Runnable ──────────────────────────────────────────────────────────────
@@ -208,6 +226,12 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_GET_CATEGORIES:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetCategories(req);
+            case MessageProtocol.GET_LOGS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetLogs(req);
+            case MessageProtocol.GET_LOGS_BY_USER:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetLogsByUser(req);
 
             // ── Cart (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_GET_CART:
@@ -342,9 +366,12 @@ public class ClientHandler implements Runnable {
             // Register client IP so UDP notifications can reach this user
             connectedUserId = user.getUserId();
             ClientRegistry.getInstance().register(user.getUserId(), clientAddress);
-            return new Response(true, "LOGIN_SUCCESS", payload, session.getToken());
+            Response r = new Response(true, "LOGIN_SUCCESS", payload, session.getToken());
+            logService.logSuccess("LOGIN", user.getUserId());
+            return r;
 
         } catch (IllegalArgumentException e) {
+            logService.logError("LOGIN", null, "Invalid credentials from IP: " + clientAddress);
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "[LOGIN] Unexpected error: " + e.getMessage(), e);
@@ -384,7 +411,9 @@ public class ClientHandler implements Runnable {
             payload.put("role",     user.getRole().name());
 
             connectionToken = session.getToken();
-            return new Response(true, "REGISTER_SUCCESS", payload, session.getToken());
+            Response r = new Response(true, "REGISTER_SUCCESS", payload, session.getToken());
+            logService.logSuccess("REGISTER", null);
+            return r;
 
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -417,7 +446,11 @@ public class ClientHandler implements Runnable {
         User user = sessionManager.getUserFromToken(req.getToken()).orElse(null);
         boolean adminCatalog = user != null && authService.isAdmin(user);
         List<?> products = productService.getProducts(categoryId, adminCatalog);
-        return Response.ok(products);
+        Response r = Response.ok(products);
+        if (user != null) {
+            logService.logSuccess("GET_PRODUCTS", user.getUserId());
+        }
+        return r;
     }
 
     /**
@@ -472,7 +505,9 @@ public class ClientHandler implements Runnable {
             }
             // Never trust client-provided price: server always reads product.price from DB
             cartService.addToCart(userId, productId, quantity);
-            return Response.ok("ADDED_TO_CART", cartService.getCartView(userId));
+            Response r = Response.ok("ADDED_TO_CART", cartService.getCartView(userId));
+            logService.logSuccess("ADD_TO_CART", userId);
+            return r;
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
@@ -547,8 +582,14 @@ public class ClientHandler implements Runnable {
                     "ORDER_VALIDATED",
                     "Commande " + order.getOrderId() + " validee.",
                     String.valueOf(order.getOrderId()));
-            return Response.ok(order);
+            Response r = Response.ok(order);
+            logService.logSuccess("PLACE_ORDER", userId);
+            logService.logSuccess("CHECKOUT", userId);
+            return r;
         } catch (IllegalArgumentException e) {
+            int uid = sessionManager.getUserFromToken(req.getToken()).map(User::getUserId).orElse(0);
+            Integer u = uid > 0 ? uid : null;
+            logService.logError("PLACE_ORDER", u, e.getMessage());
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
@@ -590,9 +631,12 @@ public class ClientHandler implements Runnable {
                         "PAYMENT_CONFIRMED",
                         "Paiement confirme pour la commande " + orderId + ".",
                         String.valueOf(orderId));
-                return Response.ok("PAYMENT_OK", result);
+                Response r = Response.ok("PAYMENT_OK", result);
+                logService.logSuccess("PAYMENT", userId);
+                return r;
             }
             String msg = result.get("message") != null ? String.valueOf(result.get("message")) : "Paiement refusé.";
+            logService.logError("PAYMENT", userId, "Payment failed: " + msg);
             return Response.error(msg, result);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -663,7 +707,9 @@ public class ClientHandler implements Runnable {
                 sendUdpNotificationToUser(ownerId, "ORDER_STATUS_UPDATED", msg, String.valueOf(orderId));
             });
 
-            return Response.ok("STATUS_UPDATED", null);
+            Response r = Response.ok("STATUS_UPDATED", null);
+            logService.logSuccess("UPDATE_ORDER_STATUS", admin.getUserId(), "new status: " + status);
+            return r;
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
@@ -691,6 +737,30 @@ public class ClientHandler implements Runnable {
             LOG.log(Level.WARNING, "[ORDER_DETAILS] Unexpected error: " + e.getMessage(), e);
             return Response.error("Erreur serveur lors du chargement de la commande.");
         }
+    }
+
+    private Response handleGetLogs(Request req) {
+        User admin = sessionManager.getUserFromToken(req.getToken())
+                .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+        if (!authService.isAdmin(admin)) {
+            return Response.error("Accès refusé (ADMIN uniquement).");
+        }
+        List<com.chrionline.model.ServerLog> logs = logService.getRecentLogs(50);
+        return Response.ok(logs);
+    }
+
+    private Response handleGetLogsByUser(Request req) {
+        User admin = sessionManager.getUserFromToken(req.getToken())
+                .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+        if (!authService.isAdmin(admin)) {
+            return Response.error("Accès refusé (ADMIN uniquement).");
+        }
+        Integer uid = req.getPayloadInt("user_id");
+        if (uid == null || uid <= 0) {
+            return Response.error("Missing user_id");
+        }
+        List<com.chrionline.model.ServerLog> logs = logService.getLogsByUser(uid);
+        return Response.ok(logs);
     }
 
     // ── PROFILE handlers ──────────────────────────────────────────────────

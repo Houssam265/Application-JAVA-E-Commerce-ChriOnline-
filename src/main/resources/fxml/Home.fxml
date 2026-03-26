@@ -69,7 +69,7 @@
 
                 <StackPane styleClass="hero-section">
                     <VBox alignment="CENTER_LEFT" spacing="24" maxWidth="1200" style="-fx-padding: 90px 60px;">
-                        <Label text="New Collection 2025" styleClass="hero-badge"/>
+                        <Label text="New Collection 2026" styleClass="hero-badge"/>
                         <Label text="Discover products&#10;you'll love" styleClass="hero-super-title"/>
                         <Label text="Curated collections from premium brands. Quality you can&#10;trust, prices you'll appreciate." styleClass="hero-subtitle"/>
                         <HBox alignment="CENTER_LEFT" spacing="14" style="-fx-padding: 10px 0 0 0;">
@@ -135,8 +135,6 @@
                                     <FontIcon iconLiteral="fas-layer-group" iconSize="18" styleClass="ikonli-accent"/>
                                     <Label text="Shop by Category" styleClass="section-title"/>
                                 </HBox>
-                                <Region HBox.hgrow="ALWAYS"/>
-                                <Label text="View All →" styleClass="link-action-small"/>
                             </HBox>
                             <FlowPane fx:id="categoryPills" hgap="12" vgap="12" alignment="CENTER_LEFT"/>
                         </VBox>
