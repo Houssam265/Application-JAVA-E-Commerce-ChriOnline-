@@ -78,6 +78,9 @@ public class ClientHandler implements Runnable {
     /** Token associated to the current TCP connection (revoked on disconnect). */
     private String connectionToken;
 
+    /** userId of the authenticated user for this connection (0 = not yet authenticated). */
+    private int connectedUserId = 0;
+
     /** Output writer — kept as a field so helper methods can write responses. */
     private PrintWriter out;
 
@@ -146,6 +149,10 @@ public class ClientHandler implements Runnable {
             if (connectionToken != null) {
                 sessionManager.invalidateSession(connectionToken);
                 connectionToken = null;
+            }
+            if (connectedUserId > 0) {
+                ClientRegistry.getInstance().unregister(connectedUserId);
+                connectedUserId = 0;
             }
             LOG.info("Client deconnecte: " + clientId);
         }
@@ -266,14 +273,30 @@ public class ClientHandler implements Runnable {
         boolean valid = sessionManager.isTokenValid(token);
         if (valid && token != null) {
             connectionToken = token;
+            // Register this client's IP so order-status notifications can reach it
+            sessionManager.getUserFromToken(token).ifPresent(u -> {
+                connectedUserId = u.getUserId();
+                ClientRegistry.getInstance().register(u.getUserId(), clientAddress);
+            });
         }
         return valid;
     }
 
-    /** Best-effort UDP notification to the connected client. */
+    /** Best-effort UDP notification to the connected client (current connection). */
     private void sendUdpNotification(String type, String message, String orderId) {
         if (udpNotificationService == null || clientAddress == null) return;
         udpNotificationService.sendNotification(clientAddress, type, message, orderId);
+    }
+
+    /** Best-effort UDP notification to a specific user by their userId. */
+    private void sendUdpNotificationToUser(int userId, String type, String message, String orderId) {
+        if (udpNotificationService == null) return;
+        java.net.InetAddress targetAddress = ClientRegistry.getInstance().getAddress(userId);
+        if (targetAddress == null) {
+            LOG.fine("[UDP] userId=" + userId + " not connected — notification skipped.");
+            return;
+        }
+        udpNotificationService.sendNotification(targetAddress, type, message, orderId);
     }
 
     // ── AUTH handlers ─────────────────────────────────────────────────────────
@@ -307,6 +330,9 @@ public class ClientHandler implements Runnable {
 
             // token is sent as the top-level Response.token field
             connectionToken = session.getToken();
+            // Register client IP so UDP notifications can reach this user
+            connectedUserId = user.getUserId();
+            ClientRegistry.getInstance().register(user.getUserId(), clientAddress);
             return new Response(true, "LOGIN_SUCCESS", payload, session.getToken());
 
         } catch (IllegalArgumentException e) {
@@ -599,9 +625,9 @@ public class ClientHandler implements Runnable {
 
     private Response handleUpdateOrderStatus(Request req) {
         try {
-            User user = sessionManager.getUserFromToken(req.getToken())
+            User admin = sessionManager.getUserFromToken(req.getToken())
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-            if (!authService.isAdmin(user)) {
+            if (!authService.isAdmin(admin)) {
                 return Response.error("Accès refusé (ADMIN uniquement).");
             }
             String orderId = getPayloadString(req, "order_id");
@@ -610,10 +636,21 @@ public class ClientHandler implements Runnable {
                 return Response.error("Missing order_id or status");
             }
             orderService.updateOrderStatus(orderId, com.chrionline.model.OrderStatus.valueOf(status));
-            sendUdpNotification(
-                    "ORDER_STATUS_UPDATED",
-                    "Statut commande " + orderId + " -> " + status + ".",
-                    orderId);
+
+            // Look up the order owner to send the UDP notification to THEM (not the admin)
+            orderService.getOrderDetails(orderId).ifPresent(order -> {
+                int ownerId = order.getUserId();
+                String friendlyStatus = switch (status) {
+                    case "VALIDATED" -> "Validée";
+                    case "SHIPPED"   -> "Expédiée";
+                    case "DELIVERED" -> "Livrée";
+                    case "CANCELLED" -> "Annulée";
+                    default          -> status;
+                };
+                String msg = "Votre commande est maintenant : " + friendlyStatus + ".";
+                sendUdpNotificationToUser(ownerId, "ORDER_STATUS_UPDATED", msg, orderId);
+            });
+
             return Response.ok("STATUS_UPDATED", null);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());

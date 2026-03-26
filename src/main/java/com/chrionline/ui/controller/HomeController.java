@@ -19,6 +19,8 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -87,19 +89,71 @@ public class HomeController {
 
         if (notificationsList != null) {
             notificationsList.setCellFactory(lv -> new ListCell<>() {
-                @Override protected void updateItem(com.chrionline.ui.notifications.AppNotification item, boolean empty) {
+                {
+                    // Click on a cell → mark ONLY that notification as read
+                    setOnMouseClicked(e -> {
+                        com.chrionline.ui.notifications.AppNotification n = getItem();
+                        if (n != null && !n.isRead()) {
+                            com.chrionline.ui.notifications.NotificationCenter.getInstance().markAsRead(n);
+                            updateItem(n, false); // redraw this cell immediately
+                            notificationsList.refresh();
+                        }
+                    });
+                    setPrefWidth(0); // allow the cell to shrink to list width
+                    setStyle("-fx-cursor: hand; -fx-padding: 8px 12px;");
+                }
+
+                @Override
+                protected void updateItem(com.chrionline.ui.notifications.AppNotification item, boolean empty) {
                     super.updateItem(item, empty);
                     if (empty || item == null) {
                         setText(null);
                         setGraphic(null);
+                        setStyle("-fx-padding: 0;");
                         return;
                     }
+
+                    // ── Build card ──────────────────────────────────────
+                    HBox row = new HBox(8);
+                    row.setAlignment(Pos.TOP_LEFT);
+
+                    // Unread dot indicator
+                    javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(5);
+                    dot.setFill(item.isRead()
+                            ? javafx.scene.paint.Color.TRANSPARENT
+                            : javafx.scene.paint.Color.web("#f46a3d"));
+
+                    VBox dotBox = new VBox(dot);
+                    dotBox.setAlignment(Pos.TOP_CENTER);
+                    dotBox.setPadding(new Insets(3, 0, 0, 0));
+
+                    // Text block
+                    VBox textBox = new VBox(2);
+                    HBox.setHgrow(textBox, Priority.ALWAYS);
+
                     String hhmm = item.getTimestamp().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
-                    setText("[" + hhmm + "] " + item.getMessage());
-                    setOpacity(item.isRead() ? 0.55 : 1.0);
+                    Label timeLabel = new Label(hhmm);
+                    timeLabel.setStyle("-fx-font-size: 10px; -fx-text-fill: #94a3b8;");
+
+                    Label msgLabel = new Label(item.getMessage());
+                    msgLabel.setWrapText(true);
+                    msgLabel.setMaxWidth(Double.MAX_VALUE);
+                    msgLabel.setStyle(item.isRead()
+                            ? "-fx-font-size: 12px; -fx-text-fill: #94a3b8;"
+                            : "-fx-font-size: 12px; -fx-text-fill: #1e293b; -fx-font-weight: 600;");
+
+                    textBox.getChildren().addAll(timeLabel, msgLabel);
+                    row.getChildren().addAll(dotBox, textBox);
+
+                    setText(null);
+                    setGraphic(row);
+                    setOpacity(item.isRead() ? 0.65 : 1.0);
+                    setStyle("-fx-cursor: hand; -fx-padding: 8px 12px; -fx-background-color: "
+                            + (item.isRead() ? "transparent" : "rgba(244,106,61,0.04)") + ";");
                 }
             });
         }
+
 
         nc.getNotifications().addListener((ListChangeListener<com.chrionline.ui.notifications.AppNotification>) c -> {
             while (c.next()) {

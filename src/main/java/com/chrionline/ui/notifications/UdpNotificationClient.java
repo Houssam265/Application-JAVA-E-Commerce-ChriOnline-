@@ -1,5 +1,7 @@
 package com.chrionline.ui.notifications;
 
+import org.json.JSONObject;
+
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketTimeoutException;
@@ -10,18 +12,23 @@ import java.util.logging.Logger;
 
 /**
  * Background daemon thread that listens for UDP server push notifications (KAN-31).
+ *
+ * Listens on CLIENT_PORT (9091) — distinct from the server's sender socket (9090) —
+ * so that both server and client can run on the same machine without port conflicts.
  */
 public final class UdpNotificationClient {
     private static final Logger LOG = Logger.getLogger(UdpNotificationClient.class.getName());
 
-    private static final int DEFAULT_PORT = 9090;
+    /** Port the CLIENT listens on. Must differ from the server's bind port (9090). */
+    public static final int CLIENT_PORT = 9091;
+
     private static volatile Thread thread;
     private static volatile boolean running;
 
     private UdpNotificationClient() {}
 
     public static void startIfNeeded() {
-        startIfNeeded(DEFAULT_PORT);
+        startIfNeeded(CLIENT_PORT);
     }
 
     public static void startIfNeeded(int port) {
@@ -52,9 +59,10 @@ public final class UdpNotificationClient {
                     if (packet.getLength() <= 0) {
                         continue; // ignore empty packets
                     }
-                    String msg = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8).trim();
-                    if (!msg.isBlank()) {
-                        NotificationCenter.getInstance().addNotification(msg);
+                    String raw = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8).trim();
+                    if (!raw.isBlank()) {
+                        String humanMessage = parseNotificationMessage(raw);
+                        NotificationCenter.getInstance().addNotification(humanMessage);
                     }
                 } catch (SocketTimeoutException ignored) {
                     // keep listening, allows graceful shutdown checks
@@ -68,6 +76,40 @@ public final class UdpNotificationClient {
             LOG.log(Level.INFO, "UDP listener unavailable on port " + port + ": " + se.getMessage());
         } catch (Exception e) {
             LOG.log(Level.WARNING, "UDP listener terminated unexpectedly: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Parses the JSON notification payload and returns a clean, human-readable string.
+     * Falls back to the raw string if parsing fails.
+     */
+    private static String parseNotificationMessage(String raw) {
+        try {
+            JSONObject obj = new JSONObject(raw);
+            String type    = obj.optString("type", "");
+            String message = obj.optString("message", "");
+            String orderId = obj.optString("orderId", "");
+
+            // Build a user-friendly label based on the notification type
+            String prefix = switch (type) {
+                case "ORDER_STATUS_UPDATED" -> "🔔 Mise à jour commande";
+                case "ORDER_VALIDATED"      -> "✅ Commande validée";
+                case "PAYMENT_CONFIRMED"    -> "💳 Paiement confirmé";
+                default                     -> "📣 Notification";
+            };
+
+            StringBuilder sb = new StringBuilder(prefix);
+            if (!orderId.isBlank()) {
+                // Show short order id (first 8 chars) to keep it readable
+                String shortId = orderId.length() > 8 ? orderId.substring(0, 8) + "…" : orderId;
+                sb.append(" #").append(shortId);
+            }
+            if (!message.isBlank()) {
+                sb.append(" — ").append(message);
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return raw; // fallback: show raw text
         }
     }
 }
