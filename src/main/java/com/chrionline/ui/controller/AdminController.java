@@ -27,6 +27,8 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.HBox;
+import javafx.geometry.Pos;
+import javafx.scene.text.TextAlignment;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import javafx.stage.FileChooser;
@@ -83,9 +85,10 @@ public class AdminController {
     @FXML private TableColumn<ProductRow, Number> colProdCategory;
     @FXML private TableColumn<ProductRow, String> colProdPrice;
     @FXML private TableColumn<ProductRow, Number> colProdStock;
+    @FXML private TableColumn<ProductRow, Void> colProdAction;
 
     @FXML private TextField prodNameField;
-    @FXML private TextField prodCategoryField;
+    @FXML private ComboBox<CategoryRow> prodCategoryCombo;
     @FXML private TextField prodPriceField;
     @FXML private TextField prodStockField;
     @FXML private TextArea prodDescField;
@@ -124,6 +127,7 @@ public class AdminController {
     @FXML private TableColumn<CategoryRow, Number> colCatId;
     @FXML private TableColumn<CategoryRow, String> colCatName;
     @FXML private TableColumn<CategoryRow, String> colCatDesc;
+    @FXML private TableColumn<CategoryRow, Void> colCatAction;
     @FXML private TextField catNameField;
     @FXML private TextField catDescField;
 
@@ -171,11 +175,11 @@ public class AdminController {
         }
 
         // Restrict text inputs
-        prodCategoryField.setTextFormatter(new TextFormatter<>(change -> change.getControlNewText().matches("\\d*") ? change : null));
         prodStockField.setTextFormatter(new TextFormatter<>(change -> change.getControlNewText().matches("\\d*") ? change : null));
         prodPriceField.setTextFormatter(new TextFormatter<>(change -> change.getControlNewText().matches("\\d*([\\.]\\d*)?") ? change : null));
 
         initProductsTable();
+        initProductCategoryCombo();
         initOrdersTable();
         initUsersTable();
         initCategoriesTable();
@@ -216,22 +220,158 @@ public class AdminController {
         colProdPrice.setCellValueFactory(cd -> new SimpleStringProperty(String.format("%.2f Dhs", cd.getValue().price.get())));
         colProdStock.setCellValueFactory(cd -> cd.getValue().stock);
 
-        productsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldV, row) -> {
-            if (row == null) return;
-            editingProductId = row.productId.get();
-            prodNameField.setText(row.name.get());
-            prodCategoryField.setText(String.valueOf(row.categoryId.get()));
-            prodPriceField.setText(String.valueOf(row.price.get()));
-            prodStockField.setText(String.valueOf(row.stock.get()));
-            // Keep the existing image URL unless the admin uploads a new file.
-            editingImageUrl = row.imageUrl.get();
-            selectedProductImageFile = null;
-            selectedProductImageBase64 = null;
+        // Edit / Delete actions live in a dedicated column (no selection-to-form coupling).
+        if (colProdAction != null) {
+            colProdAction.setCellFactory(tc -> new TableCell<>() {
+                private final Button editBtn = new Button("Modifier");
+                private final Button delBtn = new Button("Supprimer");
+                private final HBox box = new HBox(8, editBtn, delBtn);
+                private final StackPane centered = new StackPane(box);
 
-            updateProductImagePreview(editingImageUrl);
-            updateProductImageFileNameLabel(editingImageUrl);
-            prodDescField.setText(row.description.get() == null ? "" : row.description.get());
+                {
+                    editBtn.getStyleClass().add("btn-outline");
+                    delBtn.getStyleClass().add("btn-secondary");
+                    box.setAlignment(Pos.CENTER);
+                    centered.setAlignment(Pos.CENTER);
+
+                    editBtn.setOnAction(e -> {
+                        ProductRow row = getTableRow() != null ? (ProductRow) getTableRow().getItem() : null;
+                        if (row == null) return;
+                        openEditProduct(row);
+                    });
+                    delBtn.setOnAction(e -> {
+                        ProductRow row = getTableRow() != null ? (ProductRow) getTableRow().getItem() : null;
+                        if (row == null) return;
+                        confirmAndDeleteProduct(row);
+                    });
+                }
+
+                @Override
+                protected void updateItem(Void item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                        setGraphic(null);
+                        return;
+                    }
+                    setGraphic(centered);
+                }
+            });
+        }
+    }
+
+    private void openEditProduct(ProductRow row) {
+        if (row == null) return;
+        setMessage(null, false);
+
+        editingProductId = row.productId.get();
+        prodNameField.setText(row.name.get() == null ? "" : row.name.get());
+        selectCategoryByIdForProductForm(row.categoryId.get());
+        prodPriceField.setText(String.valueOf(row.price.get()));
+        prodStockField.setText(String.valueOf(row.stock.get()));
+
+        // Keep the existing image URL unless the admin uploads a new file.
+        editingImageUrl = row.imageUrl.get();
+        selectedProductImageFile = null;
+        selectedProductImageBase64 = null;
+
+        updateProductImagePreview(editingImageUrl);
+        updateProductImageFileNameLabel(editingImageUrl);
+        prodDescField.setText(row.description.get() == null ? "" : row.description.get());
+
+        showProductModal();
+    }
+
+    private void confirmAndDeleteProduct(ProductRow row) {
+        if (row == null) return;
+        setMessage(null, false);
+
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION);
+        a.setTitle("Confirmation");
+        a.setHeaderText("Supprimer ce produit ?");
+        String nm = row.name.get() == null ? "" : row.name.get();
+        a.setContentText(nm.isBlank() ? ("Produit #" + row.productId.get()) : nm);
+        a.getButtonTypes().setAll(ButtonType.CANCEL, ButtonType.OK);
+        a.showAndWait().ifPresent(bt -> {
+            if (bt == ButtonType.OK) {
+                deleteProductById(row.productId.get());
+            }
         });
+    }
+
+    private void deleteProductById(int productId) {
+        if (productId <= 0) return;
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                JSONObject payload = new JSONObject();
+                payload.put("product_id", productId);
+                return client.send(new Request(MessageProtocol.ACTION_ADMIN_DELETE_PRODUCT, payload, client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> {
+            Response r = t.getValue();
+            if (!r.isSuccess()) {
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (handleSessionExpiredIfNeeded(msg)) return;
+                ErrorHandler.showWarningDialog("Erreur", msg.isBlank() ? "Suppression impossible." : msg);
+                setMessage(null, false);
+                return;
+            }
+            setMessage("Produit supprimé.", false);
+            refreshProducts();
+        });
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> deleteProductById(productId)));
+        runTask(t);
+    }
+
+    private void initProductCategoryCombo() {
+        if (prodCategoryCombo == null) return;
+
+        // Share the same list as the Categories tab (auto-updated on refreshCategories()).
+        prodCategoryCombo.setItems(categoryRows);
+
+        prodCategoryCombo.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(CategoryRow item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    String n = item.name.get() == null ? "" : item.name.get();
+                    setText(n.isBlank() ? ("Catégorie #" + item.categoryId.get()) : n);
+                }
+            }
+        });
+        prodCategoryCombo.setButtonCell(new ListCell<>() {
+            @Override
+            protected void updateItem(CategoryRow item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    String n = item.name.get() == null ? "" : item.name.get();
+                    setText(n.isBlank() ? ("Catégorie #" + item.categoryId.get()) : n);
+                }
+            }
+        });
+    }
+
+    private void selectCategoryByIdForProductForm(int categoryId) {
+        if (prodCategoryCombo == null) return;
+        if (categoryId <= 0) {
+            prodCategoryCombo.getSelectionModel().clearSelection();
+            return;
+        }
+
+        for (CategoryRow c : categoryRows) {
+            if (c != null && c.categoryId.get() == categoryId) {
+                prodCategoryCombo.getSelectionModel().select(c);
+                return;
+            }
+        }
+        // If categories are not loaded yet (or missing), keep selection empty.
+        prodCategoryCombo.getSelectionModel().clearSelection();
     }
 
     private void showProductModal() {
@@ -244,6 +384,9 @@ public class AdminController {
             }
         }
 
+        // The inline product form is hidden in the main layout; ensure it is visible inside the modal.
+        productFormContainer.setVisible(true);
+        productFormContainer.setManaged(true);
         productModalFormHost.getChildren().setAll(productFormContainer);
         productModalOverlay.setVisible(true);
         productModalOverlay.setManaged(true);
@@ -268,6 +411,11 @@ public class AdminController {
             productModalOverlay.setVisible(false);
             productModalOverlay.setManaged(false);
         }
+        // Restore hidden state in the main layout (we only show it in the modal).
+        if (productFormContainer != null) {
+            productFormContainer.setVisible(false);
+            productFormContainer.setManaged(false);
+        }
         productModalOpen = false;
     }
 
@@ -277,7 +425,7 @@ public class AdminController {
         selectedProductImageFile = null;
         selectedProductImageBase64 = null;
         prodNameField.clear();
-        prodCategoryField.clear();
+        if (prodCategoryCombo != null) prodCategoryCombo.getSelectionModel().clearSelection();
         prodPriceField.clear();
         prodStockField.clear();
         prodDescField.clear();
@@ -300,6 +448,12 @@ public class AdminController {
 
     @FXML
     private void handleNewProduct() {
+        setMessage(null, false);
+        resetProductForm(true);
+    }
+
+    @FXML
+    private void handleAddProductButton() {
         setMessage(null, false);
         resetProductForm(true);
     }
@@ -358,7 +512,8 @@ public class AdminController {
     private void handleSaveProduct() {
         setMessage(null, false);
         String name = prodNameField.getText().trim();
-        int categoryId = parseInt(prodCategoryField.getText(), -1);
+        CategoryRow selectedCategory = prodCategoryCombo != null ? prodCategoryCombo.getValue() : null;
+        int categoryId = (selectedCategory == null) ? -1 : selectedCategory.categoryId.get();
         double price = parseDouble(prodPriceField.getText(), -1);
         int stock = parseInt(prodStockField.getText(), -1);
         String desc = prodDescField.getText().trim();
@@ -533,13 +688,24 @@ public class AdminController {
         // Action: dropdown de statut (mise à jour immédiate)
         colOrderAction.setCellFactory(tc -> new TableCell<>() {
             private final ComboBox<OrderStatus> statusCombo = new ComboBox<>();
+            private final HBox box = new HBox(statusCombo);
+            private final StackPane centered = new StackPane(box);
 
             {
                 statusCombo.getItems().addAll(OrderStatus.values());
                 statusCombo.getStyleClass().add("combo-box-premium");
+                box.setAlignment(Pos.CENTER);
+                centered.setAlignment(Pos.CENTER);
+                // Ensure the wrapper spans the full cell width so centering is effective.
+                centered.setMaxWidth(Double.MAX_VALUE);
+                box.setMaxWidth(Double.MAX_VALUE);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER);
                 statusCombo.setCellFactory(lv -> new ListCell<>() {
                     @Override protected void updateItem(OrderStatus item, boolean empty) {
                         super.updateItem(item, empty);
+                        setAlignment(Pos.CENTER);
+                        setTextAlignment(TextAlignment.CENTER);
                         if (empty || item == null) {
                             setText(null);
                         } else {
@@ -550,6 +716,8 @@ public class AdminController {
                 statusCombo.setButtonCell(new ListCell<>() {
                     @Override protected void updateItem(OrderStatus item, boolean empty) {
                         super.updateItem(item, empty);
+                        setAlignment(Pos.CENTER);
+                        setTextAlignment(TextAlignment.CENTER);
                         if (empty || item == null) setText(null);
                         else setText(orderStatusToFrench(item.name()));
                     }
@@ -575,9 +743,9 @@ public class AdminController {
                     OrderStatus st = OrderStatus.valueOf(row.status.get());
                     statusCombo.setValue(st);
                     statusCombo.setDisable(st == OrderStatus.CANCELLED);
-                    setGraphic(statusCombo);
+                    setGraphic(centered);
                 } catch (Exception ignored) {
-                    setGraphic(statusCombo);
+                    setGraphic(centered);
                 }
             }
         });
@@ -812,8 +980,12 @@ public class AdminController {
 
         colUserAction.setCellFactory(tc -> new TableCell<>() {
             private final Button toggle = new Button("Suspendre");
+            private final HBox box = new HBox(toggle);
+            private final StackPane centered = new StackPane(box);
             {
                 toggle.getStyleClass().add("btn-outline");
+                box.setAlignment(Pos.CENTER);
+                centered.setAlignment(Pos.CENTER);
                 toggle.setOnAction(e -> {
                     UserRow row = getTableRow() != null ? (UserRow) getTableRow().getItem() : null;
                     if (row == null) return;
@@ -830,7 +1002,7 @@ public class AdminController {
                 }
                 UserRow row = (UserRow) getTableRow().getItem();
                 toggle.setText(row.suspended.get() ? "Réactiver" : "Suspendre");
-                setGraphic(new HBox(toggle));
+                setGraphic(centered);
             }
         });
     }
@@ -968,13 +1140,48 @@ public class AdminController {
         colCatName.setCellValueFactory(cd -> cd.getValue().name);
         colCatDesc.setCellValueFactory(cd -> cd.getValue().description);
 
-        categoriesTable.getSelectionModel().selectedItemProperty().addListener((obs, oldV, row) -> {
-            if (row == null) return;
-            editingCategoryId = row.categoryId.get();
-            catNameField.setText(row.name.get() == null ? "" : row.name.get());
-            catDescField.setText(row.description.get() == null ? "" : row.description.get());
-        });
+        // Edit / Delete actions live in a dedicated column (no selection-to-form coupling).
+        if (colCatAction != null) {
+            colCatAction.setCellFactory(tc -> new TableCell<>() {
+                private final Button editBtn = new Button("Modifier");
+                private final HBox box = new HBox(8, editBtn);
+                private final StackPane centered = new StackPane(box);
+
+                {
+                    editBtn.getStyleClass().add("btn-outline");
+                    box.setAlignment(Pos.CENTER);
+                    centered.setAlignment(Pos.CENTER);
+
+                    editBtn.setOnAction(e -> {
+                        CategoryRow row = getTableRow() != null ? (CategoryRow) getTableRow().getItem() : null;
+                        if (row == null) return;
+                        openEditCategory(row);
+                    });
+                }
+
+                @Override
+                protected void updateItem(Void item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                        setGraphic(null);
+                        return;
+                    }
+                    setGraphic(centered);
+                }
+            });
+        }
     }
+
+    private void openEditCategory(CategoryRow row) {
+        if (row == null) return;
+        setMessage(null, false);
+        editingCategoryId = row.categoryId.get();
+        catNameField.setText(row.name.get() == null ? "" : row.name.get());
+        catDescField.setText(row.description.get() == null ? "" : row.description.get());
+        showCategoryModal();
+    }
+
+    // Category deletion is intentionally not exposed in the UI (requirement).
 
     @FXML
     private void handleRefreshCategories() {
@@ -991,6 +1198,9 @@ public class AdminController {
             }
         }
 
+        // The inline category form is hidden in the main layout; ensure it is visible inside the modal.
+        categoryFormContainer.setVisible(true);
+        categoryFormContainer.setManaged(true);
         categoryModalFormHost.getChildren().setAll(categoryFormContainer);
         categoryModalOverlay.setVisible(true);
         categoryModalOverlay.setManaged(true);
@@ -1011,6 +1221,11 @@ public class AdminController {
             }
         }
 
+        // Restore hidden state in the main layout (we only show it in the modal).
+        if (categoryFormContainer != null) {
+            categoryFormContainer.setVisible(false);
+            categoryFormContainer.setManaged(false);
+        }
         if (categoryModalOverlay != null) {
             categoryModalOverlay.setVisible(false);
             categoryModalOverlay.setManaged(false);
@@ -1033,6 +1248,11 @@ public class AdminController {
 
     @FXML
     private void handleNewCategory() {
+        resetCategoryForm(true);
+    }
+
+    @FXML
+    private void handleAddCategoryButton() {
         resetCategoryForm(true);
     }
 
@@ -1136,6 +1356,12 @@ public class AdminController {
                 return;
             }
             categoryRows.setAll(parseCategories(r));
+
+            // If a product is selected, re-sync the combobox selection with the refreshed categories list.
+            ProductRow selectedProduct = productsTable != null ? productsTable.getSelectionModel().getSelectedItem() : null;
+            if (selectedProduct != null) {
+                selectCategoryByIdForProductForm(selectedProduct.categoryId.get());
+            }
         });
         t.setOnFailed(e -> setMessage("Erreur réseau lors du chargement des catégories.", true));
         runTask(t);

@@ -229,6 +229,22 @@
    9. BOUTONS
    ===================================================================== */
 
+/* =====================================================================
+   TABLES — alignment helpers
+   ===================================================================== */
+
+/* Center header labels (including "Actions") */
+.table-view .column-header .label {
+    -fx-alignment: CENTER;
+    -fx-text-alignment: CENTER;
+}
+
+/* Center text inside combobox button + list cells (e.g., Orders "Actions" status combobox) */
+.combo-box .list-cell {
+    -fx-alignment: CENTER;
+    -fx-text-alignment: CENTER;
+}
+
 .btn-primary {
     -fx-background-color: linear-gradient(to right, #f46a3d, #fb923c);
     -fx-background-radius: 12px;

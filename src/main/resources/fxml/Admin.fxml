@@ -31,6 +31,11 @@
                 <Tab text="Produits">
                     <StackPane>
                         <VBox spacing="10" VBox.vgrow="ALWAYS">
+                        <HBox alignment="CENTER_LEFT" spacing="10">
+                            <Label text="Produits" styleClass="field-label" style="-fx-font-size: 15px;"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button text="Ajouter produit" onAction="#handleAddProductButton" styleClass="btn-primary" prefWidth="180"/>
+                        </HBox>
                         <TableView fx:id="productsTable" styleClass="table-premium" minHeight="350" VBox.vgrow="ALWAYS">
                             <columns>
                                 <TableColumn fx:id="colProdId" text="ID" prefWidth="70"/>
@@ -38,16 +43,17 @@
                                 <TableColumn fx:id="colProdCategory" text="Cat." prefWidth="90"/>
                                 <TableColumn fx:id="colProdPrice" text="Prix" prefWidth="110"/>
                                 <TableColumn fx:id="colProdStock" text="Stock" prefWidth="90"/>
+                                <TableColumn fx:id="colProdAction" text="Actions" prefWidth="220" style="-fx-alignment: CENTER;"/>
                             </columns>
                         </TableView>
 
                         <!-- Scroll le formulaire pour ne pas “écraser” la table -->
-                        <ScrollPane fitToWidth="true" VBox.vgrow="NEVER" prefViewportHeight="260">
+                        <ScrollPane fitToWidth="true" VBox.vgrow="NEVER" prefViewportHeight="260" visible="false" managed="false">
                             <VBox fx:id="productFormContainer" spacing="10">
                                 <Separator/>
                                 <HBox spacing="10">
                                     <TextField fx:id="prodNameField" promptText="Nom" styleClass="auth-field" HBox.hgrow="ALWAYS"/>
-                                    <TextField fx:id="prodCategoryField" promptText="Catégorie ID" styleClass="auth-field" prefWidth="160"/>
+                                    <ComboBox fx:id="prodCategoryCombo" promptText="Catégorie" styleClass="combo-box-premium" prefWidth="220"/>
                                 </HBox>
                                 <HBox spacing="10">
                                     <TextField fx:id="prodPriceField" promptText="Prix" styleClass="auth-field" prefWidth="160"/>
@@ -65,9 +71,7 @@
                                 </HBox>
                                 <TextArea fx:id="prodDescField" promptText="Description" prefRowCount="2" wrapText="true"/>
                                 <HBox spacing="10" alignment="CENTER_RIGHT">
-                                    <Button text="Nouveau" onAction="#handleNewProduct" styleClass="btn-secondary"/>
                                     <Button text="Enregistrer" onAction="#handleSaveProduct" styleClass="btn-primary" prefWidth="160"/>
-                                    <Button text="Supprimer" onAction="#handleDeleteProduct" styleClass="btn-secondary"/>
                                 </HBox>
                             </VBox>
                         </ScrollPane>
@@ -77,7 +81,7 @@
                         <StackPane fx:id="productModalOverlay" visible="false" managed="false" pickOnBounds="true"
                                    style="-fx-background-color: rgba(15, 23, 42, 0.35);" alignment="CENTER">
                             <VBox spacing="12" alignment="CENTER" styleClass="auth-card"
-                                  style="-fx-padding: 22px; -fx-max-width: 720px;">
+                                  style="-fx-padding: 18px; -fx-max-width: 520px; -fx-max-height: 520px;">
                                 <Label text="Ajouter / Modifier un produit" styleClass="brand-title"/>
                                 <Label text="Formulaire au centre" style="-fx-text-fill: #64748b; -fx-font-size: 12px; -fx-font-weight: 600;"/>
                                 <VBox fx:id="productModalFormHost" spacing="10" alignment="CENTER"/>
@@ -103,7 +107,7 @@
                                 <TableColumn fx:id="colOrderUser" text="User" prefWidth="90"/>
                                 <TableColumn fx:id="colOrderTotal" text="Total" prefWidth="110"/>
                                 <TableColumn fx:id="colOrderStatus" text="Statut" prefWidth="140"/>
-                                <TableColumn fx:id="colOrderAction" text="" prefWidth="170"/>
+                                <TableColumn fx:id="colOrderAction" text="Actions" prefWidth="170" style="-fx-alignment: CENTER;"/>
                             </columns>
                         </TableView>
                     </VBox>
@@ -125,7 +129,7 @@
                                 <TableColumn fx:id="colEmail" text="Email" prefWidth="220"/>
                                 <TableColumn fx:id="colRole" text="Rôle" prefWidth="90"/>
                                 <TableColumn fx:id="colSuspended" text="Suspendu" prefWidth="100"/>
-                                <TableColumn fx:id="colUserAction" text="" prefWidth="160"/>
+                                <TableColumn fx:id="colUserAction" text="Actions" prefWidth="160" style="-fx-alignment: CENTER;"/>
                             </columns>
                         </TableView>
                     </VBox>
@@ -140,6 +144,7 @@
                                     <TableColumn fx:id="colCatId"   text="ID"          prefWidth="70"/>
                                     <TableColumn fx:id="colCatName" text="Nom"         prefWidth="220"/>
                                     <TableColumn fx:id="colCatDesc" text="Description" prefWidth="380"/>
+                                    <TableColumn fx:id="colCatAction" text="Actions" prefWidth="160" style="-fx-alignment: CENTER;"/>
                                 </columns>
                             </TableView>
                         </center>
@@ -148,11 +153,11 @@
                                 <padding><Insets bottom="10"/></padding>
                                 <Label text="Gestion des catégories" styleClass="field-label" style="-fx-font-size: 15px;"/>
                                 <Region HBox.hgrow="ALWAYS"/>
-                                <Button text="Rafraîchir" onAction="#handleRefreshCategories" styleClass="btn-outline"/>
+                                <Button text="Ajouter catégorie" onAction="#handleAddCategoryButton" styleClass="btn-primary" prefWidth="190"/>
                             </HBox>
                         </top>
                             <bottom>
-                                <VBox fx:id="categoryFormContainer" spacing="10">
+                                <VBox fx:id="categoryFormContainer" spacing="10" visible="false" managed="false">
                                 <padding><Insets top="10"/></padding>
                                 <Separator/>
                                 <HBox spacing="10">
@@ -160,9 +165,7 @@
                                     <TextField fx:id="catDescField"  promptText="Description (optionnel)" styleClass="auth-field" HBox.hgrow="ALWAYS"/>
                                 </HBox>
                                 <HBox spacing="10" alignment="CENTER_RIGHT">
-                                    <Button text="Nouvelle"     onAction="#handleNewCategory"    styleClass="btn-secondary"/>
                                     <Button text="Enregistrer"  onAction="#handleSaveCategory"   styleClass="btn-primary" prefWidth="160"/>
-                                    <Button text="Supprimer"    onAction="#handleDeleteCategory" styleClass="btn-secondary"/>
                                 </HBox>
                             </VBox>
                         </bottom>
@@ -172,7 +175,7 @@
                     <StackPane fx:id="categoryModalOverlay" visible="false" managed="false" pickOnBounds="true"
                                style="-fx-background-color: rgba(15, 23, 42, 0.35);" alignment="CENTER">
                         <VBox spacing="12" alignment="CENTER" styleClass="auth-card"
-                              style="-fx-padding: 22px; -fx-max-width: 640px;">
+                              style="-fx-padding: 18px; -fx-max-width: 480px; -fx-max-height: 420px;">
                             <Label text="Ajouter / Modifier une catégorie" styleClass="brand-title" />
                             <Label text="Formulaire au centre puis cliquez sur Enregistrer."
                                    style="-fx-text-fill: #64748b; -fx-font-size: 12px; -fx-font-weight: 600;"/>
