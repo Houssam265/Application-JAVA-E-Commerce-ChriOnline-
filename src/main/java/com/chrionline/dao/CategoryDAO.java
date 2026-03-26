@@ -19,6 +19,60 @@ public class CategoryDAO {
         return DatabaseConnection.getInstance().getConnection();
     }
 
+    // ── INSERT ──────────────────────────────────────────────────────────────
+
+    /**
+     * Persists a new category and returns the object with the generated
+     * {@code category_id} populated.
+     */
+    public Category save(Category category) {
+        final String sql = "INSERT INTO categories (name, description) VALUES (?, ?)";
+
+        try (PreparedStatement ps = conn().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, category.getName());
+            ps.setString(2, category.getDescription());
+            ps.executeUpdate();
+
+            try (ResultSet generated = ps.getGeneratedKeys()) {
+                if (generated.next()) {
+                    category.setCategoryId(generated.getInt(1));
+                }
+            }
+            return category;
+        } catch (SQLException e) {
+            throw new RuntimeException("CategoryDAO.save failed for name='" + category.getName() + "': " + e.getMessage(), e);
+        }
+    }
+
+    // ── UPDATE ──────────────────────────────────────────────────────────────
+
+    /** Updates {@code name} and {@code description} for an existing category. */
+    public void update(Category category) {
+        final String sql = "UPDATE categories SET name = ?, description = ? WHERE category_id = ?";
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, category.getName());
+            ps.setString(2, category.getDescription());
+            ps.setInt(3, category.getCategoryId());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("CategoryDAO.update failed for categoryId=" + category.getCategoryId() + ": " + e.getMessage(), e);
+        }
+    }
+
+    // ── DELETE ──────────────────────────────────────────────────────────────
+
+    public void delete(int categoryId) {
+        final String sql = "DELETE FROM categories WHERE category_id = ?";
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setInt(1, categoryId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("CategoryDAO.delete failed for categoryId=" + categoryId + ": " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Finds a category by its primary key.
      */

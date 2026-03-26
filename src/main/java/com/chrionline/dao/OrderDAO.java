@@ -272,6 +272,10 @@ public class OrderDAO {
                     result.add(mapOrderRow(rs));
                 }
             }
+            // Eagerly load items for each order so the client can display them
+            for (Order order : result) {
+                order.setItems(getItems(order.getOrderId()));
+            }
             return result;
 
         } catch (SQLException e) {
@@ -293,6 +297,10 @@ public class OrderDAO {
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 result.add(mapOrderRow(rs));
+            }
+            // Eagerly load items for each order so the admin can display them
+            for (Order order : result) {
+                order.setItems(getItems(order.getOrderId()));
             }
             return result;
         } catch (SQLException e) {
@@ -445,7 +453,7 @@ public class OrderDAO {
     private List<OrderItem> getItems(Connection c, String orderId) throws SQLException {
         final String sql =
                 "SELECT oi.order_item_id, oi.order_id, oi.product_id, "
-                        + "oi.quantity, oi.unit_price "
+                        + "oi.quantity, oi.unit_price, p.name AS product_name "
                         + "FROM order_items oi "
                         + "JOIN products p ON oi.product_id = p.product_id "
                         + "WHERE oi.order_id = ?";
@@ -489,6 +497,11 @@ public class OrderDAO {
         item.setProductId(rs.getInt("product_id"));
         item.setQuantity(rs.getInt("quantity"));
         item.setUnitPrice(rs.getDouble("unit_price"));
+        try {
+            item.setProductName(rs.getString("product_name"));
+        } catch (SQLException ignored) {
+            // product_name column not present in all queries (e.g. placeOrderFromCart)
+        }
         return item;
     }
 }

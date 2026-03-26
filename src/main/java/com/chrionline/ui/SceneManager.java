@@ -43,15 +43,12 @@ public final class SceneManager {
     public static void showCart() {
         loadScene("/fxml/Cart.fxml", "ChriOnline — Panier");
     }
-
     public static void showCheckout() {
         loadScene("/fxml/Checkout.fxml", "ChriOnline — Checkout");
     }
-
     public static void showOrderHistory() {
         loadScene("/fxml/OrderHistory.fxml", "ChriOnline — Mes commandes");
     }
-
     public static void showProfile() {
         loadScene("/fxml/Profile.fxml", "ChriOnline — Profil");
     }

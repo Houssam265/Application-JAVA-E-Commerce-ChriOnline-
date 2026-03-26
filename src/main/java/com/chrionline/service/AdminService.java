@@ -1,11 +1,14 @@
 package com.chrionline.service;
 
 import com.chrionline.dao.OrderDAO;
+import com.chrionline.dao.CategoryDAO;
 import com.chrionline.dao.ProductDAO;
 import com.chrionline.dao.UserDAO;
+import com.chrionline.model.Category;
 import com.chrionline.model.Order;
 import com.chrionline.model.Product;
 import com.chrionline.model.User;
+import com.chrionline.protocol.Response;
 
 import java.util.List;
 
@@ -15,6 +18,7 @@ import java.util.List;
 public class AdminService {
 
     private final ProductDAO productDAO = new ProductDAO();
+    private final CategoryDAO categoryDAO = new CategoryDAO();
     private final OrderDAO orderDAO = new OrderDAO();
     private final UserDAO userDAO;
 
@@ -49,6 +53,64 @@ public class AdminService {
 
     public void setUserSuspended(int userId, boolean suspended) {
         userDAO.setSuspended(userId, suspended);
+    }
+
+    // Categories CRUD (KAN-18)
+    public Response addCategory(String name, String description) {
+        try {
+            if (name == null || name.isBlank()) {
+                return Response.error("Missing name");
+            }
+            Category c = new Category();
+            c.setName(name.trim());
+            c.setDescription(description != null ? description : null);
+            Category saved = categoryDAO.save(c);
+            return Response.ok(saved);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            return Response.error(e.getMessage());
+        }
+    }
+
+    public Response updateCategory(int id, String name, String description) {
+        try {
+            if (id <= 0) {
+                return Response.error("Missing id");
+            }
+            if (name == null || name.isBlank()) {
+                return Response.error("Missing name");
+            }
+            Category c = new Category();
+            c.setCategoryId(id);
+            c.setName(name.trim());
+            c.setDescription(description != null ? description : null);
+            categoryDAO.update(c);
+            return Response.ok("UPDATED", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            return Response.error(e.getMessage());
+        }
+    }
+
+    public Response deleteCategory(int id) {
+        try {
+            if (id <= 0) {
+                return Response.error("Missing id");
+            }
+            // Reject deletion if any product is linked to this category
+            List<Product> linked = productDAO.findByCategoryId(id);
+            if (linked != null && !linked.isEmpty()) {
+                return Response.error("Cannot delete category with linked products");
+            }
+            categoryDAO.delete(id);
+            return Response.ok("DELETED", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            return Response.error(e.getMessage());
+        }
     }
 
     // ── Validation helpers (KAN-37) ──────────────────────────────────────────
