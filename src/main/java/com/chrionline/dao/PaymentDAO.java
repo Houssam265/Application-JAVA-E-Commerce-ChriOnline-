@@ -103,8 +103,12 @@ public class PaymentDAO {
         p.setAmount(rs.getDouble("amount"));
         String tid = rs.getString("transaction_id");
         p.setTransactionId(rs.wasNull() ? null : tid);
-        Timestamp ts = rs.getTimestamp("paid_at");
-        p.setPaidAt(ts != null ? ts.toLocalDateTime() : null);
+        try {
+            p.setPaidAt(rs.getObject("paid_at", java.time.LocalDateTime.class));
+        } catch (Exception ignored) {
+            Timestamp ts = rs.getTimestamp("paid_at");
+            p.setPaidAt(ts != null ? ts.toLocalDateTime() : null);
+        }
         return p;
     }
 }
