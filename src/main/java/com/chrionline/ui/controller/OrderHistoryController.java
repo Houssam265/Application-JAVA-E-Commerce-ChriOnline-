@@ -50,9 +50,13 @@ public class OrderHistoryController {
     @FXML private javafx.scene.layout.StackPane detailsOverlay;
     @FXML private VBox detailsCard;
     @FXML private Label detailsTitle;
-    @FXML private Label detailsMeta;
+    @FXML private Label detailsStatusBadge;
+    @FXML private Label detailsTotal;
     @FXML private ListView<String> detailsItems;
     @FXML private VBox timelineBox;
+    @FXML private Label totalsSubtotalLabel;
+    @FXML private Label totalsShippingLabel;
+    @FXML private Label totalsGrandLabel;
 
     private final List<JSONObject> allOrders = new ArrayList<>();
 
@@ -324,14 +328,22 @@ public class OrderHistoryController {
         if (detailsOverlay == null) return;
 
         detailsTitle.setText("Order · " + orderId);
-        String addr = payload.optString("shippingAddress", "—");
         String status = order != null ? mapStatusToFrench(order.optString("status", "PENDING")) : "—";
-        detailsMeta.setText("Statut: " + status + " · Adresse: " + addr);
+        if (detailsStatusBadge != null) {
+            detailsStatusBadge.setText(status);
+            detailsStatusBadge.getStyleClass().setAll("order-status-pill", pillForStatus(status));
+        }
+        if (detailsTotal != null) {
+            double total = order != null ? order.optDouble("totalAmount", order.optDouble("total_amount", 0.0)) : 0.0;
+            detailsTotal.setText(String.format(java.util.Locale.US, "%.2f Dhs", total));
+            detailsTotal.getStyleClass().setAll("order-status-pill", "pill-total");
+        }
 
         detailsItems.getItems().clear();
         if (order != null && order.has("items") && !order.isNull("items")) {
             try {
                 JSONArray items = order.get("items") instanceof JSONArray ? order.getJSONArray("items") : new JSONArray(order.get("items").toString());
+                double subtotal = 0.0;
                 for (int i = 0; i < items.length(); i++) {
                     JSONObject it = items.getJSONObject(i);
                     int qty = it.optInt("quantity", 1);
@@ -340,14 +352,48 @@ public class OrderHistoryController {
                     String pName = it.optString("productName",
                             it.optString("product_name",
                                     pid > 0 ? "Produit #" + pid : "Article"));
-                    detailsItems.getItems().add(
-                            pName + " · x" + qty + " · " + String.format(Locale.US, "%.2f Dhs", unit));
+                    detailsItems.getItems().add(pName + " · x" + qty + " · " + String.format(Locale.US, "%.2f Dhs", unit));
+                    subtotal += unit * qty;
+                }
+                if (totalsSubtotalLabel != null) totalsSubtotalLabel.setText(String.format(Locale.US, "%.2f Dhs", subtotal));
+                if (totalsShippingLabel != null) totalsShippingLabel.setText(String.format(Locale.US, "%.2f Dhs", 0.0));
+                if (totalsGrandLabel != null) {
+                    double grand = order.optDouble("totalAmount", order.optDouble("total_amount", subtotal));
+                    totalsGrandLabel.setText(String.format(Locale.US, "%.2f Dhs", grand));
                 }
             } catch (Exception ignored) {
                 detailsItems.getItems().add("Items indisponibles.");
             }
         } else {
             detailsItems.getItems().add("Items indisponibles.");
+        }
+        if (detailsItems.getCellFactory() == null) {
+            detailsItems.setCellFactory(lv -> new javafx.scene.control.ListCell<>() {
+                @Override protected void updateItem(String value, boolean empty) {
+                    super.updateItem(value, empty);
+                    if (empty || value == null || value.isBlank()) {
+                        setGraphic(null);
+                        setText(null);
+                        return;
+                    }
+                    String[] parts = value.split(" · ");
+                    String name = parts.length > 0 ? parts[0] : value;
+                    String qty  = parts.length > 1 ? parts[1] : "";
+                    String price= parts.length > 2 ? parts[2] : "";
+                    javafx.scene.control.Label ln = new javafx.scene.control.Label(name);
+                    ln.getStyleClass().add("order-item-name");
+                    javafx.scene.control.Label lq = new javafx.scene.control.Label(qty);
+                    lq.getStyleClass().add("order-item-qty");
+                    javafx.scene.control.Label lp = new javafx.scene.control.Label(price);
+                    lp.getStyleClass().add("order-item-price");
+                    javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+                    javafx.scene.layout.HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+                    javafx.scene.layout.HBox row = new javafx.scene.layout.HBox(10, ln, spacer, lq, lp);
+                    row.setStyle("-fx-padding: 8px 12px;");
+                    setGraphic(row);
+                    setText(null);
+                }
+            });
         }
 
         timelineBox.getChildren().clear();
@@ -362,6 +408,35 @@ public class OrderHistoryController {
                 l.getStyleClass().add("body-text");
                 timelineBox.getChildren().add(stepperRow(i == timeline.length() - 1, l));
             }
+        } else {
+            // Derived fallback timeline using available fields
+            java.util.List<String[]> steps = new java.util.ArrayList<>();
+            String createdAt = order != null ? order.optString("createdAt", order.optString("created_at", "")) : "";
+            String updatedAt = order != null ? order.optString("updatedAt", order.optString("updated_at", "")) : "";
+            String raw = order != null ? order.optString("status", "PENDING") : "PENDING";
+            steps.add(new String[] {"CREATED", normalizeTs(createdAt)});
+            switch (raw) {
+                case "VALIDATED" -> {
+                    steps.add(new String[] {"VALIDATED", normalizeTs(updatedAt)});
+                }
+                case "SHIPPED" -> {
+                    steps.add(new String[] {"VALIDATED", ""});
+                    steps.add(new String[] {"SHIPPED", normalizeTs(updatedAt)});
+                }
+                case "DELIVERED" -> {
+                    steps.add(new String[] {"VALIDATED", ""});
+                    steps.add(new String[] {"SHIPPED", ""});
+                    steps.add(new String[] {"DELIVERED", normalizeTs(updatedAt)});
+                }
+                default -> { /* PENDING: only created */ }
+            }
+            for (int i = 0; i < steps.size(); i++) {
+                String[] s = steps.get(i);
+                String line = s[0] + (s[1].isBlank() ? "" : (" · " + s[1]));
+                Label l = new Label(line);
+                l.getStyleClass().add("body-text");
+                timelineBox.getChildren().add(stepperRow(i == steps.size() - 1, l));
+            }
         }
 
         detailsOverlay.setOpacity(0);
@@ -370,6 +445,13 @@ public class OrderHistoryController {
         Timeline in = new Timeline(new KeyFrame(javafx.util.Duration.millis(180),
                 new KeyValue(detailsOverlay.opacityProperty(), 1, Interpolator.EASE_OUT)));
         in.play();
+    }
+
+    private static String normalizeTs(String ts) {
+        if (ts == null) return "";
+        String t = ts.trim();
+        if (t.isEmpty()) return "";
+        return t.length() >= 16 ? t.substring(0, 16).replace('T', ' ') : t.replace('T', ' ');
     }
 
     private HBox stepperRow(boolean last, Label content) {

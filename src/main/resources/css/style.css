@@ -1356,6 +1356,38 @@
     -fx-border-color: rgba(239, 68, 68, 0.35);
 }
 
+/* Order totals & items alignment */
+.pill-total {
+    -fx-text-fill: #0f172a;
+    -fx-background-color: rgba(148, 163, 184, 0.18);
+    -fx-border-color: rgba(148, 163, 184, 0.45);
+}
+
+.order-item-name {
+    -fx-text-fill: #0f172a;
+    -fx-font-weight: 700;
+}
+
+.order-item-qty {
+    -fx-text-fill: #64748b;
+    -fx-font-weight: 700;
+}
+
+.order-item-price {
+    -fx-text-fill: #0f172a;
+    -fx-font-weight: 800;
+}
+
+.order-totals-grid {
+    -fx-background-color: rgba(255,255,255,0.9);
+    -fx-background-radius: 14px;
+    -fx-border-color: rgba(15, 23, 42, 0.08);
+    -fx-border-radius: 14px;
+    -fx-border-width: 1px;
+    -fx-padding: 12px 14px;
+    -fx-effect: dropshadow(gaussian, rgba(15,23,42,0.08), 16, 0, 0, 2);
+}
+
 /* =====================================================================
    Admin user badges (Utilisateurs tab)
    ===================================================================== */

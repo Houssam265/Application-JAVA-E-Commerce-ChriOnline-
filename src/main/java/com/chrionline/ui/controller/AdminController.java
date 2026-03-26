@@ -625,7 +625,7 @@ public class AdminController {
             @Override protected Response call() throws Exception {
                 Client client = Client.getInstance();
                 client.connect();
-                return client.send(new Request(MessageProtocol.ACTION_GET_ORDERS, new JSONObject(), client.getSessionToken()));
+                return client.send(new Request(MessageProtocol.ACTION_ADMIN_LIST_ORDERS, new JSONObject(), client.getSessionToken()));
             }
         };
         t.setOnSucceeded(e -> {

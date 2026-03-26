@@ -89,15 +89,41 @@
             <HBox alignment="CENTER_LEFT" spacing="10">
                 <Label fx:id="detailsTitle" text="Order" styleClass="section-title"/>
                 <Region HBox.hgrow="ALWAYS"/>
-                <Button text="Fermer" onAction="#closeDetails" styleClass="btn-outline"/>
+                <Button text="Fermer" onAction="#closeDetails" styleClass="btn-outline" />
             </HBox>
-            <Label fx:id="detailsMeta" text="" styleClass="body-text" wrapText="true"/>
+            <HBox alignment="CENTER_LEFT" spacing="8">
+                <Label text="Statut" styleClass="field-label"/>
+                <Label fx:id="detailsStatusBadge" text="—"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label fx:id="detailsTotal" text="—" styleClass="order-status-pill"/>
+            </HBox>
             <Separator/>
             <Label text="Items" styleClass="field-label"/>
             <ListView fx:id="detailsItems" styleClass="table-premium" prefHeight="220"/>
             <Separator/>
             <Label text="Timeline" styleClass="field-label"/>
             <VBox fx:id="timelineBox" spacing="10"/>
+            <Separator/>
+            <Label text="Résumé" styleClass="field-label"/>
+            <GridPane hgap="10" vgap="8" styleClass="order-totals-grid">
+                <columnConstraints>
+                    <ColumnConstraints hgrow="ALWAYS" />
+                    <ColumnConstraints halignment="RIGHT" />
+                </columnConstraints>
+                <rowConstraints>
+                    <RowConstraints valignment="CENTER"/>
+                    <RowConstraints valignment="CENTER"/>
+                    <RowConstraints valignment="CENTER"/>
+                </rowConstraints>
+                <children>
+                    <Label text="Sous-total" GridPane.rowIndex="0" GridPane.columnIndex="0" styleClass="body-text"/>
+                    <Label fx:id="totalsSubtotalLabel" text="—" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+                    <Label text="Livraison" GridPane.rowIndex="1" GridPane.columnIndex="0" styleClass="body-text"/>
+                    <Label fx:id="totalsShippingLabel" text="0.00 Dhs" GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+                    <Label text="Total" GridPane.rowIndex="2" GridPane.columnIndex="0" styleClass="field-label"/>
+                    <Label fx:id="totalsGrandLabel" text="—" GridPane.rowIndex="2" GridPane.columnIndex="1" />
+                </children>
+            </GridPane>
         </VBox>
     </StackPane>
 

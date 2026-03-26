@@ -236,6 +236,9 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_GET_ORDER_DETAILS:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetOrderDetails(req);
+            case MessageProtocol.ACTION_ADMIN_LIST_ORDERS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleAdmin(req);
 
             // ── Profile (token required) ──────────────────────────────────
             case MessageProtocol.ACTION_UPDATE_PROFILE:
@@ -611,9 +614,6 @@ public class ClientHandler implements Runnable {
         try {
             User user = sessionManager.getUserFromToken(req.getToken())
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-            if (authService.isAdmin(user)) {
-                return Response.ok(orderService.getAllOrders());
-            }
             return Response.ok(orderService.getOrdersForUser(user.getUserId()));
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -672,7 +672,7 @@ public class ClientHandler implements Runnable {
             return Response.error("Missing order_id");
         }
         try {
-            return orderService.getOrderDetails(orderId)
+            return orderService.getOrderDetailsWithTimeline(orderId)
                     .map(Response::ok)
                     .orElse(Response.error("Order not found: " + orderId));
         } catch (RuntimeException e) {
@@ -803,6 +803,9 @@ public class ClientHandler implements Runnable {
                     if (userId == admin.getUserId()) return Response.error("Impossible de suspendre votre propre compte.");
                     adminService.setUserSuspended(userId, isSuspended);
                     return Response.ok("USER_UPDATED", null);
+                }
+                case MessageProtocol.ACTION_ADMIN_LIST_ORDERS: {
+                    return Response.ok(adminService.listOrders());
                 }
                 // ── Admin Category CRUD (KAN-18) ──────────────────────────
                 case MessageProtocol.ACTION_ADMIN_ADD_CATEGORY: {

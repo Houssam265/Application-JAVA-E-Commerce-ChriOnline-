@@ -480,11 +480,19 @@ public class OrderDAO {
         o.setStatus(OrderStatus.valueOf(rs.getString("status")));
         o.setTotalAmount(rs.getDouble("total_amount"));
 
-        Timestamp createdAt = rs.getTimestamp("created_at");
-        o.setCreatedAt(createdAt != null ? createdAt.toLocalDateTime() : null);
+        try {
+            o.setCreatedAt(rs.getObject("created_at", java.time.LocalDateTime.class));
+        } catch (Exception ignored) {
+            Timestamp createdAt = rs.getTimestamp("created_at");
+            o.setCreatedAt(createdAt != null ? createdAt.toLocalDateTime() : null);
+        }
 
-        Timestamp updatedAt = rs.getTimestamp("updated_at");
-        o.setUpdatedAt(updatedAt != null ? updatedAt.toLocalDateTime() : null);
+        try {
+            o.setUpdatedAt(rs.getObject("updated_at", java.time.LocalDateTime.class));
+        } catch (Exception ignored) {
+            Timestamp updatedAt = rs.getTimestamp("updated_at");
+            o.setUpdatedAt(updatedAt != null ? updatedAt.toLocalDateTime() : null);
+        }
 
         return o;
     }
