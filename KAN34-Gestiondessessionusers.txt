@@ -1,5 +1,389 @@
 package com.chrionline.server;
 
+import com.chrionline.dao.UserDAO;
+import com.chrionline.database.DatabaseConnection;
+import com.chrionline.model.Session;
+import com.chrionline.model.User;
+
+import java.sql.*;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * Manages user sessions for the ChriOnline server.
+ *
+ * <p>Two-tier storage strategy:
+ * <ol>
+ *   <li>Runtime {@code HashMap<String, Session>} — fast O(1) lookup per request
+ *       without touching the database. Used as the primary cache.</li>
+ *   <li>MySQL {@code sessions} table — authoritative persistence layer. Sessions
+ *       survive server restarts because this table is always written on creation
+ *       and read on cache miss.</li>
+ * </ol>
+ *
+ * <p>Thread-safety: all public methods are {@code synchronized} because multiple
+ * {@link ClientHandler} threads call them concurrently.
+ *
+ * <p>This class never touches passwords or BCrypt — all auth logic lives in
+ * {@link com.chrionline.service.AuthService}.
+ */
+public class SessionManager {
+
+    private static final Logger LOG = Logger.getLogger(SessionManager.class.getName());
+
+    /** Session duration: 30 minutes. */
+    private static final long SESSION_DURATION_MINUTES = 30;
+
+    // ── Dependencies ──────────────────────────────────────────────────────────
+
+    private final UserDAO userDAO;
+
+    // ── Runtime cache ─────────────────────────────────────────────────────────
+
+    /** Keyed by token string. Accessed from multiple threads — all methods are synchronized. */
+    private final HashMap<String, Session> activeSessions = new HashMap<>();
+
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    /**
+     * @param userDAO used by {@link #getUserFromToken(String)} to reload user objects
+     */
+    public SessionManager(UserDAO userDAO) {
+        this.userDAO = userDAO;
+    }
+
+    // ── DB connection helper ──────────────────────────────────────────────────
+
+    private Connection conn() {
+        return DatabaseConnection.getInstance().getConnection();
+    }
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    /**
+     * Creates a new session for {@code user}, persists it to the DB, and caches it
+     * in the HashMap.
+     *
+     * @param user the authenticated user
+     * @return the created {@link Session} (token is set)
+     */
+    public synchronized Session createSession(User user) {
+        String        sessionId = UUID.randomUUID().toString();
+        String        token     = UUID.randomUUID().toString();
+        LocalDateTime now       = LocalDateTime.now();
+        LocalDateTime expiresAt = now.plusMinutes(SESSION_DURATION_MINUTES);
+
+        Session session = new Session(sessionId, user.getUserId(), user.getRole(), token, now, expiresAt, true);
+
+        // 1. Persist to DB (source of truth)
+        insertSessionToDb(session);
+
+        // 2. Put in runtime cache
+        activeSessions.put(token, session);
+
+        LOG.info("[SESSION] Created for userId=" + user.getUserId() + " → token=" + token);
+        return session;
+    }
+
+    /**
+     * Checks whether {@code token} maps to a currently valid session.
+     *
+     * <p>Checks the HashMap first; falls back to DB on a cache miss, then re-caches it.
+     *
+     * @param token the session token to validate (may be null)
+     * @return {@code true} if the session exists, is active, and has not expired
+     */
+    public synchronized boolean isTokenValid(String token) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+
+        // ① HashMap first
+        Session cached = activeSessions.get(token);
+        if (cached != null) {
+            if (cached.isValid()) {
+                return true;
+            }
+            // Session is in cache but expired/invalidated — revoke it
+            invalidateSession(token);
+            return false;
+        }
+
+        // ② Cache miss → check DB
+        Optional<Session> fromDb = findSessionInDb(token);
+        if (fromDb.isPresent()) {
+            if (fromDb.get().isValid()) {
+                // Reload into cache
+                activeSessions.put(token, fromDb.get());
+                return true;
+            }
+            invalidateSession(token);
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns the {@link Session} for {@code token}, checking cache then DB.
+     *
+     * @param token the session token
+     * @return the Session, or empty if not found / expired
+     */
+    public synchronized Optional<Session> getSession(String token) {
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+
+        // ① HashMap first
+        Session cached = activeSessions.get(token);
+        if (cached != null) {
+            if (cached.isValid()) {
+                return Optional.of(cached);
+            }
+            invalidateSession(token);
+            return Optional.empty();
+        }
+
+        // ② Cache miss → DB
+        Optional<Session> fromDb = findSessionInDb(token);
+        if (fromDb.isPresent()) {
+            if (fromDb.get().isValid()) {
+                activeSessions.put(token, fromDb.get());
+                return fromDb;
+            }
+            invalidateSession(token);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Invalidates a session: marks {@code is_active = false} in the DB and removes
+     * it from the cache.
+     *
+     * @param token the token to invalidate
+     */
+    public synchronized void invalidateSession(String token) {
+        if (token == null || token.isBlank()) {
+            return;
+        }
+
+        // 1. Update DB
+        final String sql = "UPDATE sessions SET is_active = FALSE WHERE token = ?";
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, token);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.log(Level.WARNING, "[SESSION] invalidateSession DB update failed: " + e.getMessage(), e);
+        }
+
+        // 2. Remove from cache
+        activeSessions.remove(token);
+        LOG.info("[SESSION] Invalidated token=" + token);
+    }
+
+    /**
+     * Removes all expired sessions from the HashMap and from the DB.
+     *
+     * <p>Call once at server startup to clean stale rows left from previous runs.
+     */
+    public synchronized void cleanExpiredSessions() {
+        // ① Clean HashMap
+        LocalDateTime now = LocalDateTime.now();
+        Iterator<Map.Entry<String, Session>> it = activeSessions.entrySet().iterator();
+        int removedFromCache = 0;
+        while (it.hasNext()) {
+            Map.Entry<String, Session> entry = it.next();
+            if (!entry.getValue().isValid()) {
+                it.remove();
+                removedFromCache++;
+            }
+        }
+
+        // ② Clean DB
+        final String sql = "DELETE FROM sessions WHERE expires_at < NOW()";
+        int removedFromDb = 0;
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            removedFromDb = ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.log(Level.WARNING, "[SESSION] cleanExpiredSessions DB delete failed: " + e.getMessage(), e);
+        }
+
+        LOG.info("[SESSION] Cleanup done — removed from cache: " + removedFromCache
+                + ", removed from DB: " + removedFromDb);
+    }
+
+    /**
+     * Resolves the {@link User} that owns {@code token}.
+     *
+     * @param token the session token
+     * @return the user, or empty if the session is invalid or the user no longer exists
+     */
+    public synchronized Optional<User> getUserFromToken(String token) {
+        return getSession(token)
+                .flatMap(session -> userDAO.findById(session.getUserId()));
+    }
+
+    // ── Private DB helpers ────────────────────────────────────────────────────
+
+    /** Inserts a new session row into the {@code sessions} table. */
+    private void insertSessionToDb(Session session) {
+        final String sql =
+                "INSERT INTO sessions (session_id, user_id, token, created_at, expires_at, is_active) " +
+                        "VALUES (?, ?, ?, ?, ?, ?)";
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString   (1, session.getSessionId());
+            ps.setInt      (2, session.getUserId());
+            ps.setString   (3, session.getToken());
+            ps.setTimestamp(4, Timestamp.valueOf(session.getCreatedAt()));
+            ps.setTimestamp(5, Timestamp.valueOf(session.getExpiresAt()));
+            ps.setBoolean  (6, session.isActive());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException(
+                    "[SESSION] insertSessionToDb failed for userId=" + session.getUserId()
+                            + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Loads a session from the DB by token.
+     * Does NOT check validity — the caller must call {@link Session#isValid()}.
+     */
+    private Optional<Session> findSessionInDb(String token) {
+        final String sql =
+                "SELECT session_id, user_id, token, created_at, expires_at, is_active " +
+                        "FROM sessions WHERE token = ? LIMIT 1";
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, token);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return Optional.empty();
+                }
+                Session s = new Session();
+                s.setSessionId(rs.getString  ("session_id"));
+                s.setUserId   (rs.getInt     ("user_id"));
+                s.setToken    (rs.getString  ("token"));
+
+                Timestamp createdAt = rs.getTimestamp("created_at");
+                s.setCreatedAt(createdAt != null ? createdAt.toLocalDateTime() : null);
+
+                Timestamp expiresAt = rs.getTimestamp("expires_at");
+                s.setExpiresAt(expiresAt != null ? expiresAt.toLocalDateTime() : null);
+
+                s.setActive(rs.getBoolean("is_active"));
+                userDAO.findById(s.getUserId()).ifPresent(user -> s.setRole(user.getRole()));
+                return Optional.of(s);
+            }
+        } catch (SQLException e) {
+            LOG.log(Level.WARNING, "[SESSION] findSessionInDb failed for token=" + token + ": " + e.getMessage(), e);
+            return Optional.empty();
+        }
+    }
+}
+package com.chrionline.model;
+
+import java.time.LocalDateTime;
+
+/**
+ * Maps to the {@code sessions} table.
+ *
+ * session_id  VARCHAR(36)  — plain UUID (java.util.UUID)
+ * user_id     INT          — FK → users(user_id)
+ * token       VARCHAR(255) — unique token string
+ * created_at  DATETIME
+ * expires_at  DATETIME     — created_at + 30 minutes
+ * is_active   BOOLEAN
+ */
+public class Session {
+
+    // ── Fields ─────────────────────────────────────────────────────────────
+    private String        sessionId;
+    private int           userId;
+    private User.Role     role;
+    private String        token;
+    private LocalDateTime createdAt;
+    private LocalDateTime expiresAt;
+    private boolean       isActive;
+
+    // ── Constructors ────────────────────────────────────────────────────────
+
+    /** No-arg constructor required by DAO row mapping. */
+    public Session() {}
+
+    /** Full constructor (legacy, no role). */
+    public Session(String sessionId, int userId, String token,
+                   LocalDateTime createdAt, LocalDateTime expiresAt, boolean isActive) {
+        this(sessionId, userId, null, token, createdAt, expiresAt, isActive);
+    }
+
+    /** Full constructor with role. */
+    public Session(String sessionId, int userId, User.Role role, String token,
+                   LocalDateTime createdAt, LocalDateTime expiresAt, boolean isActive) {
+        this.sessionId = sessionId;
+        this.userId    = userId;
+        this.role      = role;
+        this.token     = token;
+        this.createdAt = createdAt;
+        this.expiresAt = expiresAt;
+        this.isActive  = isActive;
+    }
+
+    // ── Getters & Setters ───────────────────────────────────────────────────
+
+    public String        getSessionId()               { return sessionId; }
+    public void          setSessionId(String v)        { this.sessionId = v; }
+
+    public int           getUserId()                   { return userId; }
+    public void          setUserId(int v)              { this.userId = v; }
+
+    public User.Role     getRole()                     { return role; }
+    public void          setRole(User.Role v)          { this.role = v; }
+
+    public String        getToken()                    { return token; }
+    public void          setToken(String v)            { this.token = v; }
+
+    public LocalDateTime getCreatedAt()                { return createdAt; }
+    public void          setCreatedAt(LocalDateTime v) { this.createdAt = v; }
+
+    public LocalDateTime getExpiresAt()                { return expiresAt; }
+    public void          setExpiresAt(LocalDateTime v) { this.expiresAt = v; }
+
+    public boolean       isActive()                    { return isActive; }
+    public void          setActive(boolean v)          { this.isActive = v; }
+
+    // ── Convenience ─────────────────────────────────────────────────────────
+
+    /**
+     * Returns {@code true} if the session is still usable right now:
+     * is_active == true AND expiresAt is in the future.
+     */
+    public boolean isValid() {
+        return isActive && expiresAt != null && LocalDateTime.now().isBefore(expiresAt);
+    }
+
+    // ── toString ────────────────────────────────────────────────────────────
+
+    @Override
+    public String toString() {
+        return "Session{" +
+                "sessionId='" + sessionId + '\'' +
+                ", userId="   + userId    +
+                ", role="     + role      +
+                ", isActive=" + isActive  +
+                ", expiresAt=" + expiresAt +
+                '}';
+    }
+}
+package com.chrionline.server;
+
 import com.chrionline.model.Session;
 import com.chrionline.model.User;
 import com.chrionline.protocol.MessageProtocol;
@@ -11,9 +395,6 @@ import com.chrionline.service.CartService;
 import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
-import com.chrionline.service.LogService;
-import com.chrionline.dao.LogDAO;
-import com.chrionline.model.ServerLog;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
@@ -35,9 +416,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.ArrayList;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -72,18 +450,6 @@ public class ClientHandler implements Runnable {
         })
         .create();
 
-    // ── Simple anti-bruteforce (rate limiting + lockout) ────────────────────
-    private static final int  MAX_LOGIN_ATTEMPTS = 5;
-    private static final long LOGIN_WINDOW_MS    = 60_000L;   // 1 minute
-    private static final long LOGIN_LOCKOUT_MS   = 5 * 60_000L; // 5 minutes
-    private static final ConcurrentMap<String, AttemptState> LOGIN_ATTEMPTS = new ConcurrentHashMap<>();
-
-    private static final class AttemptState {
-        int failures;
-        long windowStartMs;
-        long blockedUntilMs;
-    }
-
     // ── Injected dependencies (shared across all threads) ────────────────────
     private final AuthService    authService;
     private final SessionManager sessionManager;
@@ -93,7 +459,6 @@ public class ClientHandler implements Runnable {
     private final PaymentService paymentService;
     private final AdminService   adminService;
     private final UDPNotificationService udpNotificationService;
-    private final LogService     logService;
 
     // ── Per-connection state ──────────────────────────────────────────────────
     private final Socket socket;
@@ -124,7 +489,6 @@ public class ClientHandler implements Runnable {
                          OrderService orderService,
                          PaymentService paymentService,
                          AdminService adminService,
-                         LogService logService,
                          UDPNotificationService udpNotificationService) {
         this.socket         = socket;
         this.clientAddress  = socket.getInetAddress();
@@ -135,20 +499,7 @@ public class ClientHandler implements Runnable {
         this.orderService   = orderService;
         this.paymentService = paymentService;
         this.adminService   = adminService;
-        this.logService     = logService;
         this.udpNotificationService = udpNotificationService;
-    }
-
-    public ClientHandler(Socket socket,
-                         AuthService authService,
-                         SessionManager sessionManager,
-                         ProductService productService,
-                         CartService cartService,
-                         OrderService orderService,
-                         PaymentService paymentService,
-                         AdminService adminService,
-                         UDPNotificationService udpNotificationService) {
-        this(socket, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, new LogService(new LogDAO()), udpNotificationService);
     }
 
     // ── Runnable ──────────────────────────────────────────────────────────────
@@ -240,12 +591,6 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_GET_CATEGORIES:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetCategories(req);
-            case MessageProtocol.GET_LOGS:
-                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
-                return handleGetLogs(req);
-            case MessageProtocol.GET_LOGS_BY_USER:
-                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
-                return handleGetLogsByUser(req);
 
             // ── Cart (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_GET_CART:
@@ -365,14 +710,6 @@ public class ClientHandler implements Runnable {
             return Response.error("Le champ 'password' est requis.");
         }
 
-        String key = buildLoginKey(email);
-        long nowMs = System.currentTimeMillis();
-        long blockedForMs = getBlockedRemainingMs(key, nowMs);
-        if (blockedForMs > 0) {
-            long seconds = Math.max(1L, blockedForMs / 1000L);
-            return Response.error("Trop de tentatives. Réessayez dans " + seconds + "s.");
-        }
-
         try {
             User    user    = authService.login(email, password);
             Session session = sessionManager.createSession(user);
@@ -388,14 +725,9 @@ public class ClientHandler implements Runnable {
             // Register client IP so UDP notifications can reach this user
             connectedUserId = user.getUserId();
             ClientRegistry.getInstance().register(user.getUserId(), clientAddress);
-            Response r = new Response(true, "LOGIN_SUCCESS", payload, session.getToken());
-            logService.logSuccess("LOGIN", user.getUserId());
-            clearLoginAttempts(key);
-            return r;
+            return new Response(true, "LOGIN_SUCCESS", payload, session.getToken());
 
         } catch (IllegalArgumentException e) {
-            registerFailedLogin(key, nowMs);
-            logService.logError("LOGIN", null, "Invalid credentials from IP: " + clientAddress);
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "[LOGIN] Unexpected error: " + e.getMessage(), e);
@@ -435,9 +767,7 @@ public class ClientHandler implements Runnable {
             payload.put("role",     user.getRole().name());
 
             connectionToken = session.getToken();
-            Response r = new Response(true, "REGISTER_SUCCESS", payload, session.getToken());
-            logService.logSuccess("REGISTER", null);
-            return r;
+            return new Response(true, "REGISTER_SUCCESS", payload, session.getToken());
 
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -470,11 +800,7 @@ public class ClientHandler implements Runnable {
         User user = sessionManager.getUserFromToken(req.getToken()).orElse(null);
         boolean adminCatalog = user != null && authService.isAdmin(user);
         List<?> products = productService.getProducts(categoryId, adminCatalog);
-        Response r = Response.ok(products);
-        if (user != null) {
-            logService.logSuccess("GET_PRODUCTS", user.getUserId());
-        }
-        return r;
+        return Response.ok(products);
     }
 
     /**
@@ -529,9 +855,7 @@ public class ClientHandler implements Runnable {
             }
             // Never trust client-provided price: server always reads product.price from DB
             cartService.addToCart(userId, productId, quantity);
-            Response r = Response.ok("ADDED_TO_CART", cartService.getCartView(userId));
-            logService.logSuccess("ADD_TO_CART", userId);
-            return r;
+            return Response.ok("ADDED_TO_CART", cartService.getCartView(userId));
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
@@ -605,15 +929,9 @@ public class ClientHandler implements Runnable {
             sendUdpNotification(
                     "ORDER_VALIDATED",
                     "Commande " + order.getOrderId() + " validee.",
-                    String.valueOf(order.getOrderId()));
-            Response r = Response.ok(order);
-            logService.logSuccess("PLACE_ORDER", userId);
-            logService.logSuccess("CHECKOUT", userId);
-            return r;
+                    order.getOrderId());
+            return Response.ok(order);
         } catch (IllegalArgumentException e) {
-            int uid = sessionManager.getUserFromToken(req.getToken()).map(User::getUserId).orElse(0);
-            Integer u = uid > 0 ? uid : null;
-            logService.logError("PLACE_ORDER", u, e.getMessage());
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
@@ -629,9 +947,9 @@ public class ClientHandler implements Runnable {
             int userId = sessionManager.getUserFromToken(req.getToken())
                     .map(User::getUserId)
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-            Integer orderId = firstNonBlankInt(
-                    req.getPayloadInt("order_id"),
-                    req.getPayloadInt("orderId"));
+            String orderId = firstNonBlank(
+                    getPayloadString(req, "order_id"),
+                    getPayloadString(req, "orderId"));
             String cardNumber = firstNonBlank(
                     getPayloadString(req, "card_number"),
                     getPayloadString(req, "cardNumber"));
@@ -640,7 +958,7 @@ public class ClientHandler implements Runnable {
                     getPayloadString(req, "expiryMmYy"));
             String cvv = payloadValueAsString(req, "cvv");
 
-            if (orderId == null || orderId <= 0
+            if (orderId == null || orderId.isBlank()
                     || cardNumber == null || cardNumber.isBlank()
                     || expiry == null || expiry.isBlank()
                     || cvv == null || cvv.isBlank()) {
@@ -654,13 +972,10 @@ public class ClientHandler implements Runnable {
                 sendUdpNotification(
                         "PAYMENT_CONFIRMED",
                         "Paiement confirme pour la commande " + orderId + ".",
-                        String.valueOf(orderId));
-                Response r = Response.ok("PAYMENT_OK", result);
-                logService.logSuccess("PAYMENT", userId);
-                return r;
+                        orderId);
+                return Response.ok("PAYMENT_OK", result);
             }
             String msg = result.get("message") != null ? String.valueOf(result.get("message")) : "Paiement refusé.";
-            logService.logError("PAYMENT", userId, "Payment failed: " + msg);
             return Response.error(msg, result);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -673,12 +988,6 @@ public class ClientHandler implements Runnable {
     private static String firstNonBlank(String a, String b) {
         if (a != null && !a.isBlank()) return a.trim();
         if (b != null && !b.isBlank()) return b.trim();
-        return null;
-    }
-
-    private static Integer firstNonBlankInt(Integer a, Integer b) {
-        if (a != null && a > 0) return a;
-        if (b != null && b > 0) return b;
         return null;
     }
 
@@ -710,9 +1019,9 @@ public class ClientHandler implements Runnable {
             if (!authService.isAdmin(admin)) {
                 return Response.error("Accès refusé (ADMIN uniquement).");
             }
-            Integer orderId = req.getPayloadInt("order_id");
+            String orderId = getPayloadString(req, "order_id");
             String status  = getPayloadString(req, "status");
-            if (orderId == null || orderId <= 0 || status == null) {
+            if (orderId == null || status == null) {
                 return Response.error("Missing order_id or status");
             }
             orderService.updateOrderStatus(orderId, com.chrionline.model.OrderStatus.valueOf(status));
@@ -728,12 +1037,10 @@ public class ClientHandler implements Runnable {
                     default          -> status;
                 };
                 String msg = "Votre commande est maintenant : " + friendlyStatus + ".";
-                sendUdpNotificationToUser(ownerId, "ORDER_STATUS_UPDATED", msg, String.valueOf(orderId));
+                sendUdpNotificationToUser(ownerId, "ORDER_STATUS_UPDATED", msg, orderId);
             });
 
-            Response r = Response.ok("STATUS_UPDATED", null);
-            logService.logSuccess("UPDATE_ORDER_STATUS", admin.getUserId(), "new status: " + status);
-            return r;
+            return Response.ok("STATUS_UPDATED", null);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
@@ -749,8 +1056,8 @@ public class ClientHandler implements Runnable {
      * Returns a map with "order" and "items" keys.
      */
     private Response handleGetOrderDetails(Request req) {
-        Integer orderId = req.getPayloadInt("order_id");
-        if (orderId == null || orderId <= 0) {
+        String orderId = getPayloadString(req, "order_id");
+        if (orderId == null || orderId.isBlank()) {
             return Response.error("Missing order_id");
         }
         try {
@@ -761,30 +1068,6 @@ public class ClientHandler implements Runnable {
             LOG.log(Level.WARNING, "[ORDER_DETAILS] Unexpected error: " + e.getMessage(), e);
             return Response.error("Erreur serveur lors du chargement de la commande.");
         }
-    }
-
-    private Response handleGetLogs(Request req) {
-        User admin = sessionManager.getUserFromToken(req.getToken())
-                .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-        if (!authService.isAdmin(admin)) {
-            return Response.error("Accès refusé (ADMIN uniquement).");
-        }
-        List<com.chrionline.model.ServerLog> logs = logService.getRecentLogs(50);
-        return Response.ok(logs);
-    }
-
-    private Response handleGetLogsByUser(Request req) {
-        User admin = sessionManager.getUserFromToken(req.getToken())
-                .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-        if (!authService.isAdmin(admin)) {
-            return Response.error("Accès refusé (ADMIN uniquement).");
-        }
-        Integer uid = req.getPayloadInt("user_id");
-        if (uid == null || uid <= 0) {
-            return Response.error("Missing user_id");
-        }
-        List<com.chrionline.model.ServerLog> logs = logService.getLogsByUser(uid);
-        return Response.ok(logs);
     }
 
     // ── PROFILE handlers ──────────────────────────────────────────────────
@@ -867,7 +1150,7 @@ public class ClientHandler implements Runnable {
                     p.setCategoryId(categoryId);
                     p.setName(name);
                     p.setDescription(desc != null ? String.valueOf(desc) : "");
-                    applyProductImages(req, p, img);
+                    p.setImageUrl(resolveProductImageUrl(req, img));
                     if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
                     if (stock instanceof Number) p.setStock(((Number) stock).intValue());
                     return Response.ok(adminService.createProduct(p));
@@ -886,7 +1169,7 @@ public class ClientHandler implements Runnable {
                     p.setCategoryId(categoryId);
                     p.setName(name);
                     p.setDescription(desc != null ? String.valueOf(desc) : "");
-                    applyProductImages(req, p, img);
+                    p.setImageUrl(resolveProductImageUrl(req, img));
                     if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
                     if (stock instanceof Number) p.setStock(((Number) stock).intValue());
                     adminService.updateProduct(p);
@@ -954,46 +1237,6 @@ public class ClientHandler implements Runnable {
         return v instanceof String ? ((String) v).trim() : null;
     }
 
-    private String buildLoginKey(String email) {
-        String ip = clientAddress != null ? clientAddress.getHostAddress() : "unknown";
-        return ip + "|" + email.toLowerCase();
-    }
-
-    private long getBlockedRemainingMs(String key, long nowMs) {
-        AttemptState state = LOGIN_ATTEMPTS.get(key);
-        if (state == null) return 0L;
-        long remaining = state.blockedUntilMs - nowMs;
-        return Math.max(0L, remaining);
-    }
-
-    private void registerFailedLogin(String key, long nowMs) {
-        LOGIN_ATTEMPTS.compute(key, (k, state) -> {
-            if (state == null) {
-                state = new AttemptState();
-                state.windowStartMs = nowMs;
-            }
-            if (nowMs - state.windowStartMs > LOGIN_WINDOW_MS) {
-                state.windowStartMs = nowMs;
-                state.failures = 0;
-            }
-            state.failures++;
-            if (state.failures >= MAX_LOGIN_ATTEMPTS) {
-                state.blockedUntilMs = nowMs + LOGIN_LOCKOUT_MS;
-            }
-            return state;
-        });
-    }
-
-    private void clearLoginAttempts(String key) {
-        LOGIN_ATTEMPTS.remove(key);
-    }
-
-    private void applyProductImages(Request req, com.chrionline.model.Product product, Object currentImageUrlObj) {
-        List<String> imageUrls = resolveProductImageUrls(req, currentImageUrlObj);
-        product.setImageUrls(imageUrls);
-        product.setImageUrl(imageUrls.isEmpty() ? null : imageUrls.get(0));
-    }
-
     /**
      * If image_base64 is provided by admin UI, stores the file under uploads/images
      * and returns the absolute path to persist in image_url.
@@ -1025,76 +1268,6 @@ public class ClientHandler implements Runnable {
         return currentImageUrlObj == null || "null".equals(String.valueOf(currentImageUrlObj))
                 ? null
                 : String.valueOf(currentImageUrlObj);
-    }
-
-    private List<String> resolveProductImageUrls(Request req, Object currentImageUrlObj) {
-        List<String> resolved = new ArrayList<>();
-        if (req.getPayload() == null) {
-            String single = resolveProductImageUrl(req, currentImageUrlObj);
-            if (single != null && !single.isBlank()) resolved.add(single);
-            return resolved;
-        }
-
-        Object imagesObj = req.getPayload().get("images");
-        Integer primaryIndex = req.getPayloadInt("primary_image_index");
-        if (imagesObj instanceof List<?> images && !images.isEmpty()) {
-            for (Object item : images) {
-                if (!(item instanceof Map<?, ?> map)) continue;
-                Object kindObj = map.get("kind");
-                String kind = kindObj == null ? "" : String.valueOf(kindObj);
-                if ("existing".equalsIgnoreCase(kind)) {
-                    Object urlObj = map.get("image_url");
-                    if (urlObj != null) {
-                        String url = String.valueOf(urlObj).trim();
-                        if (!url.isBlank() && !"null".equalsIgnoreCase(url)) {
-                            resolved.add(url);
-                        }
-                    }
-                    continue;
-                }
-                if ("new".equalsIgnoreCase(kind)) {
-                    Object b64Obj = map.get("image_base64");
-                    if (b64Obj == null) continue;
-                    String b64 = String.valueOf(b64Obj).trim();
-                    if (b64.isBlank()) continue;
-                    String filename = map.get("image_filename") == null ? null : String.valueOf(map.get("image_filename"));
-                    resolved.add(storeProductImage(b64, filename));
-                }
-            }
-        }
-
-        if (resolved.isEmpty()) {
-            String single = resolveProductImageUrl(req, currentImageUrlObj);
-            if (single != null && !single.isBlank()) {
-                resolved.add(single);
-            }
-        }
-
-        if (!resolved.isEmpty() && primaryIndex != null && primaryIndex >= 0 && primaryIndex < resolved.size()) {
-            String primary = resolved.remove((int) primaryIndex);
-            resolved.add(0, primary);
-        }
-
-        return resolved;
-    }
-
-    private String storeProductImage(String base64, String originalName) {
-        try {
-            byte[] bytes = Base64.getDecoder().decode(base64);
-            String ext = extractImageExtension(originalName);
-
-            Path uploadDir = Paths.get("uploads", "images").toAbsolutePath().normalize();
-            Files.createDirectories(uploadDir);
-
-            String storedName = UUID.randomUUID() + ext;
-            Path target = uploadDir.resolve(storedName).normalize();
-            Files.write(target, bytes);
-            return target.toString();
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Image invalide (base64).");
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur lors de l'enregistrement de l'image: " + e.getMessage(), e);
-        }
     }
 
     private String extractImageExtension(String filename) {

@@ -7,10 +7,13 @@ import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.util.Duration;
 
 import org.json.JSONObject;
 
@@ -39,6 +42,11 @@ public class LoginController {
     // ── Regex de validation ───────────────────────────────────────────────────
     private static final String EMAIL_REGEX   = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
     private static final int    MIN_PASSWORD  = 8;
+
+    // ── Frontend lockout state ────────────────────────────────────────────────
+    private boolean lockoutActive = false;
+    private int lockoutSecondsRemaining = 0;
+    private Timeline lockoutTimeline;
 
     // ── Initialisation ────────────────────────────────────────────────────────
 
@@ -157,6 +165,11 @@ public class LoginController {
                 Platform.runLater(SceneManager::showHome);
             } else {
                 String msg = response.getMessage() == null ? "" : response.getMessage();
+                if (msg.toLowerCase().contains("trop de tentatives")) {
+                    int seconds = extractSecondsFromMessage(msg);
+                    startLockout(seconds > 0 ? seconds : 30);
+                    return;
+                }
                 if (ErrorHandler.isSessionExpiredMessage(msg)) {
                     ErrorHandler.handleSessionExpired();
                     return;
@@ -200,7 +213,7 @@ public class LoginController {
     // ── Utilitaires privés ────────────────────────────────────────────────────
 
     private void setLoading(boolean loading) {
-        loginButton.setDisable(loading);
+        loginButton.setDisable(loading || lockoutActive);
         loadingIndicator.setVisible(loading);
         loadingIndicator.setManaged(loading);
     }
@@ -210,7 +223,7 @@ public class LoginController {
         String pwd = passwordField.isVisible() ? passwordField.getText() : passwordTextField.getText();
         boolean hasPwd = pwd != null && !pwd.isBlank();
         if (!loadingIndicator.isVisible()) {
-            loginButton.setDisable(!(hasEmail && hasPwd));
+            loginButton.setDisable(lockoutActive || !(hasEmail && hasPwd));
         }
     }
 
@@ -247,5 +260,45 @@ public class LoginController {
         ErrorHandler.clearInlineError(passwordField);
         ErrorHandler.clearInlineError(passwordTextField);
         return true;
+    }
+
+    private void startLockout(int seconds) {
+        lockoutActive = true;
+        lockoutSecondsRemaining = Math.max(1, seconds);
+        showLockoutMessage();
+        updateLoginButtonState();
+
+        if (lockoutTimeline != null) {
+            lockoutTimeline.stop();
+        }
+        lockoutTimeline = new Timeline(new KeyFrame(Duration.seconds(1), e -> {
+            lockoutSecondsRemaining--;
+            if (lockoutSecondsRemaining <= 0) {
+                lockoutActive = false;
+                ErrorHandler.clearFieldError(globalError);
+                updateLoginButtonState();
+                lockoutTimeline.stop();
+                lockoutTimeline = null;
+            } else {
+                showLockoutMessage();
+            }
+        }));
+        lockoutTimeline.setCycleCount(Timeline.INDEFINITE);
+        lockoutTimeline.play();
+    }
+
+    private void showLockoutMessage() {
+        ErrorHandler.showFieldError(globalError,
+                "Trop de tentatives. Réessayez dans " + lockoutSecondsRemaining + "s.");
+    }
+
+    private int extractSecondsFromMessage(String msg) {
+        String digits = msg.replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) return 0;
+        try {
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 }
