@@ -9,9 +9,11 @@ public final class MessageProtocol {
     public static final String KEY_TOKEN   = "token";
 
     // Auth
-    public static final String ACTION_LOGIN    = "LOGIN";
+    public static final String ACTION_LOGIN = "LOGIN";
     public static final String ACTION_REGISTER = "REGISTER";
-    public static final String ACTION_LOGOUT   = "LOGOUT";
+    public static final String ACTION_LOGOUT = "LOGOUT";
+    public static final String ACTION_VERIFY_EMAIL = "VERIFY_EMAIL";
+    public static final String ACTION_RESEND_VERIFICATION_EMAIL = "RESEND_VERIFICATION_EMAIL";
 
     // Catalogue
     public static final String ACTION_GET_PRODUCTS   = "GET_PRODUCTS";

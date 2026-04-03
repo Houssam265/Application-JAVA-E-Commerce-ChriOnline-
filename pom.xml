@@ -90,6 +90,13 @@
             <artifactId>pdfbox</artifactId>
             <version>2.0.31</version>
         </dependency>
+
+        <!-- SMTP email delivery -->
+        <dependency>
+            <groupId>org.eclipse.angus</groupId>
+            <artifactId>jakarta.mail</artifactId>
+            <version>2.0.3</version>
+        </dependency>
     </dependencies>
 
     <build>

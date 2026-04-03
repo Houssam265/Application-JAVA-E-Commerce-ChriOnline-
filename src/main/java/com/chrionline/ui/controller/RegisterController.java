@@ -4,74 +4,80 @@ import com.chrionline.client.Client;
 import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
-import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
-import javafx.scene.control.*;
-
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.TextField;
 import org.json.JSONObject;
 
-/**
- * Contrôleur de l'écran d'inscription (Register.fxml).
- *
- * Responsabilités (KAN-5) :
- *  1. Validation complète des champs (username non vide, email, MDP ≥ 8 chars, confirmation)
- *  2. Envoi de la requête REGISTER via Socket TCP dans un Thread dédié
- *  3. Affichage des messages d'erreur clairs (par champ + erreur globale serveur)
- *  4. Affichage d'un message de succès puis redirection vers LoginScreen
- */
 public class RegisterController {
 
-    // ── Références FXML ──────────────────────────────────────────────────────
-    @FXML private TextField         usernameField;
-    @FXML private TextField         emailField;
-    @FXML private PasswordField     passwordField;
-    @FXML private PasswordField     confirmPasswordField;
+    @FXML private TextField usernameField;
+    @FXML private TextField emailField;
+    @FXML private PasswordField passwordField;
+    @FXML private PasswordField confirmPasswordField;
 
-    @FXML private Label             usernameError;
-    @FXML private Label             emailError;
-    @FXML private Label             passwordError;
-    @FXML private Label             confirmPasswordError;
-    @FXML private Label             globalError;
-    @FXML private Label             successMessage;
+    @FXML private Label usernameError;
+    @FXML private Label emailError;
+    @FXML private Label passwordError;
+    @FXML private Label confirmPasswordError;
+    @FXML private Label globalError;
+    @FXML private Label successMessage;
 
-    @FXML private Button            registerButton;
+    @FXML private Button registerButton;
     @FXML private ProgressIndicator loadingIndicator;
 
-    // ── Regex de validation ───────────────────────────────────────────────────
-    private static final String EMAIL_REGEX    = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+    private static final String EMAIL_REGEX = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
     private static final String USERNAME_REGEX = "^[A-Za-z0-9_]{3,30}$";
-    private static final int    MIN_PASSWORD   = 8;
-
-    // ── Initialisation ────────────────────────────────────────────────────────
+    private static final int MIN_PASSWORD = 8;
 
     @FXML
     public void initialize() {
-        usernameField.textProperty().addListener((obs, ov, nv) -> { ErrorHandler.clearFieldError(usernameError); ErrorHandler.clearInlineError(usernameField); updateRegisterButtonState(); });
-        emailField.textProperty().addListener((obs, ov, nv) -> { ErrorHandler.clearFieldError(emailError); ErrorHandler.clearInlineError(emailField); updateRegisterButtonState(); });
-        passwordField.textProperty().addListener((obs, ov, nv) -> { ErrorHandler.clearFieldError(passwordError); ErrorHandler.clearInlineError(passwordField); updateRegisterButtonState(); });
-        confirmPasswordField.textProperty().addListener((obs, ov, nv) -> { ErrorHandler.clearFieldError(confirmPasswordError); ErrorHandler.clearInlineError(confirmPasswordField); updateRegisterButtonState(); });
+        usernameField.textProperty().addListener((obs, ov, nv) -> {
+            ErrorHandler.clearFieldError(usernameError);
+            ErrorHandler.clearInlineError(usernameField);
+            updateRegisterButtonState();
+        });
+        emailField.textProperty().addListener((obs, ov, nv) -> {
+            ErrorHandler.clearFieldError(emailError);
+            ErrorHandler.clearInlineError(emailField);
+            updateRegisterButtonState();
+        });
+        passwordField.textProperty().addListener((obs, ov, nv) -> {
+            ErrorHandler.clearFieldError(passwordError);
+            ErrorHandler.clearInlineError(passwordField);
+            updateRegisterButtonState();
+        });
+        confirmPasswordField.textProperty().addListener((obs, ov, nv) -> {
+            ErrorHandler.clearFieldError(confirmPasswordError);
+            ErrorHandler.clearInlineError(confirmPasswordField);
+            updateRegisterButtonState();
+        });
 
-        usernameField.focusedProperty().addListener((obs, o, focused) -> { if (!focused) validateUsernameField(); });
-        emailField.focusedProperty().addListener((obs, o, focused) -> { if (!focused) validateEmailField(); });
-        passwordField.focusedProperty().addListener((obs, o, focused) -> { if (!focused) validatePasswordField(); });
-        confirmPasswordField.focusedProperty().addListener((obs, o, focused) -> { if (!focused) validateConfirmPasswordField(); });
+        usernameField.focusedProperty().addListener((obs, o, focused) -> {
+            if (!focused) validateUsernameField();
+        });
+        emailField.focusedProperty().addListener((obs, o, focused) -> {
+            if (!focused) validateEmailField();
+        });
+        passwordField.focusedProperty().addListener((obs, o, focused) -> {
+            if (!focused) validatePasswordField();
+        });
+        confirmPasswordField.focusedProperty().addListener((obs, o, focused) -> {
+            if (!focused) validateConfirmPasswordField();
+        });
 
-        // Entrée depuis le dernier champ déclenche l'inscription
         confirmPasswordField.setOnAction(e -> handleRegister());
         updateRegisterButtonState();
     }
 
-    // ── Gestionnaires d'événements ────────────────────────────────────────────
-
-    /**
-     * Déclenché par le bouton "Créer mon compte".
-     */
     @FXML
     private void handleRegister() {
-        // ① Réinitialise toutes les erreurs
         ErrorHandler.clearFieldError(usernameError);
         ErrorHandler.clearFieldError(emailError);
         ErrorHandler.clearFieldError(passwordError);
@@ -79,36 +85,32 @@ public class RegisterController {
         ErrorHandler.clearFieldError(globalError);
         hideSuccess();
 
-        String username        = usernameField.getText().trim();
-        String email           = emailField.getText().trim();
-        String password        = passwordField.getText();
+        String username = usernameField.getText().trim();
+        String email = emailField.getText().trim();
+        String password = passwordField.getText();
 
-        // ② Validation locale complète
         boolean valid = validateUsernameField() & validateEmailField() & validatePasswordField() & validateConfirmPasswordField();
-        if (!valid) return;
+        if (!valid) {
+            return;
+        }
 
-        // ③ Envoi TCP dans un thread séparé
         setLoading(true);
 
         Task<Response> registerTask = new Task<>() {
             @Override
             protected Response call() throws Exception {
                 Client client = Client.getInstance();
-
                 try {
                     client.connect();
                 } catch (Exception e) {
-                    throw new Exception("Impossible de joindre le serveur. Vérifiez votre connexion.", e);
+                    throw new Exception("Impossible de joindre le serveur. Verifiez votre connexion.", e);
                 }
 
-                // Payload selon le protocole ChriOnline
                 JSONObject payload = new JSONObject();
                 payload.put("username", username);
-                payload.put("email",    email);
+                payload.put("email", email);
                 payload.put("password", password);
-
-                Request request = new Request(MessageProtocol.ACTION_REGISTER, payload);
-                return client.send(request);
+                return client.send(new Request(MessageProtocol.ACTION_REGISTER, payload));
             }
         };
 
@@ -117,59 +119,35 @@ public class RegisterController {
             Response response = registerTask.getValue();
 
             if (response.isSuccess()) {
-                // Cache identité côté client (le serveur crée aussi une session)
-                try {
-                    JSONObject payload = response.getPayloadAsJsonObject();
-                    ClientSession session = ClientSession.getInstance();
-                    session.setUserId(payload.has("userId") ? payload.getInt("userId") : null);
-                    session.setUsername(payload.optString("username", ""));
-                    session.setEmail(payload.optString("email", ""));
-                    String role = payload.optString("role", "CLIENT");
-                    session.setRole(com.chrionline.model.User.Role.valueOf(role));
-                } catch (Exception ignored) {}
+                showSuccess("Compte cree. Un code de verification a ete envoye a votre email.");
+                SceneManager.showEmailVerification(email);
+                return;
+            }
 
-                // ④ Inscription réussie : message de succès, puis redirige vers Login
-                showSuccess("Compte créé avec succès ! Redirection vers la connexion...");
-
-                // Délai de 2 secondes pour laisser l'utilisateur lire le message
-                Task<Void> delay = new Task<>() {
-                    @Override protected Void call() throws Exception {
-                        Thread.sleep(2000);
-                        return null;
-                    }
-                };
-                delay.setOnSucceeded(e -> javafx.application.Platform.runLater(SceneManager::showLogin));
-                Thread t = new Thread(delay);
-                t.setDaemon(true);
-                t.start();
-
+            String msg = response.getMessage() == null ? "" : response.getMessage().trim();
+            String lower = msg.toLowerCase();
+            if (isUsernameAlreadyUsedMessage(lower)) {
+                ErrorHandler.showFieldError(usernameError, "Ce nom d'utilisateur est deja utilise");
+                ErrorHandler.showInlineError(usernameField, "Username deja utilise");
+            } else if (isEmailAlreadyUsedMessage(lower)) {
+                handleExistingEmailDuringRegistration(email);
+            } else if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                ErrorHandler.handleSessionExpired();
             } else {
-                // ⑤ Erreur renvoyée par le serveur (ex: email déjà utilisé)
-                String msg = response.getMessage() == null ? "" : response.getMessage();
-                String lower = msg.toLowerCase();
-                if (lower.contains("username") && lower.contains("exist")) {
-                    ErrorHandler.showFieldError(usernameError, "Ce nom d'utilisateur est déjà utilisé");
-                    ErrorHandler.showInlineError(usernameField, "Username déjà utilisé");
-                } else if (lower.contains("email") && lower.contains("exist")) {
-                    ErrorHandler.showFieldError(emailError, "Cet email est déjà utilisé");
-                    ErrorHandler.showInlineError(emailField, "Email déjà utilisé");
-                } else if (ErrorHandler.isSessionExpiredMessage(msg)) {
-                    ErrorHandler.handleSessionExpired();
-                } else {
-                    ErrorHandler.showErrorDialog("Inscription échouée", msg.isBlank() ? "Inscription échouée. Veuillez réessayer." : msg);
-                }
+                ErrorHandler.showErrorDialog("Inscription echouee",
+                        msg.isBlank() ? "Inscription echouee. Veuillez reessayer." : msg);
             }
         });
 
         registerTask.setOnFailed(event -> {
             setLoading(false);
             Throwable cause = registerTask.getException();
-            String msg = cause != null ? String.valueOf(cause.getMessage()) : "Une erreur réseau s'est produite.";
+            String msg = cause != null ? String.valueOf(cause.getMessage()) : "Une erreur reseau s'est produite.";
             String lower = msg.toLowerCase();
             if (lower.contains("timeout") || lower.contains("timed out")) {
-                ErrorHandler.showErrorDialog("Timeout", "La requête a expiré. Vérifiez votre connexion.");
+                ErrorHandler.showErrorDialog("Timeout", "La requete a expire. Verifiez votre connexion.");
             } else {
-                ErrorHandler.showErrorDialog("Serveur indisponible", "Serveur indisponible. Vérifiez votre connexion.");
+                ErrorHandler.showErrorDialog("Serveur indisponible", "Serveur indisponible. Verifiez votre connexion.");
             }
             if (usernameField.getScene() != null) {
                 ErrorHandler.showServerUnavailableBanner(usernameField.getScene(), this::handleRegister);
@@ -181,13 +159,10 @@ public class RegisterController {
         thread.start();
     }
 
-    /** Navigation vers l'écran de connexion. */
     @FXML
     private void goToLogin() {
         SceneManager.showLogin();
     }
-
-    // ── Utilitaires privés ────────────────────────────────────────────────────
 
     private void showSuccess(String message) {
         successMessage.setText(message);
@@ -211,7 +186,9 @@ public class RegisterController {
                 && !emailField.getText().trim().isEmpty()
                 && !passwordField.getText().isBlank()
                 && !confirmPasswordField.getText().isBlank();
-        if (!loadingIndicator.isVisible()) registerButton.setDisable(!ready);
+        if (!loadingIndicator.isVisible()) {
+            registerButton.setDisable(!ready);
+        }
     }
 
     private boolean validateUsernameField() {
@@ -252,7 +229,7 @@ public class RegisterController {
             return false;
         }
         if (password.length() < MIN_PASSWORD) {
-            ErrorHandler.showFieldError(passwordError, "Mot de passe trop court (minimum 8 caractères)");
+            ErrorHandler.showFieldError(passwordError, "Mot de passe trop court (minimum 8 caracteres)");
             ErrorHandler.showInlineError(passwordField, "trop court");
             return false;
         }
@@ -272,5 +249,58 @@ public class RegisterController {
             return false;
         }
         return true;
+    }
+
+    private boolean isUsernameAlreadyUsedMessage(String lowerMessage) {
+        return "username already taken".equals(lowerMessage)
+                || "ce nom d'utilisateur est deja utilise".equals(lowerMessage)
+                || "ce nom d'utilisateur est dÃ©jÃ  utilisÃ©".equals(lowerMessage)
+                || "ce nom d'utilisateur est déjà utilisé".equals(lowerMessage);
+    }
+
+    private boolean isEmailAlreadyUsedMessage(String lowerMessage) {
+        return "email already in use".equals(lowerMessage)
+                || "cet email est deja utilise".equals(lowerMessage)
+                || "cet email est dÃ©jÃ  utilisÃ©".equals(lowerMessage)
+                || "cet email est déjà utilisé".equals(lowerMessage);
+    }
+
+    private void handleExistingEmailDuringRegistration(String email) {
+        setLoading(true);
+
+        Task<Response> resendTask = new Task<>() {
+            @Override
+            protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+
+                JSONObject payload = new JSONObject();
+                payload.put("email", email);
+                return client.send(new Request(MessageProtocol.ACTION_RESEND_VERIFICATION_EMAIL, payload));
+            }
+        };
+
+        resendTask.setOnSucceeded(event -> {
+            setLoading(false);
+            Response resendResponse = resendTask.getValue();
+            if (resendResponse.isSuccess()) {
+                showSuccess("Ce compte existe deja mais n'est pas encore verifie. Un nouveau code a ete envoye.");
+                SceneManager.showEmailVerification(email);
+                return;
+            }
+
+            ErrorHandler.showFieldError(emailError, "Cet email est deja utilise");
+            ErrorHandler.showInlineError(emailField, "Email deja utilise");
+        });
+
+        resendTask.setOnFailed(event -> {
+            setLoading(false);
+            ErrorHandler.showFieldError(emailError, "Cet email est deja utilise");
+            ErrorHandler.showInlineError(emailField, "Email deja utilise");
+        });
+
+        Thread thread = new Thread(resendTask);
+        thread.setDaemon(true);
+        thread.start();
     }
 }

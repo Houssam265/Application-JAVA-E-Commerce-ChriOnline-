@@ -3,35 +3,55 @@ package com.chrionline.dao;
 import com.chrionline.database.DatabaseConnection;
 import com.chrionline.model.User;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 /**
  * Data Access Object for the {@code users} table.
- * All queries use PreparedStatement — no string concatenation.
- * All JDBC resources are closed via try-with-resources.
  */
 public class UserDAO {
 
-    // ── Connection helper ───────────────────────────────────────────────────
     private Connection conn() {
         return DatabaseConnection.getInstance().getConnection();
     }
 
-    // ── INSERT ──────────────────────────────────────────────────────────────
+    public void ensureEmailVerificationSchema() {
+        boolean columnAdded = false;
+        columnAdded |= ensureColumn("is_email_verified",
+                "ALTER TABLE users ADD COLUMN is_email_verified BOOLEAN NOT NULL DEFAULT FALSE");
+        columnAdded |= ensureColumn("email_verification_code",
+                "ALTER TABLE users ADD COLUMN email_verification_code VARCHAR(16) NULL");
+        columnAdded |= ensureColumn("email_verification_expires_at",
+                "ALTER TABLE users ADD COLUMN email_verification_expires_at DATETIME NULL");
+        columnAdded |= ensureColumn("email_verification_sent_at",
+                "ALTER TABLE users ADD COLUMN email_verification_sent_at DATETIME NULL");
 
-    /**
-     * Persists a new user and returns the same object with the generated
-     * {@code user_id} set.
-     *
-     * @param user user to insert (userId field is ignored — DB auto-increments it)
-     * @return the user with userId populated
-     */
+        if (columnAdded) {
+            try (PreparedStatement ps = conn().prepareStatement(
+                    "UPDATE users SET is_email_verified = TRUE WHERE is_email_verified = FALSE")) {
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                throw new RuntimeException("UserDAO.ensureEmailVerificationSchema failed during backfill: " + e.getMessage(), e);
+            }
+        }
+    }
+
     public User save(User user) {
-        final String sql =
-            "INSERT INTO users (username, email, password_hash, role, is_suspended) VALUES (?, ?, ?, ?, ?)";
+        final String sql = """
+            INSERT INTO users (
+                username, email, password_hash, role, is_suspended,
+                is_email_verified, email_verification_code,
+                email_verification_expires_at, email_verification_sent_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """;
 
         try (PreparedStatement ps = conn().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, user.getUsername());
@@ -39,6 +59,10 @@ public class UserDAO {
             ps.setString(3, user.getPasswordHash());
             ps.setString(4, user.getRole().name());
             ps.setBoolean(5, user.isSuspended());
+            ps.setBoolean(6, user.isEmailVerified());
+            ps.setString(7, user.getEmailVerificationCode());
+            setTimestamp(ps, 8, user.getEmailVerificationExpiresAt());
+            setTimestamp(ps, 9, user.getEmailVerificationSentAt());
             ps.executeUpdate();
 
             try (ResultSet generated = ps.getGeneratedKeys()) {
@@ -53,96 +77,57 @@ public class UserDAO {
         }
     }
 
-    // ── SELECT by PK ────────────────────────────────────────────────────────
-
     public Optional<User> findById(int userId) {
-        final String sql = "SELECT * FROM users WHERE user_id = ?";
-
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
-            ps.setInt(1, userId);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? Optional.of(mapRow(rs)) : Optional.empty();
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("UserDAO.findById failed for userId=" + userId + ": " + e.getMessage(), e);
-        }
+        return findOne("SELECT * FROM users WHERE user_id = ?", ps -> ps.setInt(1, userId),
+                "UserDAO.findById failed for userId=" + userId + ": ");
     }
-
-    // ── SELECT by email (login) ──────────────────────────────────────────────
 
     public Optional<User> findByEmail(String email) {
-        final String sql = "SELECT * FROM users WHERE email = ?";
-
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
-            ps.setString(1, email);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? Optional.of(mapRow(rs)) : Optional.empty();
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("UserDAO.findByEmail failed for email='" + email + "': " + e.getMessage(), e);
-        }
+        return findOne("SELECT * FROM users WHERE email = ?", ps -> ps.setString(1, email),
+                "UserDAO.findByEmail failed for email='" + email + "': ");
     }
-
-    // ── SELECT by username (registration duplicate check) ───────────────────
 
     public Optional<User> findByUsername(String username) {
-        final String sql = "SELECT * FROM users WHERE username = ?";
-
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
-            ps.setString(1, username);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? Optional.of(mapRow(rs)) : Optional.empty();
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("UserDAO.findByUsername failed for username='" + username + "': " + e.getMessage(), e);
-        }
+        return findOne("SELECT * FROM users WHERE username = ?", ps -> ps.setString(1, username),
+                "UserDAO.findByUsername failed for username='" + username + "': ");
     }
 
-    // ── Existence checks ─────────────────────────────────────────────────────
-
     public boolean existsByEmail(String email) {
-        final String sql = "SELECT 1 FROM users WHERE email = ? LIMIT 1";
-
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
-            ps.setString(1, email);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next();
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("UserDAO.existsByEmail failed for email='" + email + "': " + e.getMessage(), e);
-        }
+        return exists("SELECT 1 FROM users WHERE email = ? LIMIT 1", email,
+                "UserDAO.existsByEmail failed for email='" + email + "': ");
     }
 
     public boolean existsByUsername(String username) {
-        final String sql = "SELECT 1 FROM users WHERE username = ? LIMIT 1";
-
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
-            ps.setString(1, username);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next();
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("UserDAO.existsByUsername failed for username='" + username + "': " + e.getMessage(), e);
-        }
+        return exists("SELECT 1 FROM users WHERE username = ? LIMIT 1", username,
+                "UserDAO.existsByUsername failed for username='" + username + "': ");
     }
 
-    // ── UPDATE (profile fields) ──────────────────────────────────────────────
-
-    /** Updates {@code username} and {@code email} only. */
     public void update(User user) {
-        final String sql = "UPDATE users SET username = ?, email = ? WHERE user_id = ?";
+        final String sql = """
+            UPDATE users
+               SET username = ?,
+                   email = ?,
+                   is_email_verified = ?,
+                   email_verification_code = ?,
+                   email_verification_expires_at = ?,
+                   email_verification_sent_at = ?
+             WHERE user_id = ?
+            """;
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             ps.setString(1, user.getUsername());
             ps.setString(2, user.getEmail());
-            ps.setInt(3, user.getUserId());
+            ps.setBoolean(3, user.isEmailVerified());
+            ps.setString(4, user.getEmailVerificationCode());
+            setTimestamp(ps, 5, user.getEmailVerificationExpiresAt());
+            setTimestamp(ps, 6, user.getEmailVerificationSentAt());
+            ps.setInt(7, user.getUserId());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("UserDAO.update failed for userId=" + user.getUserId() + ": " + e.getMessage(), e);
         }
     }
 
-    /** Updates the stored BCrypt hash — used by AuthService after password change. */
     public void updatePassword(int userId, String newPasswordHash) {
         final String sql = "UPDATE users SET password_hash = ? WHERE user_id = ?";
 
@@ -155,7 +140,44 @@ public class UserDAO {
         }
     }
 
-    // ── DELETE ───────────────────────────────────────────────────────────────
+    public void updateVerificationChallenge(int userId, String code, LocalDateTime expiresAt, LocalDateTime sentAt) {
+        final String sql = """
+            UPDATE users
+               SET email_verification_code = ?,
+                   email_verification_expires_at = ?,
+                   email_verification_sent_at = ?,
+                   is_email_verified = FALSE
+             WHERE user_id = ?
+            """;
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, code);
+            setTimestamp(ps, 2, expiresAt);
+            setTimestamp(ps, 3, sentAt);
+            ps.setInt(4, userId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.updateVerificationChallenge failed for userId=" + userId + ": " + e.getMessage(), e);
+        }
+    }
+
+    public void markEmailVerified(int userId) {
+        final String sql = """
+            UPDATE users
+               SET is_email_verified = TRUE,
+                   email_verification_code = NULL,
+                   email_verification_expires_at = NULL,
+                   email_verification_sent_at = NULL
+             WHERE user_id = ?
+            """;
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.markEmailVerified failed for userId=" + userId + ": " + e.getMessage(), e);
+        }
+    }
 
     public void delete(int userId) {
         final String sql = "DELETE FROM users WHERE user_id = ?";
@@ -168,36 +190,21 @@ public class UserDAO {
         }
     }
 
-    // ── SELECT ALL (admin panel) ─────────────────────────────────────────────
-
     public List<User> findAll() {
         final String sql = "SELECT * FROM users ORDER BY user_id ASC";
         List<User> result = new ArrayList<>();
 
         try (PreparedStatement ps = conn().prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
-
             while (rs.next()) {
                 result.add(mapRow(rs));
             }
             return result;
-
         } catch (SQLException e) {
             throw new RuntimeException("UserDAO.findAll failed: " + e.getMessage(), e);
         }
     }
 
-    // ── SELECT by role (admin dashboard) ─────────────────────────────────────
-
-    /**
-     * Returns all users with the given role.
-     * <p>
-     * Binds via {@link User.Role#name()} so the string matches the DB ENUM
-     * exactly (e.g. {@code "CLIENT"} or {@code "ADMIN"}).
-     *
-     * @param role the role to filter by
-     * @return list of matching users, empty if none
-     */
     public List<User> findByRole(User.Role role) {
         final String sql = "SELECT * FROM users WHERE role = ? ORDER BY user_id ASC";
         List<User> result = new ArrayList<>();
@@ -210,13 +217,10 @@ public class UserDAO {
                 }
             }
             return result;
-
         } catch (SQLException e) {
             throw new RuntimeException("UserDAO.findByRole failed for role=" + role + ": " + e.getMessage(), e);
         }
     }
-
-    // ── Moderation: suspend / reactivate ──────────────────────────────────────
 
     public void setSuspended(int userId, boolean suspended) {
         final String sql = "UPDATE users SET is_suspended = ? WHERE user_id = ?";
@@ -229,9 +233,64 @@ public class UserDAO {
         }
     }
 
-    // ── Row mapper ───────────────────────────────────────────────────────────
+    private Optional<User> findOne(String sql, SqlConsumer<PreparedStatement> binder, String errorPrefix) {
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            binder.accept(ps);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(mapRow(rs)) : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(errorPrefix + e.getMessage(), e);
+        }
+    }
 
-    /** Maps one ResultSet row to a {@link User}. Column names match the schema exactly. */
+    private boolean exists(String sql, String value, String errorPrefix) {
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, value);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(errorPrefix + e.getMessage(), e);
+        }
+    }
+
+    private boolean ensureColumn(String columnName, String alterSql) {
+        final String sql = """
+            SELECT 1
+              FROM information_schema.columns
+             WHERE table_schema = DATABASE()
+               AND table_name = 'users'
+               AND column_name = ?
+            """;
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, columnName);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return false;
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.ensureColumn failed for " + columnName + ": " + e.getMessage(), e);
+        }
+
+        try (Statement st = conn().createStatement()) {
+            st.executeUpdate(alterSql);
+            return true;
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.ensureColumn alter failed for " + columnName + ": " + e.getMessage(), e);
+        }
+    }
+
+    private void setTimestamp(PreparedStatement ps, int index, LocalDateTime value) throws SQLException {
+        if (value == null) {
+            ps.setTimestamp(index, null);
+        } else {
+            ps.setTimestamp(index, Timestamp.valueOf(value));
+        }
+    }
+
     private User mapRow(ResultSet rs) throws SQLException {
         User u = new User();
         u.setUserId(rs.getInt("user_id"));
@@ -239,16 +298,42 @@ public class UserDAO {
         u.setEmail(rs.getString("email"));
         u.setPasswordHash(rs.getString("password_hash"));
         u.setRole(User.Role.valueOf(rs.getString("role")));
-        try {
-            u.setSuspended(rs.getBoolean("is_suspended"));
-        } catch (SQLException ignored) {
-            // Backward compatibility if column doesn't exist in an older DB.
-            u.setSuspended(false);
-        }
-
-        Timestamp ts = rs.getTimestamp("created_at");
-        u.setCreatedAt(ts != null ? ts.toLocalDateTime() : null);
-
+        u.setSuspended(getBooleanOrDefault(rs, "is_suspended", false));
+        u.setEmailVerified(getBooleanOrDefault(rs, "is_email_verified", true));
+        u.setEmailVerificationCode(getStringOrNull(rs, "email_verification_code"));
+        u.setEmailVerificationExpiresAt(getLocalDateTimeOrNull(rs, "email_verification_expires_at"));
+        u.setEmailVerificationSentAt(getLocalDateTimeOrNull(rs, "email_verification_sent_at"));
+        u.setCreatedAt(getLocalDateTimeOrNull(rs, "created_at"));
         return u;
+    }
+
+    private boolean getBooleanOrDefault(ResultSet rs, String column, boolean defaultValue) {
+        try {
+            return rs.getBoolean(column);
+        } catch (SQLException ignored) {
+            return defaultValue;
+        }
+    }
+
+    private String getStringOrNull(ResultSet rs, String column) {
+        try {
+            return rs.getString(column);
+        } catch (SQLException ignored) {
+            return null;
+        }
+    }
+
+    private LocalDateTime getLocalDateTimeOrNull(ResultSet rs, String column) {
+        try {
+            Timestamp ts = rs.getTimestamp(column);
+            return ts != null ? ts.toLocalDateTime() : null;
+        } catch (SQLException ignored) {
+            return null;
+        }
+    }
+
+    @FunctionalInterface
+    private interface SqlConsumer<T> {
+        void accept(T value) throws SQLException;
     }
 }

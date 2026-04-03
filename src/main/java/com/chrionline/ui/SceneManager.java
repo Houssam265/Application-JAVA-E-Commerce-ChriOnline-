@@ -1,18 +1,16 @@
 package com.chrionline.ui;
 
+import com.chrionline.model.Product;
+import com.chrionline.ui.controller.EmailVerificationController;
+import com.chrionline.ui.controller.ProductDetailController;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
 import java.io.IOException;
+import java.net.URL;
 
-/**
- * Gestionnaire centralisé de navigation entre les scènes JavaFX.
- *
- * Tous les contrôleurs appellent les méthodes statiques ici pour
- * naviguer (ex: SceneManager.showHome() après un login réussi).
- */
 public final class SceneManager {
 
     private static Stage stage;
@@ -23,70 +21,94 @@ public final class SceneManager {
         stage = primaryStage;
     }
 
-    // ── Navigation ────────────────────────────────────────────────────────────
-
     public static void showLogin() {
-        loadScene("/fxml/Login.fxml", "ChriOnline — Connexion");
+        loadScene("/fxml/Login.fxml", "ChriOnline - Connexion");
     }
 
     public static void showRegister() {
-        loadScene("/fxml/Register.fxml", "ChriOnline — Inscription");
+        loadScene("/fxml/Register.fxml", "ChriOnline - Inscription");
     }
 
-    /**
-     * Redirige vers l'écran principal (Catalogue / Home) après une connexion réussie.
-     */
+    public static void showEmailVerification(String email) {
+        try {
+            FXMLLoader loader = new FXMLLoader(requireResource("/fxml/EmailVerification.fxml"));
+            Parent root = loader.load();
+
+            EmailVerificationController controller = loader.getController();
+            controller.setEmail(email);
+
+            setSceneRoot(root, "ChriOnline - Verification Email");
+        } catch (Exception e) {
+            e.printStackTrace();
+            ErrorHandler.showErrorDialog(
+                    "Navigation impossible",
+                    "Impossible d'ouvrir l'ecran de verification email.\n" + e.getMessage()
+            );
+        }
+    }
+
     public static void showHome() {
-        loadScene("/fxml/Home.fxml", "ChriOnline — Accueil");
+        loadScene("/fxml/Home.fxml", "ChriOnline - Accueil");
     }
 
     public static void showCart() {
-        loadScene("/fxml/Cart.fxml", "ChriOnline — Panier");
+        loadScene("/fxml/Cart.fxml", "ChriOnline - Panier");
     }
+
     public static void showCheckout() {
-        loadScene("/fxml/Checkout.fxml", "ChriOnline — Checkout");
+        loadScene("/fxml/Checkout.fxml", "ChriOnline - Checkout");
     }
+
     public static void showOrderHistory() {
-        loadScene("/fxml/OrderHistory.fxml", "ChriOnline — Mes commandes");
+        loadScene("/fxml/OrderHistory.fxml", "ChriOnline - Mes commandes");
     }
+
     public static void showProfile() {
-        loadScene("/fxml/Profile.fxml", "ChriOnline — Profil");
+        loadScene("/fxml/Profile.fxml", "ChriOnline - Profil");
     }
 
     public static void showAdmin() {
-        loadScene("/fxml/Admin.fxml", "ChriOnline — Administration");
+        loadScene("/fxml/Admin.fxml", "ChriOnline - Administration");
     }
-
-    // ── Utilitaire privé ─────────────────────────────────────────────────────
 
     private static void loadScene(String fxmlPath, String title) {
         try {
-            FXMLLoader loader = new FXMLLoader(
-                SceneManager.class.getResource(fxmlPath)
-            );
+            FXMLLoader loader = new FXMLLoader(requireResource(fxmlPath));
             Parent root = loader.load();
             setSceneRoot(root, title);
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
-            System.err.println("[SceneManager] Impossible de charger : " + fxmlPath);
+            ErrorHandler.showErrorDialog(
+                    "Navigation impossible",
+                    "Impossible de charger l'ecran " + fxmlPath + ".\n" + e.getMessage()
+            );
         }
     }
 
-    public static void showProductDetail(com.chrionline.model.Product product) {
+    public static void showProductDetail(Product product) {
         try {
-            FXMLLoader loader = new FXMLLoader(
-                SceneManager.class.getResource("/fxml/ProductDetail.fxml")
-            );
+            FXMLLoader loader = new FXMLLoader(requireResource("/fxml/ProductDetail.fxml"));
             Parent root = loader.load();
-            
-            com.chrionline.ui.controller.ProductDetailController controller = loader.getController();
+
+            ProductDetailController controller = loader.getController();
             controller.setProduct(product);
-            
-            setSceneRoot(root, "ChriOnline — " + product.getName());
-        } catch (IOException e) {
+
+            setSceneRoot(root, "ChriOnline - " + product.getName());
+        } catch (Exception e) {
             e.printStackTrace();
-            System.err.println("[SceneManager] Impossible de charger : /fxml/ProductDetail.fxml");
+            ErrorHandler.showErrorDialog(
+                    "Navigation impossible",
+                    "Impossible d'ouvrir le detail du produit.\n" + e.getMessage()
+            );
         }
+    }
+
+    private static URL requireResource(String path) throws IOException {
+        URL resource = SceneManager.class.getResource(path);
+        if (resource == null) {
+            throw new IOException("Ressource introuvable: " + path);
+        }
+        return resource;
     }
 
     private static void setSceneRoot(Parent root, String title) {
@@ -94,7 +116,7 @@ public final class SceneManager {
         if (scene == null) {
             scene = new Scene(root, MainApp.WIDTH, MainApp.HEIGHT);
             scene.getStylesheets().add(
-                SceneManager.class.getResource("/css/style.css").toExternalForm()
+                    SceneManager.class.getResource("/css/style.css").toExternalForm()
             );
             stage.setScene(scene);
         } else {

@@ -210,6 +210,10 @@ public class ClientHandler implements Runnable {
                 return handleLogin(req);
             case MessageProtocol.ACTION_REGISTER:
                 return handleRegister(req);
+            case MessageProtocol.ACTION_VERIFY_EMAIL:
+                return handleVerifyEmail(req);
+            case MessageProtocol.ACTION_RESEND_VERIFICATION_EMAIL:
+                return handleResendVerificationEmail(req);
 
             // ── Auth (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_LOGOUT:
@@ -360,6 +364,7 @@ public class ClientHandler implements Runnable {
             payload.put("username", user.getUsername());
             payload.put("email",    user.getEmail());
             payload.put("role",     user.getRole().name());
+            payload.put("emailVerified", user.isEmailVerified());
 
             // token is sent as the top-level Response.token field
             connectionToken = session.getToken();
@@ -382,8 +387,8 @@ public class ClientHandler implements Runnable {
     /**
      * REGISTER — payload: {@code username}, {@code email}, {@code password}.
      *
-     * <p>Registers via {@link AuthService#register(String, String, String)},
-     * then immediately creates a session (auto-login after signup).
+     * <p>Registers via {@link AuthService#register(String, String, String)}
+     * and sends an email verification code. No session is created yet.
      */
     private Response handleRegister(Request req) {
         String username = getPayloadString(req, "username");
@@ -401,18 +406,17 @@ public class ClientHandler implements Runnable {
         }
 
         try {
-            User    user    = authService.register(username, email, password);
-            Session session = sessionManager.createSession(user);
+            User user = authService.register(username, email, password);
 
             Map<String, Object> payload = new HashMap<>();
-            payload.put("userId",   user.getUserId());
+            payload.put("userId", user.getUserId());
             payload.put("username", user.getUsername());
-            payload.put("email",    user.getEmail());
-            payload.put("role",     user.getRole().name());
+            payload.put("email", user.getEmail());
+            payload.put("role", user.getRole().name());
+            payload.put("emailVerified", false);
 
-            connectionToken = session.getToken();
-            Response r = new Response(true, "REGISTER_SUCCESS", payload, session.getToken());
-            logService.logSuccess("REGISTER", null);
+            Response r = Response.ok("REGISTER_SUCCESS", payload);
+            logService.logSuccess("REGISTER", user.getUserId());
             return r;
 
         } catch (IllegalArgumentException e) {
@@ -420,6 +424,52 @@ public class ClientHandler implements Runnable {
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "[REGISTER] Unexpected error: " + e.getMessage(), e);
             return Response.error("Erreur serveur lors de l'inscription.");
+        }
+    }
+
+    private Response handleVerifyEmail(Request req) {
+        String email = getPayloadString(req, "email");
+        String code = getPayloadString(req, "code");
+
+        if (email == null || email.isBlank()) {
+            return Response.error("Le champ 'email' est requis.");
+        }
+        if (code == null || code.isBlank()) {
+            return Response.error("Le champ 'code' est requis.");
+        }
+
+        try {
+            User user = authService.verifyEmail(email, code);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("userId", user.getUserId());
+            payload.put("email", user.getEmail());
+            payload.put("emailVerified", true);
+            logService.logSuccess("VERIFY_EMAIL", user.getUserId());
+            return Response.ok("EMAIL_VERIFIED", payload);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[VERIFY_EMAIL] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la verification de l'email.");
+        }
+    }
+
+    private Response handleResendVerificationEmail(Request req) {
+        String email = getPayloadString(req, "email");
+
+        if (email == null || email.isBlank()) {
+            return Response.error("Le champ 'email' est requis.");
+        }
+
+        try {
+            authService.resendVerificationCode(email);
+            logService.logSuccess("RESEND_VERIFICATION_EMAIL", null);
+            return Response.ok("VERIFICATION_EMAIL_RESENT", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[RESEND_VERIFICATION_EMAIL] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du renvoi du code.");
         }
     }
 

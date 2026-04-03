@@ -4,6 +4,7 @@ import com.chrionline.dao.UserDAO;
 import com.chrionline.service.AuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
+import com.chrionline.service.EnvFileLoader;
 import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
@@ -40,6 +41,8 @@ public class Server {
     private static final Logger LOG = Logger.getLogger(Server.class.getName());
 
     public static void main(String[] args) {
+        EnvFileLoader.loadFromProjectRoot();
+
         int port = PORT;
         if (args.length >= 1) {
             try {
@@ -51,6 +54,7 @@ public class Server {
 
         // ── Shared service instances — created ONCE, passed to every handler ──
         UserDAO        userDAO        = new UserDAO();
+        userDAO.ensureEmailVerificationSchema();
         SessionManager sessionManager = new SessionManager(userDAO);
         AuthService    authService    = new AuthService(userDAO);
         ProductService productService = new ProductService();

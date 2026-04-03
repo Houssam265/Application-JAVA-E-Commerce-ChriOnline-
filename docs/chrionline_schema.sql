@@ -31,6 +31,10 @@ CREATE TABLE users (
     password_hash VARCHAR(255)  NOT NULL,
     role          ENUM('CLIENT','ADMIN') NOT NULL DEFAULT 'CLIENT',
     is_suspended  BOOLEAN       NOT NULL DEFAULT FALSE,
+    is_email_verified BOOLEAN   NOT NULL DEFAULT FALSE,
+    email_verification_code VARCHAR(16),
+    email_verification_expires_at DATETIME,
+    email_verification_sent_at DATETIME,
     created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (user_id)

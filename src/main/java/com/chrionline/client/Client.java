@@ -35,7 +35,7 @@ public class Client {
     // ── Configuration ────────────────────────────────────────────────────────
     private static final String HOST            = "localhost";
     private static final int    PORT            = 8080;
-    private static final int    TIMEOUT_MS      = 5_000; // 5 secondes
+    private static final int    TIMEOUT_MS      = 15_000; // 15 secondes
     private static final int    RECONNECT_ATTEMPTS = 3;
     private static final int    RECONNECT_BACKOFF_MS = 300;
 
@@ -153,44 +153,23 @@ public class Client {
      * @throws IOException en cas de problème réseau ou timeout
      */
     public Response send(Request request) throws IOException {
-        IOException last = null;
-        boolean timeoutOccurred = false;
-
-        for (int attempt = 1; attempt <= RECONNECT_ATTEMPTS; attempt++) {
-            try {
-                if (!isConnected()) {
-                    connectOnce();
-                }
-                return sendOnce(request);
-            } catch (SocketTimeoutException e) {
-                last = new IOException("Delai d'attente depasse - le serveur ne repond pas.", e);
-                timeoutOccurred = true;
-            } catch (IOException e) {
-                last = e;
-            }
-
-            disconnect();
-
-            if (attempt < RECONNECT_ATTEMPTS) {
-                try {
-                    Thread.sleep(RECONNECT_BACKOFF_MS);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-        }
-
-        if (last != null) {
-            if (timeoutOccurred) {
-                throw last;
-            }
+        try {
             if (!isConnected()) {
-                throw new IOException("Serveur indisponible. Verifiez qu'il est demarre.", last);
+                connectWithRetry();
             }
-            throw last;
+            return sendOnce(request);
+        } catch (SocketTimeoutException e) {
+            disconnect();
+            throw new IOException("Delai d'attente depasse - le serveur ne repond pas.", e);
+        } catch (IOException e) {
+            disconnect();
+            if (e instanceof java.net.ConnectException
+                    || e instanceof java.net.NoRouteToHostException
+                    || e instanceof java.net.UnknownHostException) {
+                throw new IOException("Serveur indisponible. Verifiez qu'il est demarre.", e);
+            }
+            throw e;
         }
-        throw new IOException("Erreur reseau.");
     }
 
     private Response sendOnce(Request request) throws IOException {
@@ -215,7 +194,6 @@ public class Client {
         if (response.isSuccess() && response.getToken() != null) {
             this.sessionToken = response.getToken();
         }
-
         return response;
     }
 

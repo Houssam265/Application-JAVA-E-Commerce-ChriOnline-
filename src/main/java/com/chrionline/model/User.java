@@ -4,76 +4,85 @@ import java.time.LocalDateTime;
 
 /**
  * Maps to the {@code users} table.
- *
- * Schema ENUMs: role → ENUM('CLIENT','ADMIN')
  */
 public class User {
 
-    // ── Fields ─────────────────────────────────────────────────────────────
-    private int           userId;
-    private String        username;
-    private String        email;
-    private String        passwordHash;
-    private Role          role;          // enum — see nested type below
-    private boolean       suspended;     // admin moderation flag
+    private int userId;
+    private String username;
+    private String email;
+    private String passwordHash;
+    private Role role;
+    private boolean suspended;
+    private boolean emailVerified;
+    private String emailVerificationCode;
+    private LocalDateTime emailVerificationExpiresAt;
+    private LocalDateTime emailVerificationSentAt;
     private LocalDateTime createdAt;
 
-    // ── Nested enum matching schema ENUM('CLIENT','ADMIN') exactly ─────────
     public enum Role {
         CLIENT,
         ADMIN
     }
 
-    // ── Constructors ────────────────────────────────────────────────────────
-
-    /** No-arg constructor required by frameworks / DAO mapping. */
     public User() {}
 
-    /** Full constructor. */
     public User(int userId, String username, String email,
                 String passwordHash, Role role, LocalDateTime createdAt) {
-        this.userId       = userId;
-        this.username     = username;
-        this.email        = email;
+        this.userId = userId;
+        this.username = username;
+        this.email = email;
         this.passwordHash = passwordHash;
-        this.role         = role;
-        this.createdAt    = createdAt;
+        this.role = role;
+        this.createdAt = createdAt;
     }
 
-    // ── Getters & Setters ───────────────────────────────────────────────────
+    public int getUserId() { return userId; }
+    public void setUserId(int userId) { this.userId = userId; }
 
-    public int           getUserId()       { return userId; }
-    public void          setUserId(int v)  { this.userId = v; }
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
 
-    public String        getUsername()          { return username; }
-    public void          setUsername(String v)  { this.username = v; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
 
-    public String        getEmail()          { return email; }
-    public void          setEmail(String v)  { this.email = v; }
+    public String getPasswordHash() { return passwordHash; }
+    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
 
-    public String        getPasswordHash()          { return passwordHash; }
-    public void          setPasswordHash(String v)  { this.passwordHash = v; }
+    public Role getRole() { return role; }
+    public void setRole(Role role) { this.role = role; }
 
-    public Role          getRole()          { return role; }
-    public void          setRole(Role v)    { this.role = v; }
+    public boolean isSuspended() { return suspended; }
+    public void setSuspended(boolean suspended) { this.suspended = suspended; }
 
-    public boolean       isSuspended()          { return suspended; }
-    public void          setSuspended(boolean v) { this.suspended = v; }
+    public boolean isEmailVerified() { return emailVerified; }
+    public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
 
-    public LocalDateTime getCreatedAt()          { return createdAt; }
-    public void          setCreatedAt(LocalDateTime v) { this.createdAt = v; }
+    public String getEmailVerificationCode() { return emailVerificationCode; }
+    public void setEmailVerificationCode(String emailVerificationCode) { this.emailVerificationCode = emailVerificationCode; }
 
-    // ── toString ────────────────────────────────────────────────────────────
+    public LocalDateTime getEmailVerificationExpiresAt() { return emailVerificationExpiresAt; }
+    public void setEmailVerificationExpiresAt(LocalDateTime emailVerificationExpiresAt) {
+        this.emailVerificationExpiresAt = emailVerificationExpiresAt;
+    }
+
+    public LocalDateTime getEmailVerificationSentAt() { return emailVerificationSentAt; }
+    public void setEmailVerificationSentAt(LocalDateTime emailVerificationSentAt) {
+        this.emailVerificationSentAt = emailVerificationSentAt;
+    }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
     @Override
     public String toString() {
         return "User{" +
-               "userId="       + userId       +
-               ", username='"  + username     + '\'' +
-               ", email='"     + email        + '\'' +
-               ", role="       + role         +
-               ", suspended="  + suspended    +
-               ", createdAt="  + createdAt    +
+               "userId=" + userId +
+               ", username='" + username + '\'' +
+               ", email='" + email + '\'' +
+               ", role=" + role +
+               ", suspended=" + suspended +
+               ", emailVerified=" + emailVerified +
+               ", createdAt=" + createdAt +
                '}';
     }
 }

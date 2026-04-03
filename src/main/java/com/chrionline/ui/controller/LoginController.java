@@ -10,41 +10,33 @@ import com.chrionline.ui.SceneManager;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
-import javafx.scene.control.*;
-
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.TextField;
 import org.json.JSONObject;
 
-/**
- * Contrôleur de l'écran de connexion (Login.fxml).
- *
- * Responsabilités (KAN-5) :
- *  1. Validation locale des champs avant envoi (format email, longueur mot de passe)
- *  2. Envoi de la requête LOGIN via Socket TCP dans un Thread dédié
- *  3. Affichage des messages d'erreur clairs (champ par champ + erreur globale serveur)
- *  4. Redirection vers HomeScreen après connexion réussie
- */
 public class LoginController {
 
-    // ── Références FXML ──────────────────────────────────────────────────────
-    @FXML private TextField         emailField;
-    @FXML private PasswordField     passwordField;
+    @FXML private TextField emailField;
+    @FXML private PasswordField passwordField;
 
-    @FXML private Label             emailError;
-    @FXML private Label             passwordError;
-    @FXML private Label             globalError;
+    @FXML private Label emailError;
+    @FXML private Label passwordError;
+    @FXML private Label globalError;
 
-    @FXML private Button            loginButton;
+    @FXML private Button loginButton;
     @FXML private ProgressIndicator loadingIndicator;
 
-    // ── Regex de validation ───────────────────────────────────────────────────
-    private static final String EMAIL_REGEX   = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
-    private static final int    MIN_PASSWORD  = 8;
+    private static final String EMAIL_REGEX = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+    private static final int MIN_PASSWORD = 8;
 
-    // ── Initialisation ────────────────────────────────────────────────────────
+    @FXML private TextField passwordTextField;
+    @FXML private Button togglePasswordButton;
 
     @FXML
     public void initialize() {
-        // Synchronisation des champs
         passwordTextField.textProperty().bindBidirectional(passwordField.textProperty());
 
         emailField.textProperty().addListener((obs, ov, nv) -> {
@@ -69,7 +61,6 @@ public class LoginController {
             if (!focused) validatePasswordField();
         });
 
-        // Permet de valider avec la touche Entrée
         passwordField.setOnAction(e -> handleLogin());
         passwordTextField.setOnAction(e -> handleLogin());
         emailField.setOnAction(e -> handleLogin());
@@ -81,59 +72,44 @@ public class LoginController {
         if (passwordField.isVisible()) {
             passwordField.setVisible(false);
             passwordTextField.setVisible(true);
-            togglePasswordButton.setText("🔒"); // Ou oeil barré
+            togglePasswordButton.setText("LOCK");
         } else {
             passwordField.setVisible(true);
             passwordTextField.setVisible(false);
-            togglePasswordButton.setText("👁");
+            togglePasswordButton.setText("SHOW");
         }
     }
 
-    // ── Champs Mot de passe ───────────────────────────────────────────────────
-    @FXML private TextField         passwordTextField;
-    @FXML private Button            togglePasswordButton;
-
-    /**
-     * Déclenché par le bouton "Se connecter" ou la touche Entrée.
-     * Valide d'abord localement, puis envoie via TCP dans un thread séparé.
-     */
     @FXML
     private void handleLogin() {
-        // ① Réinitialise les erreurs
         ErrorHandler.clearFieldError(emailError);
         ErrorHandler.clearFieldError(passwordError);
         ErrorHandler.clearFieldError(globalError);
 
-        String email    = emailField.getText().trim();
-        // Si le champ texte clair est visible, on prend sa valeur, sinon le passwordField
+        String email = emailField.getText().trim();
         String password = passwordField.isVisible() ? passwordField.getText() : passwordTextField.getText();
 
-        // ② Validation locale
         boolean valid = validateEmailField() & validatePasswordField();
-        if (!valid) return;
+        if (!valid) {
+            return;
+        }
 
-        // ③ Envoi TCP dans un thread JavaFX (Task) pour ne pas bloquer l'UI
         setLoading(true);
 
         Task<Response> loginTask = new Task<>() {
             @Override
             protected Response call() throws Exception {
                 Client client = Client.getInstance();
-
-                // Connexion au serveur si nécessaire
                 try {
                     client.connect();
                 } catch (Exception e) {
-                    throw new Exception("Impossible de joindre le serveur. Vérifiez votre connexion.", e);
+                    throw new Exception("Impossible de joindre le serveur. Verifiez votre connexion.", e);
                 }
 
-                // Construction du payload JSON selon le protocole
                 JSONObject payload = new JSONObject();
-                payload.put("email",    email);
+                payload.put("email", email);
                 payload.put("password", password);
-
-                Request request = new Request(MessageProtocol.ACTION_LOGIN, payload);
-                return client.send(request);
+                return client.send(new Request(MessageProtocol.ACTION_LOGIN, payload));
             }
         };
 
@@ -142,7 +118,6 @@ public class LoginController {
             Response response = loginTask.getValue();
 
             if (response.isSuccess()) {
-                // ④ Connexion réussie → cache identité (userId/role) + redirection HomeScreen
                 try {
                     JSONObject payload = response.getPayloadAsJsonObject();
                     ClientSession session = ClientSession.getInstance();
@@ -152,35 +127,39 @@ public class LoginController {
                     String role = payload.optString("role", "CLIENT");
                     session.setRole(com.chrionline.model.User.Role.valueOf(role));
                 } catch (Exception ignored) {
-                    // If payload is missing or malformed, still navigate; screens will guard as needed.
                 }
                 Platform.runLater(SceneManager::showHome);
-            } else {
-                String msg = response.getMessage() == null ? "" : response.getMessage();
-                if (ErrorHandler.isSessionExpiredMessage(msg)) {
-                    ErrorHandler.handleSessionExpired();
-                    return;
-                }
-                String lower = msg.toLowerCase();
-                if (lower.contains("suspend")) {
-                    ErrorHandler.showErrorDialog("Compte suspendu", "Compte suspendu. Contactez l'administrateur.");
-                    return;
-                }
-                ErrorHandler.showErrorDialog("Connexion échouée",
-                        "Identifiants incorrects. Vérifiez votre email et mot de passe.");
+                return;
             }
+
+            String msg = response.getMessage() == null ? "" : response.getMessage();
+            if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                ErrorHandler.handleSessionExpired();
+                return;
+            }
+            String lower = msg.toLowerCase();
+            if (lower.contains("non verifie")) {
+                SceneManager.showEmailVerification(email);
+                return;
+            }
+            if (lower.contains("suspend")) {
+                ErrorHandler.showErrorDialog("Compte suspendu", "Compte suspendu. Contactez l'administrateur.");
+                return;
+            }
+            ErrorHandler.showErrorDialog("Connexion echouee",
+                    "Identifiants incorrects. Verifiez votre email et mot de passe.");
         });
 
         loginTask.setOnFailed(event -> {
             setLoading(false);
             Throwable cause = loginTask.getException();
-            String msg = cause != null ? String.valueOf(cause.getMessage()) : "Une erreur réseau s'est produite.";
+            String msg = cause != null ? String.valueOf(cause.getMessage()) : "Une erreur reseau s'est produite.";
             String lower = msg.toLowerCase();
             if (lower.contains("timed out") || lower.contains("timeout")) {
-                ErrorHandler.showErrorDialog("Timeout", "La requête a expiré. Vérifiez votre connexion.");
+                ErrorHandler.showErrorDialog("Timeout", "La requete a expire. Verifiez votre connexion.");
                 return;
             }
-            ErrorHandler.showErrorDialog("Serveur indisponible", "Serveur indisponible. Vérifiez votre connexion.");
+            ErrorHandler.showErrorDialog("Serveur indisponible", "Serveur indisponible. Verifiez votre connexion.");
             if (emailField.getScene() != null) {
                 ErrorHandler.showServerUnavailableBanner(emailField.getScene(), this::handleLogin);
             }
@@ -191,13 +170,10 @@ public class LoginController {
         thread.start();
     }
 
-    /** Navigation vers l'écran d'inscription. */
     @FXML
     private void goToRegister() {
         SceneManager.showRegister();
     }
-
-    // ── Utilitaires privés ────────────────────────────────────────────────────
 
     private void setLoading(boolean loading) {
         loginButton.setDisable(loading);
@@ -239,7 +215,7 @@ public class LoginController {
             return false;
         }
         if (password.length() < MIN_PASSWORD) {
-            ErrorHandler.showFieldError(passwordError, "Mot de passe trop court (minimum 8 caractères)");
+            ErrorHandler.showFieldError(passwordError, "Mot de passe trop court (minimum 8 caracteres)");
             ErrorHandler.showInlineError(passwordField.isVisible() ? passwordField : passwordTextField, "Mot de passe trop court");
             return false;
         }

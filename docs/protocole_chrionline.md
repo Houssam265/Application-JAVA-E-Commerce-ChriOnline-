@@ -14,6 +14,7 @@ Exemple:
 ```
 
 Le `token` est requis pour toutes les actions sauf `LOGIN` et `REGISTER`.
+Les actions `VERIFY_EMAIL` et `RESEND_VERIFICATION_EMAIL` sont aussi publiques.
 
 ## Actions et formats
 
@@ -29,6 +30,14 @@ Le `token` est requis pour toutes les actions sauf `LOGIN` et `REGISTER`.
 - `LOGOUT`
 ```json
 {"action":"LOGOUT","payload":{},"token":"<session_token>"}
+```
+- `VERIFY_EMAIL`
+```json
+{"action":"VERIFY_EMAIL","payload":{"email":"user@ex.com","code":"123456"},"token":null}
+```
+- `RESEND_VERIFICATION_EMAIL`
+```json
+{"action":"RESEND_VERIFICATION_EMAIL","payload":{"email":"user@ex.com"},"token":null}
 ```
 
 ### Catalogue

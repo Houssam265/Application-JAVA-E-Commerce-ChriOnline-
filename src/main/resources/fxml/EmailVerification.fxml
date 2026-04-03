@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Hyperlink?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<StackPane xmlns="http://javafx.com/javafx/17"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.chrionline.ui.controller.EmailVerificationController"
+           styleClass="root-pane">
+
+    <VBox styleClass="auth-card" maxWidth="520" alignment="CENTER">
+        <padding><Insets top="48" right="56" bottom="48" left="56"/></padding>
+        <spacing>0</spacing>
+
+        <VBox alignment="CENTER" spacing="12">
+            <StackPane style="-fx-background-color: rgba(244,106,61,0.15); -fx-background-radius: 50%; -fx-padding: 18px;">
+                <FontIcon iconLiteral="fas-envelope-open-text" iconSize="28" styleClass="ikonli-accent"/>
+            </StackPane>
+            <Label text="Verification Email" styleClass="brand-title"/>
+            <Label text="Entrez le code envoye pour activer votre compte" styleClass="brand-subtitle"/>
+        </VBox>
+
+        <Region prefHeight="26"/>
+
+        <VBox spacing="10" styleClass="info-box">
+            <Label text="Adresse concernee" styleClass="field-label"/>
+            <Label fx:id="emailValueLabel" styleClass="body-text"/>
+        </VBox>
+
+        <Region prefHeight="18"/>
+
+        <VBox spacing="8">
+            <HBox alignment="CENTER_LEFT" spacing="6">
+                <FontIcon iconLiteral="fas-key" iconSize="13" styleClass="ikonli-muted"/>
+                <Label text="Code de verification" styleClass="field-label"/>
+            </HBox>
+            <TextField fx:id="codeField" promptText="Entrez les 6 chiffres" styleClass="auth-field"/>
+            <Label fx:id="codeError" styleClass="error-label" visible="false" managed="false"/>
+        </VBox>
+
+        <Region prefHeight="14"/>
+
+        <Label fx:id="globalError" styleClass="global-error" wrapText="true" visible="false" managed="false"/>
+        <Label fx:id="successMessage" styleClass="success-label" wrapText="true" visible="false" managed="false"/>
+
+        <Region prefHeight="18"/>
+
+        <Button fx:id="verifyButton" onAction="#handleVerify" styleClass="btn-primary" maxWidth="Infinity" prefHeight="52">
+            <graphic>
+                <HBox alignment="CENTER" spacing="8">
+                    <FontIcon iconLiteral="fas-check-circle" iconSize="15" styleClass="ikonli-on-primary"/>
+                    <Label text="Verifier mon email" style="-fx-text-fill: white; -fx-font-weight: 700; -fx-font-size: 15px;"/>
+                </HBox>
+            </graphic>
+        </Button>
+
+        <Region prefHeight="12"/>
+
+        <Button fx:id="resendButton" onAction="#handleResend" text="Renvoyer le code" styleClass="btn-outline" maxWidth="Infinity" prefHeight="46"/>
+
+        <Region prefHeight="16"/>
+
+        <HBox alignment="CENTER" spacing="8">
+            <Label text="Changer de compte ?" styleClass="link-text"/>
+            <Hyperlink text="Connexion" styleClass="link-action" onAction="#goToLogin"/>
+            <Label text="ou" styleClass="link-text"/>
+            <Hyperlink text="Inscription" styleClass="link-action" onAction="#goToRegister"/>
+        </HBox>
+
+        <HBox alignment="CENTER">
+            <ProgressIndicator fx:id="loadingIndicator" visible="false" managed="false" styleClass="loading-spinner" prefWidth="36" prefHeight="36"/>
+        </HBox>
+    </VBox>
+</StackPane>
