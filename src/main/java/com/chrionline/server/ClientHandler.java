@@ -228,6 +228,10 @@ public class ClientHandler implements Runnable {
                 return handleVerifyEmail(req);
             case MessageProtocol.ACTION_RESEND_VERIFICATION_EMAIL:
                 return handleResendVerificationEmail(req);
+            case MessageProtocol.ACTION_VERIFY_LOGIN_IP:
+                return handleVerifyLoginIp(req);
+            case MessageProtocol.ACTION_RESEND_LOGIN_IP_VERIFICATION:
+                return handleResendLoginIpVerification(req);
 
             // ── Auth (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_LOGOUT:
@@ -378,7 +382,16 @@ public class ClientHandler implements Runnable {
         }
 
         try {
-            User    user    = authService.login(email, password);
+            AuthService.LoginResult loginResult = authService.login(email, password, getClientIpAddress());
+            if (loginResult.getStatus() == AuthService.LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED) {
+                Map<String, Object> payload = new HashMap<>();
+                payload.put("email", email);
+                payload.put("verificationType", "login_ip");
+                payload.put("message", "Verification requise pour cette nouvelle adresse IP.");
+                return Response.error("Nouvelle adresse IP detectee. Un code de verification a ete envoye par email.", payload);
+            }
+
+            User user = loginResult.getUser();
             Session session = sessionManager.createSession(user);
 
             Map<String, Object> payload = new HashMap<>();
@@ -411,7 +424,7 @@ public class ClientHandler implements Runnable {
     /**
      * REGISTER — payload: {@code username}, {@code email}, {@code password}.
      *
-     * <p>Registers via {@link AuthService#register(String, String, String)}
+     * <p>Registers via {@link AuthService#register(String, String, String, String)}
      * and sends an email verification code. No session is created yet.
      */
     private Response handleRegister(Request req) {
@@ -430,7 +443,7 @@ public class ClientHandler implements Runnable {
         }
 
         try {
-            User user = authService.register(username, email, password);
+            User user = authService.register(username, email, password, getClientIpAddress());
 
             Map<String, Object> payload = new HashMap<>();
             payload.put("userId", user.getUserId());
@@ -475,6 +488,58 @@ public class ClientHandler implements Runnable {
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "[VERIFY_EMAIL] Unexpected error: " + e.getMessage(), e);
             return Response.error("Erreur serveur lors de la verification de l'email.");
+        }
+    }
+
+    private Response handleVerifyLoginIp(Request req) {
+        String email = getPayloadString(req, "email");
+        String code = getPayloadString(req, "code");
+
+        if (email == null || email.isBlank()) {
+            return Response.error("Le champ 'email' est requis.");
+        }
+        if (code == null || code.isBlank()) {
+            return Response.error("Le champ 'code' est requis.");
+        }
+
+        try {
+            User user = authService.verifyLoginIp(email, code, getClientIpAddress());
+            Session session = sessionManager.createSession(user);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("userId", user.getUserId());
+            payload.put("username", user.getUsername());
+            payload.put("email", user.getEmail());
+            payload.put("role", user.getRole().name());
+            payload.put("emailVerified", user.isEmailVerified());
+
+            connectionToken = session.getToken();
+            connectedUserId = user.getUserId();
+            ClientRegistry.getInstance().register(user.getUserId(), clientAddress);
+            clearLoginAttempts(buildLoginKey(email));
+            return new Response(true, "LOGIN_IP_VERIFIED", payload, session.getToken());
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[VERIFY_LOGIN_IP] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la verification de connexion.");
+        }
+    }
+
+    private Response handleResendLoginIpVerification(Request req) {
+        String email = getPayloadString(req, "email");
+        if (email == null || email.isBlank()) {
+            return Response.error("Le champ 'email' est requis.");
+        }
+
+        try {
+            authService.resendLoginIpVerificationCode(email, getClientIpAddress());
+            return Response.ok("LOGIN_IP_VERIFICATION_RESENT", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[RESEND_LOGIN_IP] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du renvoi du code de verification.");
         }
     }
 
@@ -1005,8 +1070,12 @@ public class ClientHandler implements Runnable {
     }
 
     private String buildLoginKey(String email) {
-        String ip = clientAddress != null ? clientAddress.getHostAddress() : "unknown";
+        String ip = getClientIpAddress();
         return ip + "|" + email.toLowerCase();
+    }
+
+    private String getClientIpAddress() {
+        return clientAddress != null ? clientAddress.getHostAddress() : "unknown";
     }
 
     private long getBlockedRemainingMs(String key, long nowMs) {

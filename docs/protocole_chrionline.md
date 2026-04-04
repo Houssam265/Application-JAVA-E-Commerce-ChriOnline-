@@ -14,7 +14,8 @@ Exemple:
 ```
 
 Le `token` est requis pour toutes les actions sauf `LOGIN` et `REGISTER`.
-Les actions `VERIFY_EMAIL` et `RESEND_VERIFICATION_EMAIL` sont aussi publiques.
+Les actions `VERIFY_EMAIL`, `RESEND_VERIFICATION_EMAIL`, `VERIFY_LOGIN_IP` et
+`RESEND_LOGIN_IP_VERIFICATION` sont aussi publiques.
 
 ## Actions et formats
 
@@ -22,6 +23,14 @@ Les actions `VERIFY_EMAIL` et `RESEND_VERIFICATION_EMAIL` sont aussi publiques.
 - `LOGIN`
 ```json
 {"action":"LOGIN","payload":{"email":"user@ex.com","password":"secret"},"token":null}
+```
+Reponse possible si l'authentification reussit directement:
+```json
+{"success":true,"message":"LOGIN_SUCCESS","payload":{"userId":1,"username":"user","email":"user@ex.com","role":"CLIENT","emailVerified":true},"token":"<session_token>"}
+```
+Reponse possible si l'email est correct mais qu'une nouvelle IP doit etre verifiee:
+```json
+{"success":false,"message":"Nouvelle adresse IP detectee. Un code de verification a ete envoye par email.","payload":{"email":"user@ex.com","verificationType":"login_ip","message":"Verification requise pour cette nouvelle adresse IP."},"token":null}
 ```
 - `REGISTER`
 ```json
@@ -39,6 +48,21 @@ Les actions `VERIFY_EMAIL` et `RESEND_VERIFICATION_EMAIL` sont aussi publiques.
 ```json
 {"action":"RESEND_VERIFICATION_EMAIL","payload":{"email":"user@ex.com"},"token":null}
 ```
+- `VERIFY_LOGIN_IP`
+```json
+{"action":"VERIFY_LOGIN_IP","payload":{"email":"user@ex.com","code":"123456"},"token":null}
+```
+- `RESEND_LOGIN_IP_VERIFICATION`
+```json
+{"action":"RESEND_LOGIN_IP_VERIFICATION","payload":{"email":"user@ex.com"},"token":null}
+```
+
+### Verification de nouvelle IP
+- Lors d'un `LOGIN`, le serveur compare l'IP source courante avec `trusted_login_ip`.
+- Si l'IP est differente, il n'ouvre pas encore de session.
+- Il genere un code temporaire, l'envoie par email, puis attend `VERIFY_LOGIN_IP`.
+- Une fois le code valide, le serveur cree la session et remplace `trusted_login_ip`
+  par la nouvelle adresse IP.
 
 ### Catalogue
 - `GET_PRODUCTS` (optionnel: filtrage par categorie)

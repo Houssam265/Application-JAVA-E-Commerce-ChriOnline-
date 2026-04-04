@@ -1,9 +1,11 @@
 package com.chrionline.ui.controller;
 
 import com.chrionline.client.Client;
+import com.chrionline.model.User;
 import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
+import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
 import javafx.application.Platform;
@@ -17,6 +19,11 @@ import org.json.JSONObject;
 
 public class EmailVerificationController {
 
+    public enum VerificationPurpose {
+        ACCOUNT_EMAIL,
+        LOGIN_IP
+    }
+
     @FXML private Label emailValueLabel;
     @FXML private TextField codeField;
     @FXML private Label codeError;
@@ -27,6 +34,7 @@ public class EmailVerificationController {
     @FXML private ProgressIndicator loadingIndicator;
 
     private String email;
+    private VerificationPurpose purpose = VerificationPurpose.ACCOUNT_EMAIL;
 
     @FXML
     public void initialize() {
@@ -40,9 +48,15 @@ public class EmailVerificationController {
         updateButtonsState();
     }
 
+    public void configure(String email, VerificationPurpose purpose) {
+        this.purpose = purpose == null ? VerificationPurpose.ACCOUNT_EMAIL : purpose;
+        setEmail(email);
+    }
+
     public void setEmail(String email) {
         this.email = email == null ? "" : email.trim();
         emailValueLabel.setText(this.email.isBlank() ? "-" : this.email);
+        updateButtonsState();
     }
 
     @FXML
@@ -69,7 +83,10 @@ public class EmailVerificationController {
                 JSONObject payload = new JSONObject();
                 payload.put("email", email);
                 payload.put("code", code);
-                return client.send(new Request(MessageProtocol.ACTION_VERIFY_EMAIL, payload));
+                String action = purpose == VerificationPurpose.LOGIN_IP
+                        ? MessageProtocol.ACTION_VERIFY_LOGIN_IP
+                        : MessageProtocol.ACTION_VERIFY_EMAIL;
+                return client.send(new Request(action, payload));
             }
         };
 
@@ -77,7 +94,12 @@ public class EmailVerificationController {
             setLoading(false);
             Response response = verifyTask.getValue();
             if (response.isSuccess()) {
-                showSuccess("Email verifie avec succes. Redirection vers la connexion...");
+                if (purpose == VerificationPurpose.LOGIN_IP) {
+                    hydrateSession(response);
+                    showSuccess("Connexion verifiee avec succes. Redirection vers l'accueil...");
+                } else {
+                    showSuccess("Email verifie avec succes. Redirection vers la connexion...");
+                }
                 Task<Void> delay = new Task<>() {
                     @Override
                     protected Void call() throws Exception {
@@ -85,7 +107,13 @@ public class EmailVerificationController {
                         return null;
                     }
                 };
-                delay.setOnSucceeded(e -> Platform.runLater(SceneManager::showLogin));
+                delay.setOnSucceeded(e -> Platform.runLater(() -> {
+                    if (purpose == VerificationPurpose.LOGIN_IP) {
+                        SceneManager.showHome();
+                    } else {
+                        SceneManager.showLogin();
+                    }
+                }));
                 Thread thread = new Thread(delay);
                 thread.setDaemon(true);
                 thread.start();
@@ -124,7 +152,10 @@ public class EmailVerificationController {
 
                 JSONObject payload = new JSONObject();
                 payload.put("email", email);
-                return client.send(new Request(MessageProtocol.ACTION_RESEND_VERIFICATION_EMAIL, payload));
+                String action = purpose == VerificationPurpose.LOGIN_IP
+                        ? MessageProtocol.ACTION_RESEND_LOGIN_IP_VERIFICATION
+                        : MessageProtocol.ACTION_RESEND_VERIFICATION_EMAIL;
+                return client.send(new Request(action, payload));
             }
         };
 
@@ -188,6 +219,19 @@ public class EmailVerificationController {
         if (!loadingIndicator.isVisible()) {
             verifyButton.setDisable(!ready);
             resendButton.setDisable(email == null || email.isBlank());
+        }
+    }
+
+    private void hydrateSession(Response response) {
+        try {
+            org.json.JSONObject payload = response.getPayloadAsJsonObject();
+            ClientSession session = ClientSession.getInstance();
+            session.setUserId(payload.has("userId") ? payload.getInt("userId") : null);
+            session.setUsername(payload.optString("username", ""));
+            session.setEmail(payload.optString("email", ""));
+            String role = payload.optString("role", "CLIENT");
+            session.setRole(User.Role.valueOf(role));
+        } catch (Exception ignored) {
         }
     }
 

@@ -30,12 +30,16 @@ public final class SceneManager {
     }
 
     public static void showEmailVerification(String email) {
+        showEmailVerification(email, EmailVerificationController.VerificationPurpose.ACCOUNT_EMAIL);
+    }
+
+    public static void showEmailVerification(String email, EmailVerificationController.VerificationPurpose purpose) {
         try {
             FXMLLoader loader = new FXMLLoader(requireResource("/fxml/EmailVerification.fxml"));
             Parent root = loader.load();
 
             EmailVerificationController controller = loader.getController();
-            controller.setEmail(email);
+            controller.configure(email, purpose);
 
             setSceneRoot(root, "ChriOnline - Verification Email");
         } catch (Exception e) {

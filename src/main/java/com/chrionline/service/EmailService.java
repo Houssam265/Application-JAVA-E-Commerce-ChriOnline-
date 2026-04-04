@@ -47,6 +47,25 @@ public class EmailService {
         }
     }
 
+    public void sendLoginIpVerificationEmail(User user, String code, LocalDateTime expiresAt, String clientIp) {
+        ensureConfigured();
+
+        String subject = "Verification de connexion ChriOnline";
+        String html = buildLoginIpHtmlBody(user, code, expiresAt, clientIp);
+
+        try {
+            Session session = buildSession();
+            MimeMessage message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(user.getEmail(), false));
+            message.setSubject(subject, "UTF-8");
+            message.setContent(html, "text/html; charset=UTF-8");
+            Transport.send(message);
+        } catch (MessagingException e) {
+            throw new RuntimeException("Impossible d'envoyer l'email de verification de connexion: " + e.getMessage(), e);
+        }
+    }
+
     public boolean isConfigured() {
         return host != null && !host.isBlank()
                 && from != null && !from.isBlank()
@@ -97,6 +116,28 @@ public class EmailService {
               </body>
             </html>
             """.formatted(escapeHtml(user.getUsername()), escapeHtml(code), escapeHtml(DATE_FORMAT.format(expiresAt)));
+    }
+
+    private String buildLoginIpHtmlBody(User user, String code, LocalDateTime expiresAt, String clientIp) {
+        return """
+            <html>
+              <body style="font-family: Arial, sans-serif; color: #0f172a;">
+                <h2 style="margin-bottom: 8px;">Verification de connexion</h2>
+                <p>Bonjour %s,</p>
+                <p>Une tentative de connexion a ete detectee depuis une nouvelle adresse IP :</p>
+                <p><strong>%s</strong></p>
+                <p>Entrez ce code dans l'application pour autoriser cette connexion :</p>
+                <p style="font-size: 28px; font-weight: 700; letter-spacing: 6px;">%s</p>
+                <p>Ce code expire le <strong>%s</strong>.</p>
+                <p>Si cette tentative ne vient pas de vous, ignorez cet email et changez votre mot de passe.</p>
+              </body>
+            </html>
+            """.formatted(
+                escapeHtml(user.getUsername()),
+                escapeHtml(clientIp == null ? "inconnue" : clientIp),
+                escapeHtml(code),
+                escapeHtml(DATE_FORMAT.format(expiresAt))
+        );
     }
 
     private String escapeHtml(String value) {

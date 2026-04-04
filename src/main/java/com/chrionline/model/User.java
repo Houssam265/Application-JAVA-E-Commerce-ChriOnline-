@@ -17,6 +17,11 @@ public class User {
     private String emailVerificationCode;
     private LocalDateTime emailVerificationExpiresAt;
     private LocalDateTime emailVerificationSentAt;
+    private String trustedLoginIp;
+    private String loginIpVerificationCode;
+    private LocalDateTime loginIpVerificationExpiresAt;
+    private LocalDateTime loginIpVerificationSentAt;
+    private String loginIpVerificationPendingIp;
     private LocalDateTime createdAt;
 
     public enum Role {
@@ -68,6 +73,29 @@ public class User {
     public LocalDateTime getEmailVerificationSentAt() { return emailVerificationSentAt; }
     public void setEmailVerificationSentAt(LocalDateTime emailVerificationSentAt) {
         this.emailVerificationSentAt = emailVerificationSentAt;
+    }
+
+    public String getTrustedLoginIp() { return trustedLoginIp; }
+    public void setTrustedLoginIp(String trustedLoginIp) { this.trustedLoginIp = trustedLoginIp; }
+
+    public String getLoginIpVerificationCode() { return loginIpVerificationCode; }
+    public void setLoginIpVerificationCode(String loginIpVerificationCode) {
+        this.loginIpVerificationCode = loginIpVerificationCode;
+    }
+
+    public LocalDateTime getLoginIpVerificationExpiresAt() { return loginIpVerificationExpiresAt; }
+    public void setLoginIpVerificationExpiresAt(LocalDateTime loginIpVerificationExpiresAt) {
+        this.loginIpVerificationExpiresAt = loginIpVerificationExpiresAt;
+    }
+
+    public LocalDateTime getLoginIpVerificationSentAt() { return loginIpVerificationSentAt; }
+    public void setLoginIpVerificationSentAt(LocalDateTime loginIpVerificationSentAt) {
+        this.loginIpVerificationSentAt = loginIpVerificationSentAt;
+    }
+
+    public String getLoginIpVerificationPendingIp() { return loginIpVerificationPendingIp; }
+    public void setLoginIpVerificationPendingIp(String loginIpVerificationPendingIp) {
+        this.loginIpVerificationPendingIp = loginIpVerificationPendingIp;
     }
 
     public LocalDateTime getCreatedAt() { return createdAt; }

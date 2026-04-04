@@ -35,6 +35,11 @@ CREATE TABLE users (
     email_verification_code VARCHAR(16),
     email_verification_expires_at DATETIME,
     email_verification_sent_at DATETIME,
+    trusted_login_ip VARCHAR(64),
+    login_ip_verification_code VARCHAR(16),
+    login_ip_verification_expires_at DATETIME,
+    login_ip_verification_sent_at DATETIME,
+    login_ip_verification_pending_ip VARCHAR(64),
     created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (user_id)

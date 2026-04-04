@@ -55,6 +55,7 @@ public class Server {
         // ── Shared service instances — created ONCE, passed to every handler ──
         UserDAO        userDAO        = new UserDAO();
         userDAO.ensureEmailVerificationSchema();
+        userDAO.ensureLoginIpVerificationSchema();
         SessionManager sessionManager = new SessionManager(userDAO);
         AuthService    authService    = new AuthService(userDAO);
         ProductService productService = new ProductService();

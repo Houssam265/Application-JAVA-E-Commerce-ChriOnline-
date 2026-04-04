@@ -140,6 +140,12 @@ public class LoginController {
             }
 
             String msg = response.getMessage() == null ? "" : response.getMessage();
+            JSONObject payload = response.getPayloadAsJsonObject();
+            String verificationType = payload.optString("verificationType", "");
+            if ("login_ip".equalsIgnoreCase(verificationType)) {
+                SceneManager.showEmailVerification(email, EmailVerificationController.VerificationPurpose.LOGIN_IP);
+                return;
+            }
             if (msg.toLowerCase().contains("trop de tentatives")) {
                 int seconds = extractSecondsFromMessage(msg);
                 startLockout(seconds > 0 ? seconds : 30);

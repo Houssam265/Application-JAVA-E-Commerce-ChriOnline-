@@ -37,11 +37,31 @@ public class AuthService {
         this.emailService = emailService;
     }
 
-    public User register(String username, String email, String plainPassword) {
+    public enum LoginStatus {
+        SUCCESS,
+        LOGIN_IP_VERIFICATION_REQUIRED
+    }
+
+    public static final class LoginResult {
+        private final LoginStatus status;
+        private final User user;
+
+        public LoginResult(LoginStatus status, User user) {
+            this.status = status;
+            this.user = user;
+        }
+
+        public LoginStatus getStatus() { return status; }
+        public User getUser() { return user; }
+    }
+
+    public User register(String username, String email, String plainPassword, String clientIp) {
         validateRegistrationInput(username, email, plainPassword);
         ensureEmailServiceAvailable();
 
         User user = buildAndSave(username, email, plainPassword, User.Role.CLIENT, false);
+        user.setTrustedLoginIp(normalizeIp(clientIp));
+        userDAO.update(user);
         try {
             issueAndSendVerificationCode(user, true);
             return user;
@@ -69,7 +89,7 @@ public class AuthService {
         }
     }
 
-    public User login(String email, String plainPassword) {
+    public LoginResult login(String email, String plainPassword, String clientIp) {
         validateEmail(email);
 
         User user = userDAO.findByEmail(email)
@@ -87,7 +107,14 @@ public class AuthService {
             throw new IllegalArgumentException(EMAIL_NOT_VERIFIED_MESSAGE);
         }
 
-        return user;
+        String normalizedIp = normalizeIp(clientIp);
+        if (requiresLoginIpVerification(user, normalizedIp)) {
+            ensureEmailServiceAvailable();
+            issueAndSendLoginIpVerificationCode(user, normalizedIp, false);
+            return new LoginResult(LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED, user);
+        }
+
+        return new LoginResult(LoginStatus.SUCCESS, user);
     }
 
     public User verifyEmail(String email, String code) {
@@ -133,6 +160,57 @@ public class AuthService {
         }
 
         issueAndSendVerificationCode(user, false);
+    }
+
+    public void resendLoginIpVerificationCode(String email, String clientIp) {
+        validateEmail(email);
+        ensureEmailServiceAvailable();
+
+        User user = userDAO.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Compte introuvable."));
+
+        if (!user.isEmailVerified()) {
+            throw new IllegalArgumentException(EMAIL_NOT_VERIFIED_MESSAGE);
+        }
+
+        String normalizedIp = normalizeIp(clientIp);
+        if (!requiresLoginIpVerification(user, normalizedIp)) {
+            throw new IllegalArgumentException("Cette adresse IP est deja verifiee.");
+        }
+
+        issueAndSendLoginIpVerificationCode(user, normalizedIp, true);
+    }
+
+    public User verifyLoginIp(String email, String code, String clientIp) {
+        validateEmail(email);
+        validateVerificationCode(code);
+
+        User user = userDAO.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Compte introuvable."));
+
+        String normalizedIp = normalizeIp(clientIp);
+        if (normalizedIp == null || normalizedIp.isBlank()) {
+            throw new IllegalArgumentException("Adresse IP cliente indisponible.");
+        }
+        if (user.getLoginIpVerificationCode() == null || !user.getLoginIpVerificationCode().equals(code)) {
+            throw new IllegalArgumentException("Code de verification invalide.");
+        }
+        LocalDateTime expiresAt = user.getLoginIpVerificationExpiresAt();
+        if (expiresAt == null || expiresAt.isBefore(LocalDateTime.now())) {
+            throw new IllegalArgumentException("Code de verification expire. Demandez un nouvel envoi.");
+        }
+        if (user.getLoginIpVerificationPendingIp() == null
+                || !normalizedIp.equals(user.getLoginIpVerificationPendingIp())) {
+            throw new IllegalArgumentException("Le code recu ne correspond pas a cette adresse IP.");
+        }
+
+        userDAO.trustLoginIp(user.getUserId(), normalizedIp);
+        user.setTrustedLoginIp(normalizedIp);
+        user.setLoginIpVerificationCode(null);
+        user.setLoginIpVerificationExpiresAt(null);
+        user.setLoginIpVerificationSentAt(null);
+        user.setLoginIpVerificationPendingIp(null);
+        return user;
     }
 
     public void changePassword(int userId, String oldPlainPassword, String newPlainPassword) {
@@ -223,6 +301,50 @@ public class AuthService {
         }
     }
 
+    private boolean requiresLoginIpVerification(User user, String clientIp) {
+        if (clientIp == null || clientIp.isBlank()) {
+            return false;
+        }
+        String trustedIp = user.getTrustedLoginIp();
+        return trustedIp == null || trustedIp.isBlank() || !trustedIp.equals(clientIp);
+    }
+
+    private void issueAndSendLoginIpVerificationCode(User user, String clientIp, boolean explicitResend) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime lastSentAt = user.getLoginIpVerificationSentAt();
+        String pendingIp = user.getLoginIpVerificationPendingIp();
+        LocalDateTime currentExpiry = user.getLoginIpVerificationExpiresAt();
+
+        boolean sameIpPending = clientIp != null && clientIp.equals(pendingIp);
+        boolean currentCodeStillValid = currentExpiry != null && currentExpiry.isAfter(now)
+                && user.getLoginIpVerificationCode() != null && !user.getLoginIpVerificationCode().isBlank();
+
+        if (explicitResend && lastSentAt != null
+                && lastSentAt.plusSeconds(RESEND_COOLDOWN_SECONDS).isAfter(now)) {
+            throw new IllegalArgumentException("Veuillez patienter avant de demander un nouveau code.");
+        }
+
+        if (!explicitResend && sameIpPending && currentCodeStillValid) {
+            return;
+        }
+
+        String code = generateVerificationCode();
+        LocalDateTime expiresAt = now.plusMinutes(VERIFICATION_TTL_MINUTES);
+
+        userDAO.updateLoginIpVerificationChallenge(user.getUserId(), code, expiresAt, now, clientIp);
+        user.setLoginIpVerificationCode(code);
+        user.setLoginIpVerificationExpiresAt(expiresAt);
+        user.setLoginIpVerificationSentAt(now);
+        user.setLoginIpVerificationPendingIp(clientIp);
+
+        try {
+            emailService.sendLoginIpVerificationEmail(user, code, expiresAt, clientIp);
+        } catch (RuntimeException e) {
+            LOG.warning("[AUTH] Login IP verification send failed for userId=" + user.getUserId() + ": " + e.getMessage());
+            throw e;
+        }
+    }
+
     private String generateVerificationCode() {
         int bound = (int) Math.pow(10, VERIFICATION_CODE_LENGTH);
         int value = secureRandom.nextInt(bound);
@@ -262,5 +384,13 @@ public class AuthService {
         if (!emailService.isConfigured()) {
             throw new IllegalArgumentException("Service email non configure. " + emailService.getConfigurationHelp());
         }
+    }
+
+    private String normalizeIp(String clientIp) {
+        if (clientIp == null) {
+            return null;
+        }
+        String normalized = clientIp.trim();
+        return normalized.isBlank() ? null : normalized;
     }
 }

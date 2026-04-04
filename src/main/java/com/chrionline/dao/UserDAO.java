@@ -44,13 +44,29 @@ public class UserDAO {
         }
     }
 
+    public void ensureLoginIpVerificationSchema() {
+        ensureColumn("trusted_login_ip",
+                "ALTER TABLE users ADD COLUMN trusted_login_ip VARCHAR(64) NULL");
+        ensureColumn("login_ip_verification_code",
+                "ALTER TABLE users ADD COLUMN login_ip_verification_code VARCHAR(16) NULL");
+        ensureColumn("login_ip_verification_expires_at",
+                "ALTER TABLE users ADD COLUMN login_ip_verification_expires_at DATETIME NULL");
+        ensureColumn("login_ip_verification_sent_at",
+                "ALTER TABLE users ADD COLUMN login_ip_verification_sent_at DATETIME NULL");
+        ensureColumn("login_ip_verification_pending_ip",
+                "ALTER TABLE users ADD COLUMN login_ip_verification_pending_ip VARCHAR(64) NULL");
+    }
+
     public User save(User user) {
         final String sql = """
             INSERT INTO users (
                 username, email, password_hash, role, is_suspended,
                 is_email_verified, email_verification_code,
-                email_verification_expires_at, email_verification_sent_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                email_verification_expires_at, email_verification_sent_at,
+                trusted_login_ip, login_ip_verification_code,
+                login_ip_verification_expires_at, login_ip_verification_sent_at,
+                login_ip_verification_pending_ip
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
         try (PreparedStatement ps = conn().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -63,6 +79,11 @@ public class UserDAO {
             ps.setString(7, user.getEmailVerificationCode());
             setTimestamp(ps, 8, user.getEmailVerificationExpiresAt());
             setTimestamp(ps, 9, user.getEmailVerificationSentAt());
+            ps.setString(10, user.getTrustedLoginIp());
+            ps.setString(11, user.getLoginIpVerificationCode());
+            setTimestamp(ps, 12, user.getLoginIpVerificationExpiresAt());
+            setTimestamp(ps, 13, user.getLoginIpVerificationSentAt());
+            ps.setString(14, user.getLoginIpVerificationPendingIp());
             ps.executeUpdate();
 
             try (ResultSet generated = ps.getGeneratedKeys()) {
@@ -110,7 +131,12 @@ public class UserDAO {
                    is_email_verified = ?,
                    email_verification_code = ?,
                    email_verification_expires_at = ?,
-                   email_verification_sent_at = ?
+                   email_verification_sent_at = ?,
+                   trusted_login_ip = ?,
+                   login_ip_verification_code = ?,
+                   login_ip_verification_expires_at = ?,
+                   login_ip_verification_sent_at = ?,
+                   login_ip_verification_pending_ip = ?
              WHERE user_id = ?
             """;
 
@@ -121,7 +147,12 @@ public class UserDAO {
             ps.setString(4, user.getEmailVerificationCode());
             setTimestamp(ps, 5, user.getEmailVerificationExpiresAt());
             setTimestamp(ps, 6, user.getEmailVerificationSentAt());
-            ps.setInt(7, user.getUserId());
+            ps.setString(7, user.getTrustedLoginIp());
+            ps.setString(8, user.getLoginIpVerificationCode());
+            setTimestamp(ps, 9, user.getLoginIpVerificationExpiresAt());
+            setTimestamp(ps, 10, user.getLoginIpVerificationSentAt());
+            ps.setString(11, user.getLoginIpVerificationPendingIp());
+            ps.setInt(12, user.getUserId());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("UserDAO.update failed for userId=" + user.getUserId() + ": " + e.getMessage(), e);
@@ -176,6 +207,49 @@ public class UserDAO {
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("UserDAO.markEmailVerified failed for userId=" + userId + ": " + e.getMessage(), e);
+        }
+    }
+
+    public void updateLoginIpVerificationChallenge(int userId, String code, LocalDateTime expiresAt,
+                                                   LocalDateTime sentAt, String pendingIp) {
+        final String sql = """
+            UPDATE users
+               SET login_ip_verification_code = ?,
+                   login_ip_verification_expires_at = ?,
+                   login_ip_verification_sent_at = ?,
+                   login_ip_verification_pending_ip = ?
+             WHERE user_id = ?
+            """;
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, code);
+            setTimestamp(ps, 2, expiresAt);
+            setTimestamp(ps, 3, sentAt);
+            ps.setString(4, pendingIp);
+            ps.setInt(5, userId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.updateLoginIpVerificationChallenge failed for userId=" + userId + ": " + e.getMessage(), e);
+        }
+    }
+
+    public void trustLoginIp(int userId, String trustedIp) {
+        final String sql = """
+            UPDATE users
+               SET trusted_login_ip = ?,
+                   login_ip_verification_code = NULL,
+                   login_ip_verification_expires_at = NULL,
+                   login_ip_verification_sent_at = NULL,
+                   login_ip_verification_pending_ip = NULL
+             WHERE user_id = ?
+            """;
+
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, trustedIp);
+            ps.setInt(2, userId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.trustLoginIp failed for userId=" + userId + ": " + e.getMessage(), e);
         }
     }
 
@@ -303,6 +377,11 @@ public class UserDAO {
         u.setEmailVerificationCode(getStringOrNull(rs, "email_verification_code"));
         u.setEmailVerificationExpiresAt(getLocalDateTimeOrNull(rs, "email_verification_expires_at"));
         u.setEmailVerificationSentAt(getLocalDateTimeOrNull(rs, "email_verification_sent_at"));
+        u.setTrustedLoginIp(getStringOrNull(rs, "trusted_login_ip"));
+        u.setLoginIpVerificationCode(getStringOrNull(rs, "login_ip_verification_code"));
+        u.setLoginIpVerificationExpiresAt(getLocalDateTimeOrNull(rs, "login_ip_verification_expires_at"));
+        u.setLoginIpVerificationSentAt(getLocalDateTimeOrNull(rs, "login_ip_verification_sent_at"));
+        u.setLoginIpVerificationPendingIp(getStringOrNull(rs, "login_ip_verification_pending_ip"));
         u.setCreatedAt(getLocalDateTimeOrNull(rs, "created_at"));
         return u;
     }
