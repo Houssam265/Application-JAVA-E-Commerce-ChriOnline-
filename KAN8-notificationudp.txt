@@ -1,0 +1,1187 @@
+package com.chrionline.server;
+
+import com.google.gson.Gson;
+
+import java.io.Closeable;
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * UDP notification sender (KAN-8).
+ *
+ * Sends JSON payloads to the CLIENT's listening port (9091).
+ * Uses an ephemeral outgoing socket so it never conflicts with any bound port.
+ */
+public class UDPNotificationService implements Closeable {
+
+    /** Legacy constant kept for API compatibility. */
+    public static final int DEFAULT_PORT = 9090;
+
+    private static final Logger LOG = Logger.getLogger(UDPNotificationService.class.getName());
+    private static final Gson GSON = new Gson();
+
+    private final DatagramSocket socket;
+
+    /** @param ignoredPort kept for backward-compat; sender always uses an ephemeral port. */
+    public UDPNotificationService(int ignoredPort) {
+        DatagramSocket ds;
+        try {
+            ds = new DatagramSocket(); // ephemeral port — no conflict with client listener
+        } catch (SocketException e) {
+            throw new RuntimeException("[UDP] Unable to open sender UDP socket.", e);
+        }
+        this.socket = ds;
+    }
+
+    public void sendNotification(InetAddress address, String type, String message, String orderId) {
+        if (address == null || socket == null || socket.isClosed()) return;
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", type);
+        payload.put("message", message);
+        payload.put("orderId", orderId);
+        payload.put("timestamp", LocalDateTime.now().toString());
+
+        byte[] data = GSON.toJson(payload).getBytes(StandardCharsets.UTF_8);
+
+        // Must match UdpNotificationClient.CLIENT_PORT (9091)
+        int clientPort = com.chrionline.ui.notifications.UdpNotificationClient.CLIENT_PORT;
+        DatagramPacket packet = new DatagramPacket(data, data.length, address, clientPort);
+        try {
+            socket.send(packet);
+            LOG.info("[UDP] Sent " + type + " to " + address + ":" + clientPort);
+        } catch (IOException e) {
+            LOG.log(Level.FINE, "[UDP] Failed to send notification to " + address, e);
+        }
+    }
+
+    @Override
+    public void close() {
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+        }
+    }
+}
+package com.chrionline.server;
+
+import java.net.InetAddress;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Thread-safe registry that tracks the currently connected TCP client IP
+ * for each authenticated user.
+ *
+ * When a user logs in, the ClientHandler registers their userId → InetAddress.
+ * When the connection closes, the entry is removed.
+ * The UDPNotificationService uses this to know which IP to send the UDP push to.
+ */
+public final class ClientRegistry {
+
+    private static final ClientRegistry INSTANCE = new ClientRegistry();
+
+    public static ClientRegistry getInstance() {
+        return INSTANCE;
+    }
+
+    /** userId → last known client InetAddress */
+    private final ConcurrentHashMap<Integer, InetAddress> addressByUserId = new ConcurrentHashMap<>();
+
+    private ClientRegistry() {}
+
+    /** Called by ClientHandler after a successful LOGIN or token validation. */
+    public void register(int userId, InetAddress address) {
+        if (userId > 0 && address != null) {
+            addressByUserId.put(userId, address);
+        }
+    }
+
+    /** Called by ClientHandler when the connection closes. */
+    public void unregister(int userId) {
+        addressByUserId.remove(userId);
+    }
+
+    /**
+     * Returns the InetAddress of the connected client for the given userId,
+     * or {@code null} if the user is not currently connected.
+     */
+    public InetAddress getAddress(int userId) {
+        return addressByUserId.get(userId);
+    }
+}
+package com.chrionline.server;
+
+import com.chrionline.model.Session;
+import com.chrionline.model.User;
+import com.chrionline.protocol.MessageProtocol;
+import com.chrionline.protocol.Request;
+import com.chrionline.protocol.Response;
+import com.chrionline.service.AuthService;
+import com.chrionline.service.AdminService;
+import com.chrionline.service.CartService;
+import com.chrionline.service.OrderService;
+import com.chrionline.service.PaymentService;
+import com.chrionline.service.ProductService;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonSyntaxException;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * Handles one TCP client connection on its own thread.
+ *
+ * <p>Reads newline-delimited JSON {@link Request}s, dispatches them to the
+ * appropriate service, and writes JSON {@link Response}s back.
+ *
+ * <p>Actions that do NOT require a session token: {@code LOGIN}, {@code REGISTER}.
+ * Every other action calls {@link #requireValidToken(Request)} before processing.
+ *
+ * <p>Dependencies ({@link AuthService} and {@link SessionManager}) are injected via
+ * constructor so that all client threads share the same singleton instances — no new
+ * service object is created per connection.
+ */
+public class ClientHandler implements Runnable {
+
+    private static final Logger LOG  = Logger.getLogger(ClientHandler.class.getName());
+    private static final Gson   GSON = new GsonBuilder()
+        .registerTypeAdapter(java.time.LocalDateTime.class, new com.google.gson.JsonSerializer<java.time.LocalDateTime>() {
+            @Override
+            public com.google.gson.JsonElement serialize(java.time.LocalDateTime src, java.lang.reflect.Type typeOfSrc, com.google.gson.JsonSerializationContext context) {
+                return new com.google.gson.JsonPrimitive(src.toString());
+            }
+        })
+        .registerTypeAdapter(java.time.LocalDateTime.class, new com.google.gson.JsonDeserializer<java.time.LocalDateTime>() {
+            @Override
+            public java.time.LocalDateTime deserialize(com.google.gson.JsonElement json, java.lang.reflect.Type typeOfT, com.google.gson.JsonDeserializationContext context) throws com.google.gson.JsonParseException {
+                return java.time.LocalDateTime.parse(json.getAsString());
+            }
+        })
+        .create();
+
+    // ── Injected dependencies (shared across all threads) ────────────────────
+    private final AuthService    authService;
+    private final SessionManager sessionManager;
+    private final ProductService productService;
+    private final CartService    cartService;
+    private final OrderService   orderService;
+    private final PaymentService paymentService;
+    private final AdminService   adminService;
+    private final UDPNotificationService udpNotificationService;
+
+    // ── Per-connection state ──────────────────────────────────────────────────
+    private final Socket socket;
+    private final InetAddress clientAddress;
+
+    /** Token associated to the current TCP connection (revoked on disconnect). */
+    private String connectionToken;
+
+    /** userId of the authenticated user for this connection (0 = not yet authenticated). */
+    private int connectedUserId = 0;
+
+    /** Output writer — kept as a field so helper methods can write responses. */
+    private PrintWriter out;
+
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    /**
+     * @param socket         accepted client socket
+     * @param authService    shared AuthService instance (created once in {@link Server})
+     * @param sessionManager shared SessionManager instance (created once in {@link Server})
+     * @param productService shared ProductService instance (created once in {@link Server})
+     */
+    public ClientHandler(Socket socket,
+                         AuthService authService,
+                         SessionManager sessionManager,
+                         ProductService productService,
+                         CartService cartService,
+                         OrderService orderService,
+                         PaymentService paymentService,
+                         AdminService adminService,
+                         UDPNotificationService udpNotificationService) {
+        this.socket         = socket;
+        this.clientAddress  = socket.getInetAddress();
+        this.authService    = authService;
+        this.sessionManager = sessionManager;
+        this.productService = productService;
+        this.cartService    = cartService;
+        this.orderService   = orderService;
+        this.paymentService = paymentService;
+        this.adminService   = adminService;
+        this.udpNotificationService = udpNotificationService;
+    }
+
+    // ── Runnable ──────────────────────────────────────────────────────────────
+
+    @Override
+    public void run() {
+        String clientId = socket.getRemoteSocketAddress().toString();
+        LOG.info("Client connecte: " + clientId);
+
+        try (Socket s = socket;
+             BufferedReader in = new BufferedReader(
+                     new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
+             PrintWriter writer = new PrintWriter(
+                     new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8), true)) {
+
+            this.out = writer;
+
+            String line;
+            while ((line = in.readLine()) != null) {
+                String msg = line.trim();
+                if (msg.isEmpty()) continue;
+                LOG.info("[" + clientId + "] << " + msg);
+
+                Response response = processRequest(msg);
+                String   jsonOut  = GSON.toJson(response);
+                out.println(jsonOut);
+                LOG.info("[" + clientId + "] >> " + jsonOut);
+            }
+
+        } catch (SocketException e) {
+            LOG.log(Level.INFO, "Connexion terminee avec " + clientId + ": " + e.getMessage());
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Erreur reseau avec " + clientId + ": " + e.getMessage(), e);
+        } finally {
+            this.out = null;
+            if (connectionToken != null) {
+                sessionManager.invalidateSession(connectionToken);
+                connectionToken = null;
+            }
+            if (connectedUserId > 0) {
+                ClientRegistry.getInstance().unregister(connectedUserId);
+                connectedUserId = 0;
+            }
+            LOG.info("Client deconnecte: " + clientId);
+        }
+    }
+
+    // ── Request dispatcher ────────────────────────────────────────────────────
+
+    /**
+     * Parses the raw JSON line, identifies the action, and dispatches to the
+     * appropriate handler method.
+     */
+    private Response processRequest(String jsonLine) {
+        Request req;
+        try {
+            req = GSON.fromJson(jsonLine, Request.class);
+        } catch (JsonSyntaxException e) {
+            LOG.warning("Invalid JSON received: " + e.getMessage());
+            return Response.error("Invalid JSON");
+        }
+
+        if (req == null || req.getAction() == null || req.getAction().isBlank()) {
+            return Response.error("Missing action");
+        }
+
+        String action = req.getAction().trim();
+
+        switch (action) {
+
+            // ── Auth (no token required) ──────────────────────────────────
+            case MessageProtocol.ACTION_LOGIN:
+                return handleLogin(req);
+            case MessageProtocol.ACTION_REGISTER:
+                return handleRegister(req);
+
+            // ── Auth (token required) ─────────────────────────────────────
+            case MessageProtocol.ACTION_LOGOUT:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleLogout(req);
+
+            // ── Catalogue (token required) ────────────────────────────────
+            case MessageProtocol.ACTION_GET_PRODUCTS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetProducts(req);
+            case MessageProtocol.ACTION_GET_PRODUCT:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetProduct(req);
+            case MessageProtocol.ACTION_GET_CATEGORIES:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetCategories(req);
+
+            // ── Cart (token required) ─────────────────────────────────────
+            case MessageProtocol.ACTION_GET_CART:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetCart(req);
+            case MessageProtocol.ACTION_ADD_TO_CART:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleAddToCart(req);
+            case MessageProtocol.ACTION_UPDATE_CART_ITEM:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleUpdateCartItem(req);
+            case MessageProtocol.ACTION_REMOVE_FROM_CART:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleRemoveFromCart(req);
+            case MessageProtocol.ACTION_CLEAR_CART:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleClearCart(req);
+
+            // ── Orders (token required) ───────────────────────────────────
+            case MessageProtocol.ACTION_PLACE_ORDER:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handlePlaceOrder(req);
+            case MessageProtocol.ACTION_PAYMENT:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handlePayment(req);
+            case MessageProtocol.ACTION_GET_ORDERS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetOrders(req);
+            case MessageProtocol.ACTION_UPDATE_ORDER_STATUS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleUpdateOrderStatus(req);
+            case MessageProtocol.ACTION_GET_ORDER_DETAILS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetOrderDetails(req);
+            case MessageProtocol.ACTION_ADMIN_LIST_ORDERS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleAdmin(req);
+
+            // ── Profile (token required) ──────────────────────────────────
+            case MessageProtocol.ACTION_UPDATE_PROFILE:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleUpdateProfile(req);
+            case MessageProtocol.ACTION_CHANGE_PASSWORD:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleChangePassword(req);
+
+            // ── Admin (token required) ─────────────────────────────────────
+            case MessageProtocol.ACTION_ADMIN_CREATE_PRODUCT:
+            case MessageProtocol.ACTION_ADMIN_UPDATE_PRODUCT:
+            case MessageProtocol.ACTION_ADMIN_DELETE_PRODUCT:
+            case MessageProtocol.ACTION_ADMIN_LIST_USERS:
+            case MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED:
+            case MessageProtocol.ACTION_ADMIN_ADD_CATEGORY:
+            case MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY:
+            case MessageProtocol.ACTION_ADMIN_DELETE_CATEGORY:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleAdmin(req);
+
+            default:
+                return Response.error("Unknown or unsupported action: " + action);
+        }
+    }
+
+    // ── Token validation helper ───────────────────────────────────────────────
+
+    /**
+     * Returns {@code true} when the request carries a valid, non-expired token.
+     * Used as a gate at the top of every protected action handler.
+     */
+    private boolean requireValidToken(Request req) {
+        String token = req.getToken();
+        boolean valid = sessionManager.isTokenValid(token);
+        if (valid && token != null) {
+            connectionToken = token;
+            // Register this client's IP so order-status notifications can reach it
+            sessionManager.getUserFromToken(token).ifPresent(u -> {
+                connectedUserId = u.getUserId();
+                ClientRegistry.getInstance().register(u.getUserId(), clientAddress);
+            });
+        }
+        return valid;
+    }
+
+    /** Best-effort UDP notification to the connected client (current connection). */
+    private void sendUdpNotification(String type, String message, String orderId) {
+        if (udpNotificationService == null || clientAddress == null) return;
+        udpNotificationService.sendNotification(clientAddress, type, message, orderId);
+    }
+
+    /** Best-effort UDP notification to a specific user by their userId. */
+    private void sendUdpNotificationToUser(int userId, String type, String message, String orderId) {
+        if (udpNotificationService == null) return;
+        java.net.InetAddress targetAddress = ClientRegistry.getInstance().getAddress(userId);
+        if (targetAddress == null) {
+            LOG.fine("[UDP] userId=" + userId + " not connected — notification skipped.");
+            return;
+        }
+        udpNotificationService.sendNotification(targetAddress, type, message, orderId);
+    }
+
+    // ── AUTH handlers ─────────────────────────────────────────────────────────
+
+    /**
+     * LOGIN — payload: {@code email}, {@code password}.
+     *
+     * <p>Authenticates via {@link AuthService#login(String, String)} (no
+     * password logic here), creates a session, and returns the token + role.
+     */
+    private Response handleLogin(Request req) {
+        String email    = getPayloadString(req, "email");
+        String password = getPayloadString(req, "password");
+
+        if (email == null || email.isBlank()) {
+            return Response.error("Le champ 'email' est requis.");
+        }
+        if (password == null || password.isBlank()) {
+            return Response.error("Le champ 'password' est requis.");
+        }
+
+        try {
+            User    user    = authService.login(email, password);
+            Session session = sessionManager.createSession(user);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("userId",   user.getUserId());
+            payload.put("username", user.getUsername());
+            payload.put("email",    user.getEmail());
+            payload.put("role",     user.getRole().name());
+
+            // token is sent as the top-level Response.token field
+            connectionToken = session.getToken();
+            // Register client IP so UDP notifications can reach this user
+            connectedUserId = user.getUserId();
+            ClientRegistry.getInstance().register(user.getUserId(), clientAddress);
+            return new Response(true, "LOGIN_SUCCESS", payload, session.getToken());
+
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[LOGIN] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la connexion.");
+        }
+    }
+
+    /**
+     * REGISTER — payload: {@code username}, {@code email}, {@code password}.
+     *
+     * <p>Registers via {@link AuthService#register(String, String, String)},
+     * then immediately creates a session (auto-login after signup).
+     */
+    private Response handleRegister(Request req) {
+        String username = getPayloadString(req, "username");
+        String email    = getPayloadString(req, "email");
+        String password = getPayloadString(req, "password");
+
+        if (username == null || username.isBlank()) {
+            return Response.error("Le champ 'username' est requis.");
+        }
+        if (email == null || email.isBlank()) {
+            return Response.error("Le champ 'email' est requis.");
+        }
+        if (password == null || password.isBlank()) {
+            return Response.error("Le champ 'password' est requis.");
+        }
+
+        try {
+            User    user    = authService.register(username, email, password);
+            Session session = sessionManager.createSession(user);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("userId",   user.getUserId());
+            payload.put("username", user.getUsername());
+            payload.put("email",    user.getEmail());
+            payload.put("role",     user.getRole().name());
+
+            connectionToken = session.getToken();
+            return new Response(true, "REGISTER_SUCCESS", payload, session.getToken());
+
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[REGISTER] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de l'inscription.");
+        }
+    }
+
+    /**
+     * LOGOUT — token from {@code request.getToken()}.
+     *
+     * <p>Invalidates the session in the SessionManager (HashMap + DB).
+     */
+    private Response handleLogout(Request req) {
+        sessionManager.invalidateSession(req.getToken());
+        if (req.getToken() != null && req.getToken().equals(connectionToken)) {
+            connectionToken = null;
+        }
+        return Response.ok("LOGOUT_SUCCESS", null);
+    }
+
+    // ── CATALOGUE handlers ────────────────────────────────────────────────────
+
+    /**
+     * GET_PRODUCTS — optional payload.category_id for filtering.
+     */
+    private Response handleGetProducts(Request req) {
+        Integer categoryId = req.getPayloadInt("category_id");
+        User user = sessionManager.getUserFromToken(req.getToken()).orElse(null);
+        boolean adminCatalog = user != null && authService.isAdmin(user);
+        List<?> products = productService.getProducts(categoryId, adminCatalog);
+        return Response.ok(products);
+    }
+
+    /**
+     * GET_PRODUCT — payload.product_id required.
+     * Returns a map with "product" and "category" keys.
+     */
+    private Response handleGetProduct(Request req) {
+        Integer productId = req.getPayloadInt("product_id");
+        if (productId == null) {
+            return Response.error("Missing product_id in payload");
+        }
+        User user = sessionManager.getUserFromToken(req.getToken()).orElse(null);
+        boolean admin = user != null && authService.isAdmin(user);
+        return productService.getProductDetails(productId, admin)
+                .map(Response::ok)
+                .orElse(Response.error("Product not found: " + productId));
+    }
+
+    /**
+     * GET_CATEGORIES — no payload required.
+     */
+    private Response handleGetCategories(Request req) {
+        List<?> categories = productService.getCategories();
+        return Response.ok(categories);
+    }
+
+    // ── CART handlers ─────────────────────────────────────────────────────────
+
+    private Response handleGetCart(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            return Response.ok(cartService.getCartView(userId));
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du chargement du panier.");
+        }
+    }
+
+    private Response handleAddToCart(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            Integer productId = req.getPayloadInt("product_id");
+            Integer quantity  = req.getPayloadInt("quantity");
+            if (productId == null || quantity == null) {
+                return Response.error("Missing product_id or quantity");
+            }
+            // Never trust client-provided price: server always reads product.price from DB
+            cartService.addToCart(userId, productId, quantity);
+            return Response.ok("ADDED_TO_CART", cartService.getCartView(userId));
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de l'ajout au panier.");
+        }
+    }
+
+    private Response handleUpdateCartItem(Request req) {
+        try {
+            Integer cartItemId = req.getPayloadInt("cart_item_id");
+            Integer quantity   = req.getPayloadInt("quantity");
+            if (cartItemId == null || quantity == null) {
+                return Response.error("Missing cart_item_id or quantity");
+            }
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            cartService.updateCartItemQuantity(userId, cartItemId, quantity);
+            return Response.ok(cartService.getCartView(userId));
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la mise à jour du panier.");
+        }
+    }
+
+    private Response handleRemoveFromCart(Request req) {
+        try {
+            Integer cartItemId = req.getPayloadInt("cart_item_id");
+            if (cartItemId == null) {
+                return Response.error("Missing cart_item_id");
+            }
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            cartService.removeCartItem(userId, cartItemId);
+            return Response.ok(cartService.getCartView(userId));
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la suppression.");
+        }
+    }
+
+    private Response handleClearCart(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            cartService.clearCartForUser(userId);
+            return Response.ok(cartService.getCartView(userId));
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du vidage du panier.");
+        }
+    }
+
+    // ── ORDER handlers ────────────────────────────────────────────────────────
+
+    private Response handlePlaceOrder(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            com.chrionline.model.Order order = orderService.placeOrderFromCart(userId);
+            sendUdpNotification(
+                    "ORDER_VALIDATED",
+                    "Commande " + order.getOrderId() + " validee.",
+                    order.getOrderId());
+            return Response.ok(order);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la validation de la commande.");
+        }
+    }
+
+    /**
+     * KAN-7 — Paiement simulé : payload {@code order_id}, {@code card_number}, {@code expiry} (MM/YY), {@code cvv}.
+     */
+    private Response handlePayment(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            String orderId = firstNonBlank(
+                    getPayloadString(req, "order_id"),
+                    getPayloadString(req, "orderId"));
+            String cardNumber = firstNonBlank(
+                    getPayloadString(req, "card_number"),
+                    getPayloadString(req, "cardNumber"));
+            String expiry = firstNonBlank(
+                    getPayloadString(req, "expiry"),
+                    getPayloadString(req, "expiryMmYy"));
+            String cvv = payloadValueAsString(req, "cvv");
+
+            if (orderId == null || orderId.isBlank()
+                    || cardNumber == null || cardNumber.isBlank()
+                    || expiry == null || expiry.isBlank()
+                    || cvv == null || cvv.isBlank()) {
+                return Response.error("Champs requis : order_id, card_number, expiry (MM/YY), cvv.");
+            }
+
+            Map<String, Object> result = paymentService.processSimulatedCardPayment(
+                    userId, orderId, cardNumber, expiry, cvv);
+
+            if (Boolean.TRUE.equals(result.get("success"))) {
+                sendUdpNotification(
+                        "PAYMENT_CONFIRMED",
+                        "Paiement confirme pour la commande " + orderId + ".",
+                        orderId);
+                return Response.ok("PAYMENT_OK", result);
+            }
+            String msg = result.get("message") != null ? String.valueOf(result.get("message")) : "Paiement refusé.";
+            return Response.error(msg, result);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[PAYMENT] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du paiement.");
+        }
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) return a.trim();
+        if (b != null && !b.isBlank()) return b.trim();
+        return null;
+    }
+
+    /** Chaîne ou nombre JSON (ex. CVV). */
+    private static String payloadValueAsString(Request req, String key) {
+        if (req.getPayload() == null) return null;
+        Object v = req.getPayload().get(key);
+        if (v == null) return null;
+        return String.valueOf(v).trim();
+    }
+
+    private Response handleGetOrders(Request req) {
+        try {
+            User user = sessionManager.getUserFromToken(req.getToken())
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            return Response.ok(orderService.getOrdersForUser(user.getUserId()));
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du chargement des commandes.");
+        }
+    }
+
+    private Response handleUpdateOrderStatus(Request req) {
+        try {
+            User admin = sessionManager.getUserFromToken(req.getToken())
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            if (!authService.isAdmin(admin)) {
+                return Response.error("Accès refusé (ADMIN uniquement).");
+            }
+            String orderId = getPayloadString(req, "order_id");
+            String status  = getPayloadString(req, "status");
+            if (orderId == null || status == null) {
+                return Response.error("Missing order_id or status");
+            }
+            orderService.updateOrderStatus(orderId, com.chrionline.model.OrderStatus.valueOf(status));
+
+            // Look up the order owner to send the UDP notification to THEM (not the admin)
+            orderService.getOrderDetails(orderId).ifPresent(order -> {
+                int ownerId = order.getUserId();
+                String friendlyStatus = switch (status) {
+                    case "VALIDATED" -> "Validée";
+                    case "SHIPPED"   -> "Expédiée";
+                    case "DELIVERED" -> "Livrée";
+                    case "CANCELLED" -> "Annulée";
+                    default          -> status;
+                };
+                String msg = "Votre commande est maintenant : " + friendlyStatus + ".";
+                sendUdpNotificationToUser(ownerId, "ORDER_STATUS_UPDATED", msg, orderId);
+            });
+
+            return Response.ok("STATUS_UPDATED", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la mise à jour du statut.");
+        }
+    }
+
+    // ── ORDER DETAILS handler ─────────────────────────────────────────────
+
+    /**
+     * GET_ORDER_DETAILS — payload.order_id required.
+     * Returns a map with "order" and "items" keys.
+     */
+    private Response handleGetOrderDetails(Request req) {
+        String orderId = getPayloadString(req, "order_id");
+        if (orderId == null || orderId.isBlank()) {
+            return Response.error("Missing order_id");
+        }
+        try {
+            return orderService.getOrderDetailsWithTimeline(orderId)
+                    .map(Response::ok)
+                    .orElse(Response.error("Order not found: " + orderId));
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[ORDER_DETAILS] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du chargement de la commande.");
+        }
+    }
+
+    // ── PROFILE handlers ──────────────────────────────────────────────────
+
+    /**
+     * UPDATE_PROFILE — payload: "username", "email".
+     * Returns updated username + email so the client can refresh ClientSession.
+     */
+    private Response handleUpdateProfile(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(com.chrionline.model.User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            String username = getPayloadString(req, "username");
+            String email    = getPayloadString(req, "email");
+            if (username == null || username.isBlank()) {
+                return Response.error("Le champ 'username' est requis.");
+            }
+            if (email == null || email.isBlank()) {
+                return Response.error("Le champ 'email' est requis.");
+            }
+            com.chrionline.model.User updated = authService.updateProfile(userId, username, email);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("username", updated.getUsername());
+            payload.put("email",    updated.getEmail());
+            return Response.ok("PROFILE_UPDATED", payload);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[PROFILE] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la mise à jour du profil.");
+        }
+    }
+
+    /**
+     * CHANGE_PASSWORD — payload: "old_password", "new_password".
+     */
+    private Response handleChangePassword(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(com.chrionline.model.User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            String oldPwd = getPayloadString(req, "old_password");
+            String newPwd = getPayloadString(req, "new_password");
+            if (oldPwd == null || oldPwd.isBlank()) {
+                return Response.error("Le champ 'old_password' est requis.");
+            }
+            if (newPwd == null || newPwd.isBlank()) {
+                return Response.error("Le champ 'new_password' est requis.");
+            }
+            authService.changePassword(userId, oldPwd, newPwd);
+            return Response.ok("PASSWORD_CHANGED", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[PASSWORD] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors du changement de mot de passe.");
+        }
+    }
+
+    private Response handleAdmin(Request req) {
+        try {
+            User admin = sessionManager.getUserFromToken(req.getToken())
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            if (!authService.isAdmin(admin)) {
+                return Response.error("Accès refusé (ADMIN uniquement).");
+            }
+
+            switch (req.getAction()) {
+                case MessageProtocol.ACTION_ADMIN_CREATE_PRODUCT: {
+                    com.chrionline.model.Product p = new com.chrionline.model.Product();
+                    Integer categoryId = req.getPayloadInt("category_id");
+                    String name = getPayloadString(req, "name");
+                    Object desc = req.getPayload() != null ? req.getPayload().get("description") : null;
+                    Object img  = req.getPayload() != null ? req.getPayload().get("image_url") : null;
+                    Object price = req.getPayload() != null ? req.getPayload().get("price") : null;
+                    Object stock = req.getPayload() != null ? req.getPayload().get("stock") : null;
+
+                    if (categoryId == null || name == null) return Response.error("Missing category_id or name");
+                    p.setCategoryId(categoryId);
+                    p.setName(name);
+                    p.setDescription(desc != null ? String.valueOf(desc) : "");
+                    p.setImageUrl(resolveProductImageUrl(req, img));
+                    if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
+                    if (stock instanceof Number) p.setStock(((Number) stock).intValue());
+                    return Response.ok(adminService.createProduct(p));
+                }
+                case MessageProtocol.ACTION_ADMIN_UPDATE_PRODUCT: {
+                    Integer productId = req.getPayloadInt("product_id");
+                    Integer categoryId = req.getPayloadInt("category_id");
+                    String name = getPayloadString(req, "name");
+                    Object desc = req.getPayload() != null ? req.getPayload().get("description") : null;
+                    Object img  = req.getPayload() != null ? req.getPayload().get("image_url") : null;
+                    Object price = req.getPayload() != null ? req.getPayload().get("price") : null;
+                    Object stock = req.getPayload() != null ? req.getPayload().get("stock") : null;
+                    if (productId == null || categoryId == null || name == null) return Response.error("Missing fields");
+                    com.chrionline.model.Product p = new com.chrionline.model.Product();
+                    p.setProductId(productId);
+                    p.setCategoryId(categoryId);
+                    p.setName(name);
+                    p.setDescription(desc != null ? String.valueOf(desc) : "");
+                    p.setImageUrl(resolveProductImageUrl(req, img));
+                    if (price instanceof Number) p.setPrice(((Number) price).doubleValue());
+                    if (stock instanceof Number) p.setStock(((Number) stock).intValue());
+                    adminService.updateProduct(p);
+                    return Response.ok("UPDATED", null);
+                }
+                case MessageProtocol.ACTION_ADMIN_DELETE_PRODUCT: {
+                    Integer productId = req.getPayloadInt("product_id");
+                    if (productId == null) return Response.error("Missing product_id");
+                    adminService.deleteProduct(productId);
+                    return Response.ok("DELETED", null);
+                }
+                case MessageProtocol.ACTION_ADMIN_LIST_USERS: {
+                    return Response.ok(adminService.listUsers());
+                }
+                case MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED: {
+                    Integer userId = req.getPayloadInt("user_id");
+                    Object suspended = req.getPayload() != null ? req.getPayload().get("suspended") : null;
+                    boolean isSuspended = suspended instanceof Boolean ? (Boolean) suspended : Boolean.parseBoolean(String.valueOf(suspended));
+                    if (userId == null) return Response.error("Missing user_id");
+                    if (userId == admin.getUserId()) return Response.error("Impossible de suspendre votre propre compte.");
+                    adminService.setUserSuspended(userId, isSuspended);
+                    return Response.ok("USER_UPDATED", null);
+                }
+                case MessageProtocol.ACTION_ADMIN_LIST_ORDERS: {
+                    return Response.ok(adminService.listOrders());
+                }
+                // ── Admin Category CRUD (KAN-18) ──────────────────────────
+                case MessageProtocol.ACTION_ADMIN_ADD_CATEGORY: {
+                    String name = getPayloadString(req, "name");
+                    String desc = getPayloadString(req, "description");
+                    return adminService.addCategory(name, desc);
+                }
+                case MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY: {
+                    Integer id  = req.getPayloadInt("id");
+                    String name = getPayloadString(req, "name");
+                    String desc = getPayloadString(req, "description");
+                    if (id == null || id <= 0) return Response.error("Missing id");
+                    return adminService.updateCategory(id, name, desc);
+                }
+                case MessageProtocol.ACTION_ADMIN_DELETE_CATEGORY: {
+                    Integer id = req.getPayloadInt("id");
+                    if (id == null || id <= 0) return Response.error("Missing id");
+                    return adminService.deleteCategory(id);
+                }
+                default:
+                    return Response.error("Unsupported admin action");
+            }
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[ADMIN] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur admin.");
+        }
+    }
+
+    // ── Payload extraction helpers ────────────────────────────────────────────
+
+    /**
+     * Safe extraction of a String value from {@code request.getPayload()}.
+     * Returns {@code null} if the key is missing or the value is not a String.
+     */
+    private String getPayloadString(Request req, String key) {
+        if (req.getPayload() == null) return null;
+        Object v = req.getPayload().get(key);
+        return v instanceof String ? ((String) v).trim() : null;
+    }
+
+    /**
+     * If image_base64 is provided by admin UI, stores the file under uploads/images
+     * and returns the absolute path to persist in image_url.
+     * Otherwise, falls back to payload.image_url.
+     */
+    private String resolveProductImageUrl(Request req, Object currentImageUrlObj) {
+        if (req.getPayload() != null) {
+            Object b64Obj = req.getPayload().get("image_base64");
+            if (b64Obj instanceof String b64 && !b64.isBlank()) {
+                try {
+                    byte[] bytes = Base64.getDecoder().decode(b64);
+                    String originalName = getPayloadString(req, "image_filename");
+                    String ext = extractImageExtension(originalName);
+
+                    Path uploadDir = Paths.get("uploads", "images").toAbsolutePath().normalize();
+                    Files.createDirectories(uploadDir);
+
+                    String storedName = UUID.randomUUID() + ext;
+                    Path target = uploadDir.resolve(storedName).normalize();
+                    Files.write(target, bytes);
+                    return target.toString();
+                } catch (IllegalArgumentException e) {
+                    throw new IllegalArgumentException("Image invalide (base64).");
+                } catch (Exception e) {
+                    throw new RuntimeException("Erreur lors de l'enregistrement de l'image: " + e.getMessage(), e);
+                }
+            }
+        }
+        return currentImageUrlObj == null || "null".equals(String.valueOf(currentImageUrlObj))
+                ? null
+                : String.valueOf(currentImageUrlObj);
+    }
+
+    private String extractImageExtension(String filename) {
+        if (filename == null) return ".png";
+        String name = filename.trim().toLowerCase();
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot == name.length() - 1) return ".png";
+        String ext = name.substring(dot);
+        return switch (ext) {
+            case ".png", ".jpg", ".jpeg", ".gif", ".webp" -> ext;
+            default -> ".png";
+        };
+    }
+}
+package com.chrionline.client;
+
+import org.json.JSONObject;
+
+import java.io.Closeable;
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetSocketAddress;
+import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * UDP daemon listener for server notifications (KAN-8).
+ */
+public class UDPNotificationListener implements Closeable {
+
+    public static final int DEFAULT_PORT = 9090;
+    private static final int BUFFER_SIZE = 4096;
+
+    private DatagramSocket socket;
+    private Thread thread;
+    private volatile boolean running;
+
+    public boolean isRunning() {
+        return running;
+    }
+
+    public void start() throws SocketException {
+        if (running) return;
+
+        DatagramSocket ds = new DatagramSocket(null);
+        ds.setReuseAddress(true);
+        ds.bind(new InetSocketAddress(DEFAULT_PORT));
+        this.socket = ds;
+
+        running = true;
+        thread = new Thread(this::listenLoop, "udp-notification-listener");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void listenLoop() {
+        byte[] buffer = new byte[BUFFER_SIZE];
+        while (running && socket != null && !socket.isClosed()) {
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+            try {
+                socket.receive(packet);
+                String json = new String(
+                        packet.getData(),
+                        packet.getOffset(),
+                        packet.getLength(),
+                        StandardCharsets.UTF_8);
+                handleNotification(json);
+            } catch (SocketException e) {
+                if (!running) break;
+            } catch (IOException ignored) {
+                // Best effort: ignore malformed/partial packets
+            }
+        }
+    }
+
+    private void handleNotification(String json) {
+        try {
+            JSONObject obj = new JSONObject(json);
+            String type = obj.optString("type", "NOTIF");
+            String message = obj.optString("message", "");
+            String orderId = obj.optString("orderId", "");
+            String timestamp = obj.optString("timestamp", "");
+
+            StringBuilder sb = new StringBuilder("[UDP] ");
+            if (!timestamp.isBlank()) sb.append(timestamp).append(" ");
+            sb.append(type);
+            if (!orderId.isBlank()) sb.append(" order=").append(orderId);
+            if (!message.isBlank()) sb.append(" - ").append(message);
+            System.out.println(sb);
+        } catch (Exception e) {
+            System.out.println("[UDP] Notification brute: " + json);
+        }
+    }
+
+    @Override
+    public void close() {
+        running = false;
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+        }
+        socket = null;
+        thread = null;
+    }
+}
+package com.chrionline.ui.notifications;
+
+import javafx.application.Platform;
+import javafx.beans.property.IntegerProperty;
+import javafx.beans.property.SimpleIntegerProperty;
+import javafx.collections.FXCollections;
+import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
+
+import java.time.LocalDateTime;
+
+/**
+ * UI-side store for UDP notifications (KAN-31).
+ * Keeps an unread counter and a list of notifications.
+ */
+public final class NotificationCenter {
+
+    private static volatile NotificationCenter instance;
+
+    public static NotificationCenter getInstance() {
+        if (instance == null) {
+            synchronized (NotificationCenter.class) {
+                if (instance == null) instance = new NotificationCenter();
+            }
+        }
+        return instance;
+    }
+
+    private final ObservableList<AppNotification> notifications = FXCollections.observableArrayList();
+    private final IntegerProperty unreadCount = new SimpleIntegerProperty(0);
+
+    private NotificationCenter() {
+        notifications.addListener((ListChangeListener<AppNotification>) c -> recomputeUnread());
+    }
+
+    public ObservableList<AppNotification> getNotifications() {
+        return notifications;
+    }
+
+    public IntegerProperty unreadCountProperty() {
+        return unreadCount;
+    }
+
+    public void addNotification(String message) {
+        Runnable r = () -> notifications.add(0, new AppNotification(message, LocalDateTime.now()));
+        if (Platform.isFxApplicationThread()) r.run();
+        else Platform.runLater(r);
+    }
+
+    public void markAllAsRead() {
+        Runnable r = () -> {
+            for (AppNotification n : notifications) n.setRead(true);
+            recomputeUnread();
+        };
+        if (Platform.isFxApplicationThread()) r.run();
+        else Platform.runLater(r);
+    }
+
+    public void markAsRead(AppNotification n) {
+        if (n == null) return;
+        Runnable r = () -> {
+            n.setRead(true);
+            recomputeUnread();
+        };
+        if (Platform.isFxApplicationThread()) r.run();
+        else Platform.runLater(r);
+    }
+
+    private void recomputeUnread() {
+        int unread = 0;
+        for (AppNotification n : notifications) {
+            if (!n.isRead()) unread++;
+        }
+        unreadCount.set(unread);
+    }
+}
+

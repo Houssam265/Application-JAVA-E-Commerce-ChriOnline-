@@ -2,70 +2,89 @@ package com.chrionline.model;
 
 /**
  * Maps to the {@code order_items} table.
- *
- * columns: order_item_id (PK), order_id CHAR(36), product_id,
- *          quantity INT, unit_price DECIMAL(10,2) — price snapshot at order time
  */
 public class OrderItem {
 
-    // ── Fields ─────────────────────────────────────────────────────────────
-    private int    orderItemId;
-    private String orderId;       // CHAR(36) FK → orders.order_id
-    private int    productId;
-    private int    quantity;
-    private double unitPrice;     // price snapshot at order time
+    private int orderItemId;
+    private int orderId;
+    private int productId;
+    private String productName;
+    private int quantity;
+    private double unitPrice;
 
-    // ── Constructors ────────────────────────────────────────────────────────
-
-    public OrderItem() {}
-
-    public OrderItem(int orderItemId, String orderId, int productId,
-                     int quantity, double unitPrice) {
-        this.orderItemId = orderItemId;
-        this.orderId     = orderId;
-        this.productId   = productId;
-        this.quantity    = quantity;
-        this.unitPrice   = unitPrice;
+    public OrderItem() {
     }
 
-    // ── Derived calculation ─────────────────────────────────────────────────
+    public OrderItem(int orderItemId, int orderId, int productId,
+                     int quantity, double unitPrice) {
+        this.orderItemId = orderItemId;
+        this.orderId = orderId;
+        this.productId = productId;
+        this.quantity = quantity;
+        this.unitPrice = unitPrice;
+    }
 
-    /**
-     * Returns {@code unitPrice × quantity}.
-     * Uses the same formula as {@link CartItem#getSubtotal()}.
-     */
     public double getSubtotal() {
         return unitPrice * quantity;
     }
 
-    // ── Getters & Setters ───────────────────────────────────────────────────
+    public int getOrderItemId() {
+        return orderItemId;
+    }
 
-    public int    getOrderItemId()          { return orderItemId; }
-    public void   setOrderItemId(int v)     { this.orderItemId = v; }
+    public void setOrderItemId(int orderItemId) {
+        this.orderItemId = orderItemId;
+    }
 
-    public String getOrderId()          { return orderId; }
-    public void   setOrderId(String v)  { this.orderId = v; }
+    public int getOrderId() {
+        return orderId;
+    }
 
-    public int    getProductId()          { return productId; }
-    public void   setProductId(int v)     { this.productId = v; }
+    public void setOrderId(int orderId) {
+        this.orderId = orderId;
+    }
 
-    public int    getQuantity()        { return quantity; }
-    public void   setQuantity(int v)   { this.quantity = v; }
+    public int getProductId() {
+        return productId;
+    }
 
-    public double getUnitPrice()          { return unitPrice; }
-    public void   setUnitPrice(double v)  { this.unitPrice = v; }
+    public void setProductId(int productId) {
+        this.productId = productId;
+    }
 
-    // ── toString ────────────────────────────────────────────────────────────
+    public String getProductName() {
+        return productName;
+    }
+
+    public void setProductName(String productName) {
+        this.productName = productName;
+    }
+
+    public int getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(int quantity) {
+        this.quantity = quantity;
+    }
+
+    public double getUnitPrice() {
+        return unitPrice;
+    }
+
+    public void setUnitPrice(double unitPrice) {
+        this.unitPrice = unitPrice;
+    }
 
     @Override
     public String toString() {
         return "OrderItem{" +
-               "orderItemId=" + orderItemId +
-               ", orderId='"  + orderId     + '\'' +
-               ", productId=" + productId   +
-               ", quantity="  + quantity    +
-               ", unitPrice=" + unitPrice   +
-               ", subtotal="  + getSubtotal() +
-               '}';
+                "orderItemId=" + orderItemId +
+                ", orderId=" + orderId +
+                ", productId=" + productId +
+                ", quantity=" + quantity +
+                ", unitPrice=" + unitPrice +
+                ", subtotal=" + getSubtotal() +
+                '}';
     }
 }

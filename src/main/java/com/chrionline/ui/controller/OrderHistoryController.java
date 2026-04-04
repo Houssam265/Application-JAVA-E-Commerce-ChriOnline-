@@ -1,0 +1,607 @@
+package com.chrionline.ui.controller;
+
+import com.chrionline.client.Client;
+import com.chrionline.protocol.MessageProtocol;
+import com.chrionline.protocol.Request;
+import com.chrionline.protocol.Response;
+import com.chrionline.ui.ClientSession;
+import com.chrionline.ui.ErrorHandler;
+import com.chrionline.ui.OrderDisplayUtil;
+import com.chrionline.ui.SceneManager;
+import com.chrionline.ui.notifications.AppNotification;
+import com.chrionline.ui.notifications.NotificationCenter;
+import javafx.animation.*;
+import javafx.application.Platform;
+import javafx.collections.ListChangeListener;
+import javafx.concurrent.Task;
+import javafx.fxml.FXML;
+import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.Scene;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+public class OrderHistoryController {
+
+    @FXML private ComboBox<String> statusFilter;
+    @FXML private VBox cardsContainer;
+
+    // Notifications
+    @FXML private Button bellButton;
+    @FXML private Label unreadBadge;
+    @FXML private VBox toastLayer;
+    @FXML private StackPane drawerScrim;
+    @FXML private VBox drawerPanel;
+    @FXML private ListView<AppNotification> notificationsList;
+
+    // Navbar active state
+    @FXML private Button navOrdersBtn;
+    @FXML private Button adminButton;
+
+    // Details
+    @FXML private javafx.scene.layout.StackPane detailsOverlay;
+    @FXML private VBox detailsCard;
+    @FXML private Label detailsTitle;
+    @FXML private Label detailsStatusBadge;
+    @FXML private Label detailsTotal;
+    @FXML private ListView<String> detailsItems;
+    @FXML private VBox timelineBox;
+    @FXML private Label totalsSubtotalLabel;
+    @FXML private Label totalsShippingLabel;
+    @FXML private Label totalsGrandLabel;
+
+    private final List<JSONObject> allOrders = new ArrayList<>();
+
+    private Scene getSceneOrNull() {
+        if (cardsContainer != null && cardsContainer.getScene() != null) return cardsContainer.getScene();
+        if (drawerPanel != null && drawerPanel.getScene() != null) return drawerPanel.getScene();
+        return null;
+    }
+
+    private void handleTcpFailure(Throwable cause, String bannerMessage, Runnable retry) {
+        Scene sc = getSceneOrNull();
+        // Server unavailable: ONLY top banner (no dialog, no inline label).
+        if (sc != null) {
+            ErrorHandler.showServerUnavailableBanner(sc, retry);
+        }
+    }
+
+    @FXML
+    public void initialize() {
+        ClientSession session = ClientSession.getInstance();
+        if (session.isAdmin() && adminButton != null) {
+            adminButton.setVisible(true);
+            adminButton.setManaged(true);
+        }
+        setupFilter();
+        bindNotifications();
+        setActiveNav();
+        loadOrders();
+    }
+
+    private void setupFilter() {
+        if (statusFilter == null) return;
+        statusFilter.getItems().addAll("TOUS", "EN_ATTENTE", "VALIDEE", "EXPEDIEE", "LIVREE");
+        statusFilter.getSelectionModel().select("TOUS");
+        statusFilter.getSelectionModel().selectedItemProperty().addListener((obs, ov, nv) -> rebuildCards());
+    }
+
+    private void bindNotifications() {
+        NotificationCenter nc = NotificationCenter.getInstance();
+        nc.unreadCountProperty().addListener((obs, ov, nv) -> updateUnreadBadge(nv == null ? 0 : nv.intValue()));
+        updateUnreadBadge(nc.unreadCountProperty().get());
+
+        if (notificationsList != null) {
+            notificationsList.setFixedCellSize(-1);
+            notificationsList.setCellFactory(lv -> new javafx.scene.control.ListCell<>() {
+                @Override protected void updateItem(AppNotification item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                        setGraphic(null);
+                        return;
+                    }
+
+                    HBox row = new HBox(8);
+                    row.setAlignment(javafx.geometry.Pos.TOP_LEFT);
+                    row.setMaxWidth(Double.MAX_VALUE);
+
+                    VBox textBox = new VBox(2);
+                    textBox.setMaxWidth(Double.MAX_VALUE);
+                    HBox.setHgrow(textBox, javafx.scene.layout.Priority.ALWAYS);
+
+                    String hhmm = item.getTimestamp().format(DateTimeFormatter.ofPattern("HH:mm"));
+                    Label timeLabel = new Label(hhmm);
+                    timeLabel.setStyle("-fx-font-size: 10px; -fx-text-fill: #94a3b8;");
+
+                    Label msgLabel = new Label(item.getMessage());
+                    msgLabel.setWrapText(true);
+                    msgLabel.setMaxWidth(Double.MAX_VALUE);
+                    msgLabel.setPrefWidth(Math.max(220, lv.getWidth() - 70));
+                    msgLabel.setStyle(item.isRead()
+                            ? "-fx-font-size: 12px; -fx-text-fill: #94a3b8;"
+                            : "-fx-font-size: 12px; -fx-text-fill: #1e293b; -fx-font-weight: 600;");
+
+                    textBox.getChildren().addAll(timeLabel, msgLabel);
+                    row.getChildren().add(textBox);
+
+                    setText(null);
+                    setGraphic(row);
+                    setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                    setPrefHeight(USE_COMPUTED_SIZE);
+                    setMinHeight(USE_PREF_SIZE);
+                    setOpacity(item.isRead() ? 0.65 : 1.0);
+                    setStyle("-fx-padding: 8px 12px;");
+                }
+            });
+        }
+
+        nc.getNotifications().addListener((ListChangeListener<AppNotification>) c -> {
+            while (c.next()) {
+                if (c.wasAdded()) {
+                    c.getAddedSubList().forEach(n -> showToast("Notification", n.getMessage()));
+                }
+            }
+            refreshNotificationsMenuList();
+        });
+        refreshNotificationsMenuList();
+    }
+
+    private void refreshNotificationsMenuList() {
+        NotificationCenter nc = NotificationCenter.getInstance();
+        Platform.runLater(() -> {
+            if (notificationsList == null) return;
+            notificationsList.getItems().setAll(nc.getNotifications());
+            notificationsList.refresh();
+        });
+    }
+
+    private void updateUnreadBadge(int unread) {
+        if (unreadBadge == null) return;
+        Platform.runLater(() -> {
+            unreadBadge.setText(unread > 9 ? "9+" : String.valueOf(unread));
+            boolean show = unread > 0;
+            unreadBadge.setVisible(show);
+            unreadBadge.setManaged(show);
+        });
+    }
+
+    private void setActiveNav() {
+        if (navOrdersBtn != null && !navOrdersBtn.getStyleClass().contains("nav-pill-active")) {
+            navOrdersBtn.getStyleClass().add("nav-pill-active");
+        }
+    }
+
+    @FXML
+    private void toggleNotifications() {
+        boolean open = drawerPanel != null && drawerPanel.isVisible();
+        if (open) closeNotifications();
+        else openNotifications();
+    }
+
+    @FXML
+    private void handleLogout() {
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                return client.send(new Request(MessageProtocol.ACTION_LOGOUT, new JSONObject(), client.getSessionToken()));
+            }
+        };
+
+        t.setOnSucceeded(e -> {
+            Client.getInstance().disconnect();
+            ClientSession.getInstance().clear();
+            SceneManager.showLogin();
+        });
+        t.setOnFailed(e -> {
+            if (bellButton != null && bellButton.getScene() != null) {
+                ErrorHandler.showServerUnavailableBanner(bellButton.getScene(), this::handleLogout);
+            }
+        });
+        runTask(t);
+    }
+
+    @FXML
+    private void noop() {
+        // active page
+    }
+
+    private void openNotifications() {
+        if (drawerPanel == null || drawerScrim == null) return;
+        drawerScrim.setVisible(true);
+        drawerScrim.setManaged(true);
+        drawerPanel.setVisible(true);
+        drawerPanel.setManaged(true);
+        drawerPanel.setTranslateX(420);
+        new Timeline(new KeyFrame(javafx.util.Duration.millis(220),
+                new KeyValue(drawerPanel.translateXProperty(), 0, Interpolator.EASE_OUT))).play();
+    }
+
+    @FXML
+    private void closeNotifications() {
+        if (drawerPanel == null || drawerScrim == null) return;
+        Timeline t = new Timeline(new KeyFrame(javafx.util.Duration.millis(180),
+                new KeyValue(drawerPanel.translateXProperty(), 420, Interpolator.EASE_IN)));
+        t.setOnFinished(e -> {
+            drawerPanel.setVisible(false);
+            drawerPanel.setManaged(false);
+            drawerScrim.setVisible(false);
+            drawerScrim.setManaged(false);
+        });
+        t.play();
+    }
+
+    @FXML
+    private void markAllRead() {
+        NotificationCenter.getInstance().markAllAsRead();
+        refreshNotificationsMenuList();
+    }
+
+    @FXML private void goHome() { SceneManager.showHome(); }
+    @FXML private void goCart() { SceneManager.showCart(); }
+    @FXML private void goProfile() { SceneManager.showProfile(); }
+    @FXML private void handleOpenAdmin() { SceneManager.showAdmin(); }
+
+    private void loadOrders() {
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                return client.send(new Request(MessageProtocol.ACTION_GET_ORDERS, new JSONObject(), client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> {
+            Response r = t.getValue();
+            if (!r.isSuccess()) {
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                String titleMsg = msg.isBlank() ? "Impossible de charger les commandes." : msg;
+                ErrorHandler.showErrorDialog("Erreur", titleMsg);
+                return;
+            }
+            allOrders.clear();
+            Object payload = r.getPayload();
+            JSONArray arr = payload instanceof JSONArray ? (JSONArray) payload : new JSONArray(payload.toString());
+            for (int i = 0; i < arr.length(); i++) {
+                allOrders.add(arr.getJSONObject(i));
+            }
+            rebuildCards();
+        });
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", this::loadOrders));
+        runTask(t);
+    }
+
+    private void rebuildCards() {
+        if (cardsContainer == null) return;
+        cardsContainer.getChildren().clear();
+
+        String filter = statusFilter != null ? statusFilter.getSelectionModel().getSelectedItem() : "TOUS";
+        for (JSONObject o : allOrders) {
+            String st = o.optString("status", "PENDING");
+            String mapped = mapStatusToFrench(st);
+            if (!"TOUS".equals(filter) && !filter.equals(mapped)) continue;
+            cardsContainer.getChildren().add(createOrderCard(o));
+        }
+
+        if (cardsContainer.getChildren().isEmpty()) {
+            Label empty = new Label("Aucune commande.");
+            empty.getStyleClass().add("empty-state");
+            cardsContainer.getChildren().add(empty);
+        }
+    }
+
+    private VBox createOrderCard(JSONObject o) {
+        String orderId = o.optString("orderId", o.optString("order_id", ""));
+        double total = o.optDouble("totalAmount", o.optDouble("total_amount", 0.0));
+        String statusRaw = o.optString("status", "PENDING");
+        String statusFr = mapStatusToFrench(statusRaw);
+
+        String dateStr = "—";
+        String createdAt = o.optString("createdAt", o.optString("created_at", ""));
+        if (!createdAt.isBlank()) {
+            dateStr = createdAt.length() >= 16 ? createdAt.substring(0, 16).replace('T', ' ') : createdAt;
+        }
+
+        VBox card = new VBox(10);
+        card.getStyleClass().add("auth-card");
+        card.setStyle("-fx-padding: 16px 18px;");
+        card.setMaxWidth(Double.MAX_VALUE);
+
+        HBox top = new HBox(10);
+        Label id = new Label(orderId.isBlank() ? "Order #—" : OrderDisplayUtil.formatLabel(orderId));
+        id.setStyle("-fx-text-fill: #334155; -fx-font-weight: 800;");
+        Label date = new Label(dateStr);
+        date.setStyle("-fx-text-fill: #64748b; -fx-font-weight: 600;");
+        HBox.setHgrow(date, javafx.scene.layout.Priority.ALWAYS);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+
+        Label badge = new Label(statusFr);
+        badge.getStyleClass().addAll("order-status-pill", pillForStatus(statusFr));
+
+        top.getChildren().addAll(id, spacer, date, badge);
+
+        Label totalLbl = new Label(String.format(Locale.US, "Total: %.2f Dhs", total));
+        totalLbl.getStyleClass().add("body-text");
+
+        Label hint = new Label("Cliquer pour voir le détail");
+        hint.setStyle("-fx-text-fill: #94a3b8; -fx-font-weight: 600; -fx-font-size: 12px;");
+
+        card.getChildren().addAll(top, totalLbl, hint);
+        card.setOnMouseClicked(e -> openDetails(orderId));
+        card.setCursor(javafx.scene.Cursor.HAND);
+        return card;
+    }
+
+    private void openDetails(String orderId) {
+        if (orderId == null || orderId.isBlank()) return;
+
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                JSONObject payload = new JSONObject();
+                payload.put("order_id", orderId);
+                return client.send(new Request(MessageProtocol.ACTION_GET_ORDER_DETAILS, payload, client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> {
+            Response r = t.getValue();
+            if (!r.isSuccess()) {
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                String titleMsg = msg.isBlank() ? "Impossible de charger le détail." : msg;
+                ErrorHandler.showErrorDialog("Erreur", titleMsg);
+                return;
+            }
+            JSONObject payload = r.getPayloadAsJsonObject();
+            JSONObject order = payload.optJSONObject("order");
+            if (order == null) {
+                try { order = new JSONObject(payload.get("order").toString()); } catch (Exception ignored) {}
+            }
+            // Server returns the Order object directly (no "order" wrapper key)
+            if (order == null) {
+                order = payload;
+            }
+            showDetails(orderId, payload, order);
+        });
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> openDetails(orderId)));
+        runTask(t);
+    }
+
+    private void showDetails(String orderId, JSONObject payload, JSONObject order) {
+        if (detailsOverlay == null) return;
+
+        detailsTitle.setText(OrderDisplayUtil.formatLabel(orderId));
+        String status = order != null ? mapStatusToFrench(order.optString("status", "PENDING")) : "—";
+        if (detailsStatusBadge != null) {
+            detailsStatusBadge.setText(status);
+            detailsStatusBadge.getStyleClass().setAll("order-status-pill", pillForStatus(status));
+        }
+        if (detailsTotal != null) {
+            double total = order != null ? order.optDouble("totalAmount", order.optDouble("total_amount", 0.0)) : 0.0;
+            detailsTotal.setText(String.format(java.util.Locale.US, "%.2f Dhs", total));
+            detailsTotal.getStyleClass().setAll("order-status-pill", "pill-total");
+        }
+
+        detailsItems.getItems().clear();
+        if (order != null && order.has("items") && !order.isNull("items")) {
+            try {
+                JSONArray items = order.get("items") instanceof JSONArray ? order.getJSONArray("items") : new JSONArray(order.get("items").toString());
+                double subtotal = 0.0;
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject it = items.getJSONObject(i);
+                    int qty = it.optInt("quantity", 1);
+                    double unit = it.optDouble("unitPrice", it.optDouble("unit_price", 0.0));
+                    int pid = it.optInt("productId", it.optInt("product_id", 0));
+                    String pName = it.optString("productName",
+                            it.optString("product_name",
+                                    pid > 0 ? "Produit #" + pid : "Article"));
+                    detailsItems.getItems().add(pName + " · x" + qty + " · " + String.format(Locale.US, "%.2f Dhs", unit));
+                    subtotal += unit * qty;
+                }
+                if (totalsSubtotalLabel != null) totalsSubtotalLabel.setText(String.format(Locale.US, "%.2f Dhs", subtotal));
+                if (totalsShippingLabel != null) totalsShippingLabel.setText(String.format(Locale.US, "%.2f Dhs", 0.0));
+                if (totalsGrandLabel != null) {
+                    double grand = order.optDouble("totalAmount", order.optDouble("total_amount", subtotal));
+                    totalsGrandLabel.setText(String.format(Locale.US, "%.2f Dhs", grand));
+                }
+            } catch (Exception ignored) {
+                detailsItems.getItems().add("Items indisponibles.");
+            }
+        } else {
+            detailsItems.getItems().add("Items indisponibles.");
+        }
+        if (detailsItems.getCellFactory() == null) {
+            detailsItems.setCellFactory(lv -> new javafx.scene.control.ListCell<>() {
+                @Override protected void updateItem(String value, boolean empty) {
+                    super.updateItem(value, empty);
+                    if (empty || value == null || value.isBlank()) {
+                        setGraphic(null);
+                        setText(null);
+                        return;
+                    }
+                    String[] parts = value.split(" · ");
+                    String name = parts.length > 0 ? parts[0] : value;
+                    String qty  = parts.length > 1 ? parts[1] : "";
+                    String price= parts.length > 2 ? parts[2] : "";
+                    javafx.scene.control.Label ln = new javafx.scene.control.Label(name);
+                    ln.getStyleClass().add("order-item-name");
+                    javafx.scene.control.Label lq = new javafx.scene.control.Label(qty);
+                    lq.getStyleClass().add("order-item-qty");
+                    javafx.scene.control.Label lp = new javafx.scene.control.Label(price);
+                    lp.getStyleClass().add("order-item-price");
+                    javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+                    javafx.scene.layout.HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+                    javafx.scene.layout.HBox row = new javafx.scene.layout.HBox(10, ln, spacer, lq, lp);
+                    row.setStyle("-fx-padding: 8px 12px;");
+                    setGraphic(row);
+                    setText(null);
+                }
+            });
+        }
+
+        timelineBox.getChildren().clear();
+        JSONArray timeline = payload.optJSONArray("timeline");
+        if (timeline != null) {
+            for (int i = 0; i < timeline.length(); i++) {
+                JSONObject s = timeline.getJSONObject(i);
+                String st = s.optString("status", "");
+                String at = s.optString("at", "");
+                String line = st + (at.isBlank() ? "" : (" · " + at.replace('T', ' ')));
+                Label l = new Label(line);
+                l.getStyleClass().add("body-text");
+                timelineBox.getChildren().add(stepperRow(i == timeline.length() - 1, l));
+            }
+        } else {
+            // Derived fallback timeline using available fields
+            java.util.List<String[]> steps = new java.util.ArrayList<>();
+            String createdAt = order != null ? order.optString("createdAt", order.optString("created_at", "")) : "";
+            String updatedAt = order != null ? order.optString("updatedAt", order.optString("updated_at", "")) : "";
+            String raw = order != null ? order.optString("status", "PENDING") : "PENDING";
+            steps.add(new String[] {"CREATED", normalizeTs(createdAt)});
+            switch (raw) {
+                case "VALIDATED" -> {
+                    steps.add(new String[] {"VALIDATED", normalizeTs(updatedAt)});
+                }
+                case "SHIPPED" -> {
+                    steps.add(new String[] {"VALIDATED", ""});
+                    steps.add(new String[] {"SHIPPED", normalizeTs(updatedAt)});
+                }
+                case "DELIVERED" -> {
+                    steps.add(new String[] {"VALIDATED", ""});
+                    steps.add(new String[] {"SHIPPED", ""});
+                    steps.add(new String[] {"DELIVERED", normalizeTs(updatedAt)});
+                }
+                default -> { /* PENDING: only created */ }
+            }
+            for (int i = 0; i < steps.size(); i++) {
+                String[] s = steps.get(i);
+                String line = s[0] + (s[1].isBlank() ? "" : (" · " + s[1]));
+                Label l = new Label(line);
+                l.getStyleClass().add("body-text");
+                timelineBox.getChildren().add(stepperRow(i == steps.size() - 1, l));
+            }
+        }
+
+        detailsOverlay.setOpacity(0);
+        detailsOverlay.setVisible(true);
+        detailsOverlay.setManaged(true);
+        Timeline in = new Timeline(new KeyFrame(javafx.util.Duration.millis(180),
+                new KeyValue(detailsOverlay.opacityProperty(), 1, Interpolator.EASE_OUT)));
+        in.play();
+    }
+
+    private static String normalizeTs(String ts) {
+        if (ts == null) return "";
+        String t = ts.trim();
+        if (t.isEmpty()) return "";
+        return t.length() >= 16 ? t.substring(0, 16).replace('T', ' ') : t.replace('T', ' ');
+    }
+
+    private HBox stepperRow(boolean last, Label content) {
+        VBox rail = new VBox();
+        rail.setPrefWidth(18);
+        rail.setMinWidth(18);
+        Label dot = new Label("●");
+        dot.setStyle("-fx-text-fill: rgba(255,122,69,0.95); -fx-font-size: 12px;");
+        Region line = new Region();
+        line.setPrefWidth(2);
+        line.setMinWidth(2);
+        line.setStyle("-fx-background-color: rgba(148,163,184,0.45); -fx-pref-width: 2px;");
+        VBox.setVgrow(line, javafx.scene.layout.Priority.ALWAYS);
+        rail.getChildren().addAll(dot);
+        if (!last) rail.getChildren().add(line);
+
+        HBox row = new HBox(10, rail, content);
+        row.setAlignment(javafx.geometry.Pos.TOP_LEFT);
+        return row;
+    }
+
+    @FXML private void closeDetails() {
+        if (detailsOverlay == null) return;
+        Timeline out = new Timeline(new KeyFrame(javafx.util.Duration.millis(160),
+                new KeyValue(detailsOverlay.opacityProperty(), 0, Interpolator.EASE_IN)));
+        out.setOnFinished(e -> {
+            detailsOverlay.setVisible(false);
+            detailsOverlay.setManaged(false);
+        });
+        out.play();
+    }
+
+    private String mapStatusToFrench(String statusRaw) {
+        return switch (statusRaw) {
+            case "PENDING" -> "EN_ATTENTE";
+            case "VALIDATED" -> "VALIDEE";
+            case "SHIPPED" -> "EXPEDIEE";
+            case "DELIVERED" -> "LIVREE";
+            default -> "EN_ATTENTE";
+        };
+    }
+
+    private String pillForStatus(String fr) {
+        return switch (fr) {
+            case "EN_ATTENTE" -> "pill-pending";
+            case "VALIDEE" -> "pill-shipped";   // blue-ish
+            case "EXPEDIEE" -> "pill-delivered"; // purple-ish
+            case "LIVREE" -> "pill-validated";  // green
+            default -> "pill-pending";
+        };
+    }
+
+    private void showToast(String title, String body) {
+        if (toastLayer == null) return;
+        VBox card = new VBox(6);
+        card.getStyleClass().add("toast-card");
+        Label t = new Label(title);
+        t.getStyleClass().add("toast-title");
+        Label b = new Label(body);
+        b.getStyleClass().add("toast-body");
+        b.setWrapText(true);
+        card.getChildren().addAll(t, b);
+
+        card.setOpacity(0);
+        card.setTranslateX(40);
+        toastLayer.getChildren().add(0, card);
+
+        Timeline in = new Timeline(
+                new KeyFrame(javafx.util.Duration.millis(220),
+                        new KeyValue(card.opacityProperty(), 1, Interpolator.EASE_OUT),
+                        new KeyValue(card.translateXProperty(), 0, Interpolator.EASE_OUT))
+        );
+        PauseTransition stay = new PauseTransition(javafx.util.Duration.seconds(4));
+        Timeline out = new Timeline(
+                new KeyFrame(javafx.util.Duration.millis(200),
+                        new KeyValue(card.opacityProperty(), 0, Interpolator.EASE_IN),
+                        new KeyValue(card.translateXProperty(), 40, Interpolator.EASE_IN))
+        );
+        out.setOnFinished(e -> toastLayer.getChildren().remove(card));
+        new SequentialTransition(in, stay, out).play();
+    }
+
+    private void runTask(Task<?> t) {
+        Thread th = new Thread(t);
+        th.setDaemon(true);
+        th.start();
+    }
+}
+

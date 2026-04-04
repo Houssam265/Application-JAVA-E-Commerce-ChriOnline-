@@ -1,7 +1,7 @@
 -- ============================================================
 --  ChriOnline E-Commerce — MySQL Schema
 --  Matches the UML class diagram
---  v2 — Added: server_logs table · indexes · plain UUID orders
+--  v2 — Added: server_logs table · indexes · auto-increment integer orders
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS chrionline
@@ -30,6 +30,16 @@ CREATE TABLE users (
     email         VARCHAR(150)  NOT NULL UNIQUE,
     password_hash VARCHAR(255)  NOT NULL,
     role          ENUM('CLIENT','ADMIN') NOT NULL DEFAULT 'CLIENT',
+    is_suspended  BOOLEAN       NOT NULL DEFAULT FALSE,
+    is_email_verified BOOLEAN   NOT NULL DEFAULT FALSE,
+    email_verification_code VARCHAR(16),
+    email_verification_expires_at DATETIME,
+    email_verification_sent_at DATETIME,
+    trusted_login_ip VARCHAR(64),
+    login_ip_verification_code VARCHAR(16),
+    login_ip_verification_expires_at DATETIME,
+    login_ip_verification_sent_at DATETIME,
+    login_ip_verification_pending_ip VARCHAR(64),
     created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (user_id)
@@ -71,6 +81,7 @@ CREATE TABLE products (
     description  TEXT,
     price        DECIMAL(10,2)  NOT NULL CHECK (price >= 0),
     stock        INT            NOT NULL DEFAULT 0 CHECK (stock >= 0),
+    is_available BOOLEAN        NOT NULL DEFAULT TRUE,
     image_url    VARCHAR(300),
 
     PRIMARY KEY (product_id),
@@ -81,6 +92,23 @@ CREATE TABLE products (
 
 -- Category filter on the product catalogue
 CREATE INDEX idx_product_category ON products(category_id);
+
+--  4.b PRODUCT IMAGES
+--  Multiple images per product with one primary image.
+CREATE TABLE product_images (
+    product_image_id INT           NOT NULL AUTO_INCREMENT,
+    product_id       INT           NOT NULL,
+    image_url        VARCHAR(300)  NOT NULL,
+    display_order    INT           NOT NULL DEFAULT 0,
+    is_primary       BOOLEAN       NOT NULL DEFAULT FALSE,
+
+    PRIMARY KEY (product_image_id),
+    CONSTRAINT fk_productimage_product
+        FOREIGN KEY (product_id) REFERENCES products(product_id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_productimage_product ON product_images(product_id);
 
 -- ─────────────────────────────────────────
 --  5. CARTS
@@ -124,7 +152,7 @@ CREATE TABLE cart_items (
 --  7. ORDERS
 -- ─────────────────────────────────────────
 CREATE TABLE orders (
-    order_id      CHAR(36)       NOT NULL,          -- plain UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    order_id      INT            NOT NULL AUTO_INCREMENT,
     user_id       INT            NOT NULL,
     status        ENUM('PENDING','VALIDATED','SHIPPED','DELIVERED','CANCELLED')
                                  NOT NULL DEFAULT 'PENDING',
@@ -147,7 +175,7 @@ CREATE INDEX idx_order_user ON orders(user_id);
 -- ─────────────────────────────────────────
 CREATE TABLE order_items (
     order_item_id  INT            NOT NULL AUTO_INCREMENT,
-    order_id       CHAR(36)       NOT NULL,
+    order_id       INT            NOT NULL,
     product_id     INT            NOT NULL,
     quantity       INT            NOT NULL CHECK (quantity > 0),
     unit_price     DECIMAL(10,2)  NOT NULL,         -- price snapshot at order time
@@ -170,7 +198,7 @@ CREATE INDEX idx_orderitem_product ON order_items(product_id);
 -- ─────────────────────────────────────────
 CREATE TABLE payments (
     payment_id      INT            NOT NULL AUTO_INCREMENT,
-    order_id        CHAR(36)       NOT NULL UNIQUE,  -- one payment per order
+    order_id        INT            NOT NULL UNIQUE,  -- one payment per order
     method          ENUM('CREDIT_CARD','SIMULATED') NOT NULL,
     status          ENUM('PENDING','SUCCESS','FAILED') NOT NULL DEFAULT 'PENDING',
     amount          DECIMAL(10,2)  NOT NULL,
@@ -228,15 +256,3 @@ CREATE TABLE server_logs (
 CREATE INDEX idx_log_user       ON server_logs(user_id);
 CREATE INDEX idx_log_created_at ON server_logs(created_at);
 
--- ─────────────────────────────────────────
---  DEFAULT ADMIN ACCOUNT
---  Password hash below = BCrypt of "admin1234"
---  Change before any real deployment.
--- ─────────────────────────────────────────
-INSERT INTO users (username, email, password_hash, role)
-VALUES (
-    'admin',
-    'admin@chrionline.ma',
-    '$2a$12$placeholderHashReplaceWithRealBCryptHash',
-    'ADMIN'
-);

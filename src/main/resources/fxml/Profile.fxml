@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.*?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<StackPane xmlns="http://javafx.com/javafx/17"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.chrionline.ui.controller.ProfileController"
+           styleClass="root-pane">
+
+    <VBox spacing="0" StackPane.alignment="TOP_LEFT">
+        <!-- NAVBAR -->
+        <HBox alignment="CENTER" styleClass="navbar" prefHeight="72">
+            <HBox alignment="CENTER_LEFT" spacing="18" maxWidth="1200" HBox.hgrow="ALWAYS" style="-fx-padding: 0 40px;">
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <ImageView fitWidth="46" fitHeight="46" preserveRatio="true" styleClass="app-logo-image">
+                        <image>
+                            <Image url="@/images/ChriOnline_logo.png"/>
+                        </image>
+                    </ImageView>
+                    <Label text="ChriOnline" styleClass="brand-title-small"/>
+                </HBox>
+                <Region HBox.hgrow="ALWAYS"/>
+                <HBox alignment="CENTER" spacing="22">
+                    <Button fx:id="navHomeBtn" text="Accueil" onAction="#goHome" styleClass="nav-pill"/>
+                    <Button fx:id="navCartBtn" text="Panier" onAction="#goCart" styleClass="nav-pill"/>
+                    <Button fx:id="navProfileBtn" text="Profil" onAction="#noop" styleClass="nav-pill"/>
+                    <Button fx:id="navOrdersBtn" text="Commandes" onAction="#goOrders" styleClass="nav-pill"/>
+                </HBox>
+                <Region HBox.hgrow="ALWAYS"/>
+                <HBox alignment="CENTER_RIGHT" spacing="12" styleClass="nav-actions">
+                    <Button fx:id="bellButton" onAction="#toggleNotifications" styleClass="nav-pill nav-pill-icon">
+                        <graphic>
+                            <StackPane>
+                                <FontIcon iconLiteral="fas-bell" iconSize="16" styleClass="ikonli-muted"/>
+                                <Label fx:id="unreadBadge" text="0"
+                                       visible="false" managed="false"
+                                       styleClass="badge-unread"
+                                       StackPane.alignment="TOP_RIGHT" />
+                            </StackPane>
+                        </graphic>
+                    </Button>
+                    <Button onAction="#handleLogout" styleClass="nav-pill nav-pill-icon">
+                        <graphic>
+                            <FontIcon iconLiteral="fas-sign-out-alt" iconSize="16" styleClass="ikonli-muted"/>
+                        </graphic>
+                    </Button>
+                    <Button fx:id="adminButton" onAction="#handleOpenAdmin" styleClass="btn-outline" visible="false" managed="false">
+                        <graphic>
+                            <HBox alignment="CENTER" spacing="6">
+                                <FontIcon iconLiteral="fas-user-shield" iconSize="14" styleClass="ikonli-muted"/>
+                                <Label text="Admin" style="-fx-text-fill: #64748b; -fx-font-weight: 600;"/>
+                            </HBox>
+                        </graphic>
+                    </Button>
+                </HBox>
+            </HBox>
+        </HBox>
+
+        <!-- CONTENT -->
+        <VBox maxWidth="Infinity" spacing="18" style="-fx-padding: 26px 40px 40px 40px;" alignment="TOP_LEFT" VBox.vgrow="ALWAYS">
+            <HBox alignment="CENTER_LEFT" spacing="10" maxWidth="Infinity">
+                <FontIcon iconLiteral="fas-user" iconSize="18" styleClass="ikonli-accent"/>
+                <Label text="Profile" styleClass="section-title"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Button fx:id="editButton" text="Edit" onAction="#toggleEdit" styleClass="btn-outline"/>
+            </HBox>
+
+            <!-- Avatar header -->
+            <VBox styleClass="auth-card" spacing="14" maxWidth="Infinity">
+                <padding><Insets top="20" right="20" bottom="20" left="20"/></padding>
+                <HBox spacing="16" alignment="CENTER_LEFT">
+                    <StackPane prefWidth="72" prefHeight="72"
+                               style="-fx-background-radius: 20px; -fx-background-color: linear-gradient(to bottom right, rgba(255,122,69,0.85), rgba(124,58,237,0.75));">
+                        <Label fx:id="avatarInitials" text="U" style="-fx-text-fill: white; -fx-font-size: 22px; -fx-font-weight: 900;"/>
+                    </StackPane>
+                    <VBox spacing="4">
+                        <Label fx:id="displayNameLabel" text="—" style="-fx-text-fill: #0f172a; -fx-font-size: 18px; -fx-font-weight: 900;"/>
+                        <Label fx:id="emailLabel" text="—" style="-fx-text-fill: #475569; -fx-font-weight: 700;"/>
+                        <Label fx:id="registeredAtLabel" text="Registered: —" style="-fx-text-fill: #64748b; -fx-font-weight: 600; -fx-font-size: 12px;"/>
+                    </VBox>
+                </HBox>
+            </VBox>
+
+            <!-- Read-only fields -->
+            <VBox styleClass="auth-card" spacing="14" maxWidth="Infinity">
+                <padding><Insets top="18" right="20" bottom="18" left="20"/></padding>
+                <Label text="Account" styleClass="field-label" style="-fx-font-size: 15px;"/>
+
+                <HBox spacing="12">
+                    <VBox spacing="8" HBox.hgrow="ALWAYS">
+                        <Label text="Name" styleClass="field-label"/>
+                        <TextField fx:id="nameField" styleClass="auth-field" editable="false"/>
+                    </VBox>
+                    <VBox spacing="8" HBox.hgrow="ALWAYS">
+                        <Label text="Email" styleClass="field-label"/>
+                        <TextField fx:id="emailField" styleClass="auth-field" editable="false"/>
+                    </VBox>
+                </HBox>
+
+                <!-- Edit mode: change name + password -->
+                <VBox fx:id="editBox" spacing="14" visible="false" managed="false">
+                    <Separator/>
+                    <Label text="Security" styleClass="field-label" style="-fx-font-size: 15px;"/>
+
+                    <HBox spacing="12">
+                        <VBox spacing="8" HBox.hgrow="ALWAYS">
+                            <Label text="Old password" styleClass="field-label"/>
+                            <PasswordField fx:id="oldPasswordField" styleClass="auth-field" promptText="••••••••"/>
+                            <Label fx:id="oldPasswordError" text="" styleClass="error-label" visible="false" managed="false"/>
+                        </VBox>
+                        <VBox spacing="8" HBox.hgrow="ALWAYS">
+                            <Label text="New password" styleClass="field-label"/>
+                            <PasswordField fx:id="newPasswordField" styleClass="auth-field" promptText="At least 8 chars"/>
+                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                <Region fx:id="strengthBar" prefHeight="6" HBox.hgrow="ALWAYS"
+                                        style="-fx-background-color: rgba(255,255,255,0.10); -fx-background-radius: 999px;"/>
+                                <Label fx:id="strengthLabel" text="—" style="-fx-text-fill: #475569; -fx-font-weight: 700;"/>
+                            </HBox>
+                            <Label fx:id="newPasswordError" text="" styleClass="error-label" visible="false" managed="false"/>
+                        </VBox>
+                    </HBox>
+
+                    <VBox spacing="8" HBox.hgrow="ALWAYS">
+                        <Label text="Confirm new password" styleClass="field-label"/>
+                        <PasswordField fx:id="confirmNewPasswordField" styleClass="auth-field" promptText="Retapez le nouveau mot de passe"/>
+                        <Label fx:id="confirmPasswordError" text="" styleClass="error-label" visible="false" managed="false"/>
+                    </VBox>
+
+                    <Button text="Save changes" onAction="#handleSave" styleClass="btn-primary" maxWidth="Infinity" prefHeight="52"/>
+                </VBox>
+
+                <Label fx:id="globalMessage" text="" visible="false" managed="false" wrapText="true"/>
+            </VBox>
+
+            <!-- Shortcut -->
+            <HBox maxWidth="Infinity">
+                <VBox styleClass="auth-card" spacing="10" HBox.hgrow="ALWAYS" onMouseClicked="#goOrders" style="-fx-cursor: hand;">
+                    <padding><Insets top="16" right="18" bottom="16" left="18"/></padding>
+                    <HBox alignment="CENTER_LEFT" spacing="10">
+                        <FontIcon iconLiteral="fas-box" iconSize="16" styleClass="ikonli-accent"/>
+                        <Label text="Order History" styleClass="field-label" style="-fx-font-size: 15px;"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Label text="View →" style="-fx-text-fill: #475569; -fx-font-weight: 800;"/>
+                    </HBox>
+                    <Label text="Track your orders and view details." styleClass="body-text"/>
+                </VBox>
+            </HBox>
+
+            <!-- Logout -->
+            <Button text="Logout" onAction="#handleLogout" styleClass="btn-outline" maxWidth="Infinity" prefHeight="48"
+                    style="-fx-border-color: rgba(239,68,68,0.55); -fx-text-fill: #b91c1c;"/>
+        </VBox>
+    </VBox>
+
+    <!-- Toast layer -->
+    <VBox fx:id="toastLayer" spacing="10" pickOnBounds="false"
+          StackPane.alignment="BOTTOM_RIGHT"
+          style="-fx-padding: 0 18px 18px 0;"/>
+
+    <StackPane fx:id="drawerScrim" visible="false" managed="false"
+               onMouseClicked="#closeNotifications"
+               style="-fx-background-color: rgba(0,0,0,0.22);"/>
+    <VBox fx:id="drawerPanel" visible="false" managed="false" spacing="10"
+          StackPane.alignment="CENTER_RIGHT"
+          style="-fx-pref-width: 360px; -fx-max-width: 360px; -fx-background-color: #ffffff; -fx-border-color: #e2e8f0; -fx-border-width: 0 0 0 1; -fx-padding: 16px;">
+        <HBox alignment="CENTER_LEFT" spacing="8">
+            <Label text="Notifications" styleClass="section-title"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Fermer" onAction="#closeNotifications" styleClass="btn-outline"/>
+        </HBox>
+        <Button text="Marquer tout comme lu" onAction="#markAllRead" styleClass="btn-outline"/>
+        <ListView fx:id="notificationsList" prefHeight="480" styleClass="table-premium"/>
+    </VBox>
+
+</StackPane>
+

@@ -205,6 +205,21 @@ private static final String USERNAME = "root";
 private static final String PASSWORD = "votre_mot_de_passe";
 ```
 
+### Configuration SMTP pour la verification email
+Definir les variables d'environnement suivantes avant de lancer le serveur :
+```powershell
+$env:CHRIONLINE_SMTP_HOST="smtp.gmail.com"
+$env:CHRIONLINE_SMTP_PORT="587"
+$env:CHRIONLINE_SMTP_USERNAME="votre.compte@gmail.com"
+$env:CHRIONLINE_SMTP_PASSWORD="mot-de-passe-app"
+$env:CHRIONLINE_SMTP_FROM="votre.compte@gmail.com"
+```
+
+Sans cette configuration, l'inscription avec verification email ne pourra pas envoyer le code.
+
+Alternative: creer un fichier `.env` a la racine du projet en partant de `.env.example`.
+Le serveur charge automatiquement ce fichier au demarrage.
+
 ### 3. Lancer le serveur
 ```bash
 javac server/Server.java

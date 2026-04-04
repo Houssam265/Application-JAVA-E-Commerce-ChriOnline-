@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns="http://javafx.com/javafx/17"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.chrionline.ui.controller.ProductManagerController"
+      spacing="14"
+      styleClass="root-pane">
+
+    <padding>
+        <Insets top="18" right="22" bottom="18" left="22"/>
+    </padding>
+
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <Label text="Product Manager" styleClass="brand-title page-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="Refresh" onAction="#handleRefreshAll" styleClass="btn-outline"/>
+    </HBox>
+
+    <SplitPane dividerPositions="0.62" VBox.vgrow="ALWAYS">
+        <items>
+            <!-- Products -->
+            <VBox spacing="10">
+                <Label text="Products" styleClass="field-label"/>
+
+                <TableView fx:id="productsTable" prefHeight="360" VBox.vgrow="ALWAYS">
+                    <columns>
+                        <TableColumn fx:id="colProdName" text="Name" prefWidth="210"/>
+                        <TableColumn fx:id="colProdCategory" text="Category" prefWidth="150"/>
+                        <TableColumn fx:id="colProdPrice" text="Price" prefWidth="90"/>
+                        <TableColumn fx:id="colProdStock" text="Stock" prefWidth="80"/>
+                    </columns>
+                </TableView>
+
+                <Separator/>
+
+                <Label text="Add / Edit product" styleClass="field-label"/>
+                <GridPane hgap="10" vgap="10">
+                    <columnConstraints>
+                        <ColumnConstraints percentWidth="25"/>
+                        <ColumnConstraints percentWidth="75"/>
+                    </columnConstraints>
+
+                    <Label text="Name"/>
+                    <TextField fx:id="name" GridPane.columnIndex="1" promptText="Product name"/>
+
+                    <Label text="Category" GridPane.rowIndex="1"/>
+                    <ComboBox fx:id="category" GridPane.rowIndex="1" GridPane.columnIndex="1" promptText="Select category"/>
+
+                    <Label text="Price" GridPane.rowIndex="2"/>
+                    <TextField fx:id="price" GridPane.rowIndex="2" GridPane.columnIndex="1" promptText="0.00"/>
+
+                    <Label text="Stock" GridPane.rowIndex="3"/>
+                    <TextField fx:id="stock" GridPane.rowIndex="3" GridPane.columnIndex="1" promptText="0"/>
+
+                    <Label text="Description" GridPane.rowIndex="4"/>
+                    <TextArea fx:id="description" GridPane.rowIndex="4" GridPane.columnIndex="1" prefRowCount="2" wrapText="true"/>
+                </GridPane>
+
+                <HBox spacing="10" alignment="CENTER_RIGHT">
+                    <Button fx:id="addProductButton" text="Add" onAction="#handleAddProduct" styleClass="btn-primary" prefWidth="120"/>
+                    <Button fx:id="updateProductButton" text="Update" onAction="#handleUpdateProduct" styleClass="btn-outline" prefWidth="120"/>
+                    <Button fx:id="deleteProductButton" text="Delete" onAction="#handleDeleteProduct" styleClass="btn-secondary" prefWidth="120"/>
+                    <Button fx:id="clearProductButton" text="Clear" onAction="#handleClearProductSelection" styleClass="btn-secondary"/>
+                </HBox>
+            </VBox>
+
+            <!-- Categories -->
+            <VBox spacing="10">
+                <Label text="Categories" styleClass="field-label"/>
+
+                <TableView fx:id="categoriesTable" prefHeight="260" VBox.vgrow="ALWAYS">
+                    <columns>
+                        <TableColumn fx:id="colCatName" text="Name" prefWidth="170"/>
+                        <TableColumn fx:id="colCatDescription" text="Description" prefWidth="240"/>
+                    </columns>
+                </TableView>
+
+                <Separator/>
+
+                <Label text="Add / Edit category" styleClass="field-label"/>
+                <GridPane hgap="10" vgap="10">
+                    <columnConstraints>
+                        <ColumnConstraints percentWidth="25"/>
+                        <ColumnConstraints percentWidth="75"/>
+                    </columnConstraints>
+
+                    <Label text="Name"/>
+                    <TextField fx:id="categoryNameField" GridPane.columnIndex="1" promptText="Category name"/>
+
+                    <Label text="Description" GridPane.rowIndex="1"/>
+                    <TextArea fx:id="categoryDescriptionField" GridPane.rowIndex="1" GridPane.columnIndex="1" prefRowCount="2" wrapText="true"/>
+                </GridPane>
+
+                <HBox spacing="10" alignment="CENTER_RIGHT">
+                    <Button fx:id="addCategoryButton" text="Add" onAction="#handleAddCategory" styleClass="btn-primary" prefWidth="110"/>
+                    <Button fx:id="updateCategoryButton" text="Update" onAction="#handleUpdateCategory" styleClass="btn-outline" prefWidth="110"/>
+                    <Button fx:id="deleteCategoryButton" text="Delete" onAction="#handleDeleteCategory" styleClass="btn-secondary" prefWidth="110"/>
+                    <Button fx:id="clearCategoryButton" text="Clear" onAction="#handleClearCategorySelection" styleClass="btn-secondary"/>
+                </HBox>
+            </VBox>
+        </items>
+    </SplitPane>
+
+    <Label fx:id="statusLabel" visible="false" managed="false" wrapText="true" maxWidth="Infinity"/>
+</VBox>
+

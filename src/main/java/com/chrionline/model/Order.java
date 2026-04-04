@@ -7,74 +7,98 @@ import java.util.List;
 /**
  * Maps to the {@code orders} table.
  *
- * columns: order_id CHAR(36) UUID PK, user_id, status (OrderStatus),
- *          total_amount DECIMAL(10,2), created_at, updated_at
- *
- * Owns a list of {@link OrderItem}s for convenience — populated by the DAO,
- * not persisted directly (no DB access here).
+ * columns: order_id INT PK AUTO_INCREMENT, user_id, status (OrderStatus),
+ * total_amount DECIMAL(10,2), created_at, updated_at
  */
 public class Order {
 
-    // ── Fields ─────────────────────────────────────────────────────────────
-    private String        orderId;       // CHAR(36) plain UUID
-    private int           userId;
-    private OrderStatus   status;        // enum — NOT a plain String
-    private double        totalAmount;
+    private int orderId;
+    private int userId;
+    private OrderStatus status;
+    private double totalAmount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-
-    /** Convenience list populated by DAO — not a DB column. */
     private List<OrderItem> items = new ArrayList<>();
 
-    // ── Constructors ────────────────────────────────────────────────────────
-
-    public Order() {}
-
-    public Order(String orderId, int userId, OrderStatus status,
-                 double totalAmount, LocalDateTime createdAt, LocalDateTime updatedAt) {
-        this.orderId      = orderId;
-        this.userId       = userId;
-        this.status       = status;
-        this.totalAmount  = totalAmount;
-        this.createdAt    = createdAt;
-        this.updatedAt    = updatedAt;
+    public Order() {
     }
 
-    // ── Getters & Setters ───────────────────────────────────────────────────
+    public Order(int orderId, int userId, OrderStatus status,
+                 double totalAmount, LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this.orderId = orderId;
+        this.userId = userId;
+        this.status = status;
+        this.totalAmount = totalAmount;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+    }
 
-    public String      getOrderId()          { return orderId; }
-    public void        setOrderId(String v)  { this.orderId = v; }
+    public int getOrderId() {
+        return orderId;
+    }
 
-    public int         getUserId()       { return userId; }
-    public void        setUserId(int v)  { this.userId = v; }
+    public void setOrderId(int orderId) {
+        this.orderId = orderId;
+    }
 
-    public OrderStatus getStatus()              { return status; }
-    public void        setStatus(OrderStatus v) { this.status = v; }
+    public int getUserId() {
+        return userId;
+    }
 
-    public double      getTotalAmount()          { return totalAmount; }
-    public void        setTotalAmount(double v)  { this.totalAmount = v; }
+    public void setUserId(int userId) {
+        this.userId = userId;
+    }
 
-    public LocalDateTime getCreatedAt()               { return createdAt; }
-    public void          setCreatedAt(LocalDateTime v){ this.createdAt = v; }
+    public OrderStatus getStatus() {
+        return status;
+    }
 
-    public LocalDateTime getUpdatedAt()               { return updatedAt; }
-    public void          setUpdatedAt(LocalDateTime v){ this.updatedAt = v; }
+    public void setStatus(OrderStatus status) {
+        this.status = status;
+    }
 
-    public List<OrderItem> getItems()                  { return items; }
-    public void            setItems(List<OrderItem> v) { this.items = v; }
+    public double getTotalAmount() {
+        return totalAmount;
+    }
 
-    // ── toString ────────────────────────────────────────────────────────────
+    public void setTotalAmount(double totalAmount) {
+        this.totalAmount = totalAmount;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public List<OrderItem> getItems() {
+        return items;
+    }
+
+    public void setItems(List<OrderItem> items) {
+        this.items = items;
+    }
 
     @Override
     public String toString() {
         return "Order{" +
-               "orderId='"      + orderId             + '\'' +
-               ", userId="      + userId              +
-               ", status="      + status              +
-               ", totalAmount=" + totalAmount         +
-               ", createdAt="   + createdAt           +
-               ", updatedAt="   + updatedAt           +
-               ", items="       + items.size() + " item(s)" +
-               '}';
+                "orderId=" + orderId +
+                ", userId=" + userId +
+                ", status=" + status +
+                ", totalAmount=" + totalAmount +
+                ", createdAt=" + createdAt +
+                ", updatedAt=" + updatedAt +
+                ", items=" + items.size() + " item(s)" +
+                '}';
     }
 }
