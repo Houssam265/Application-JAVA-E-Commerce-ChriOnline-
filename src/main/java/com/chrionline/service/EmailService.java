@@ -66,6 +66,25 @@ public class EmailService {
         }
     }
 
+    public void sendPasswordResetEmail(User user, String token, LocalDateTime expiresAt) {
+        ensureConfigured();
+
+        String subject = "Reinitialisation de votre mot de passe ChriOnline";
+        String html = buildPasswordResetHtmlBody(user, token, expiresAt);
+
+        try {
+            Session session = buildSession();
+            MimeMessage message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(user.getEmail(), false));
+            message.setSubject(subject, "UTF-8");
+            message.setContent(html, "text/html; charset=UTF-8");
+            Transport.send(message);
+        } catch (MessagingException e) {
+            throw new RuntimeException("Impossible d'envoyer l'email de reinitialisation: " + e.getMessage(), e);
+        }
+    }
+
     public boolean isConfigured() {
         return host != null && !host.isBlank()
                 && from != null && !from.isBlank()
@@ -135,6 +154,26 @@ public class EmailService {
             """.formatted(
                 escapeHtml(user.getUsername()),
                 escapeHtml(clientIp == null ? "inconnue" : clientIp),
+                escapeHtml(code),
+                escapeHtml(DATE_FORMAT.format(expiresAt))
+        );
+    }
+
+    private String buildPasswordResetHtmlBody(User user, String code, LocalDateTime expiresAt) {
+        return """
+            <html>
+              <body style="font-family: Arial, sans-serif; color: #0f172a;">
+                <h2 style="margin-bottom: 8px;">Reinitialisation de votre mot de passe</h2>
+                <p>Bonjour %s,</p>
+                <p>Vous avez demande la reinitialisation de votre mot de passe ChriOnline.</p>
+                <p>Entrez ce code dans l'application pour definir un nouveau mot de passe :</p>
+                <p style="font-size: 28px; font-weight: 700; letter-spacing: 6px;">%s</p>
+                <p>Ce code expire le <strong>%s</strong>.</p>
+                <p>Si vous n'etes pas a l'origine de cette demande, ignorez cet email.</p>
+              </body>
+            </html>
+            """.formatted(
+                escapeHtml(user.getUsername()),
                 escapeHtml(code),
                 escapeHtml(DATE_FORMAT.format(expiresAt))
         );

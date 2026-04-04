@@ -11,6 +11,7 @@ import com.chrionline.service.CartService;
 import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
+import com.chrionline.service.RecaptchaVerificationService;
 import com.chrionline.service.LogService;
 import com.chrionline.dao.LogDAO;
 import com.chrionline.model.ServerLog;
@@ -72,11 +73,12 @@ public class ClientHandler implements Runnable {
         })
         .create();
 
-    // ── Simple anti-bruteforce (rate limiting + lockout) ────────────────────
-    private static final int  MAX_LOGIN_ATTEMPTS = 5;
+    // ── Progressive anti-bruteforce (rate limiting + lockout + IP blocking) ────────────────────
+    private static final int  MAX_LOGIN_ATTEMPTS = 12;  // Increased to 12 for progressive security
     private static final long LOGIN_WINDOW_MS    = 60_000L;   // 1 minute
     private static final long LOGIN_LOCKOUT_MS   = 5 * 60_000L; // 5 minutes
     private static final ConcurrentMap<String, AttemptState> LOGIN_ATTEMPTS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, Long> BLOCKED_IPS = new ConcurrentHashMap<>();
 
     private static final class AttemptState {
         int failures;
@@ -94,6 +96,7 @@ public class ClientHandler implements Runnable {
     private final AdminService   adminService;
     private final UDPNotificationService udpNotificationService;
     private final LogService     logService;
+    private final RecaptchaVerificationService recaptchaVerificationService = new RecaptchaVerificationService();
 
     // ── Per-connection state ──────────────────────────────────────────────────
     private final Socket socket;
@@ -221,17 +224,29 @@ public class ClientHandler implements Runnable {
 
             // ── Auth (no token required) ──────────────────────────────────
             case MessageProtocol.ACTION_LOGIN:
+                if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
                 return handleLogin(req);
             case MessageProtocol.ACTION_REGISTER:
+                if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
                 return handleRegister(req);
             case MessageProtocol.ACTION_VERIFY_EMAIL:
+                if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
                 return handleVerifyEmail(req);
             case MessageProtocol.ACTION_RESEND_VERIFICATION_EMAIL:
+                if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
                 return handleResendVerificationEmail(req);
             case MessageProtocol.ACTION_VERIFY_LOGIN_IP:
+                if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
                 return handleVerifyLoginIp(req);
             case MessageProtocol.ACTION_RESEND_LOGIN_IP_VERIFICATION:
+                if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
                 return handleResendLoginIpVerification(req);
+            case MessageProtocol.ACTION_FORGOT_PASSWORD:
+                if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
+                return handleForgotPassword(req);
+            case MessageProtocol.ACTION_RESET_PASSWORD:
+                if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
+                return handleResetPassword(req);
 
             // ── Auth (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_LOGOUT:
@@ -365,6 +380,7 @@ public class ClientHandler implements Runnable {
     private Response handleLogin(Request req) {
         String email    = getPayloadString(req, "email");
         String password = getPayloadString(req, "password");
+        String recaptchaToken = getPayloadString(req, "recaptchaToken");
 
         if (email == null || email.isBlank()) {
             return Response.error("Le champ 'email' est requis.");
@@ -381,14 +397,26 @@ public class ClientHandler implements Runnable {
             return Response.error("Trop de tentatives. Réessayez dans " + seconds + "s.");
         }
 
+        boolean recaptchaConfigured = recaptchaVerificationService.isConfigured();
+        boolean recaptchaTokenProvided = recaptchaToken != null && !recaptchaToken.isBlank();
+        boolean recaptchaRequired = recaptchaConfigured && isRecaptchaRequired(key);
+
+        if (recaptchaConfigured && (recaptchaTokenProvided || recaptchaRequired)) {
+            RecaptchaVerificationService.VerificationResult captchaResult =
+                    recaptchaVerificationService.verify(recaptchaToken, getClientIpAddress());
+            if (!captchaResult.isSuccess()) {
+                return Response.error("reCAPTCHA invalide ou manquant. " + captchaResult.getMessage());
+            }
+        }
+
         try {
             AuthService.LoginResult loginResult = authService.login(email, password, getClientIpAddress());
             if (loginResult.getStatus() == AuthService.LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED) {
                 Map<String, Object> payload = new HashMap<>();
                 payload.put("email", email);
                 payload.put("verificationType", "login_ip");
-                payload.put("message", "Verification requise pour cette nouvelle adresse IP.");
-                return Response.error("Nouvelle adresse IP detectee. Un code de verification a ete envoye par email.", payload);
+                payload.put("message", "Vérification requise pour valider votre connexion.");
+                return Response.error("Un code de vérification a été envoyé à votre adresse email.", payload);
             }
 
             User user = loginResult.getUser();
@@ -540,6 +568,46 @@ public class ClientHandler implements Runnable {
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "[RESEND_LOGIN_IP] Unexpected error: " + e.getMessage(), e);
             return Response.error("Erreur serveur lors du renvoi du code de verification.");
+        }
+    }
+
+    private Response handleForgotPassword(Request req) {
+        String email = getPayloadString(req, "email");
+        if (email == null || email.isBlank()) {
+            return Response.error("Le champ 'email' est requis.");
+        }
+
+        try {
+            authService.forgotPassword(email);
+            logService.logSuccess("FORGOT_PASSWORD", null);
+            return Response.ok("PASSWORD_RESET_EMAIL_SENT", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[FORGOT_PASSWORD] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de l'envoi de l'email de reinitialisation.");
+        }
+    }
+
+    private Response handleResetPassword(Request req) {
+        String token = getPayloadString(req, "token");
+        String newPassword = getPayloadString(req, "newPassword");
+        if (token == null || token.isBlank()) {
+            return Response.error("Le champ 'token' est requis.");
+        }
+        if (newPassword == null || newPassword.isBlank()) {
+            return Response.error("Le champ 'newPassword' est requis.");
+        }
+
+        try {
+            authService.resetPassword(token, newPassword);
+            logService.logSuccess("RESET_PASSWORD", null);
+            return Response.ok("PASSWORD_RESET_SUCCESS", null);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "[RESET_PASSWORD] Unexpected error: " + e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la reinitialisation du mot de passe.");
         }
     }
 
@@ -1085,7 +1153,13 @@ public class ClientHandler implements Runnable {
         return Math.max(0L, remaining);
     }
 
+    private boolean isRecaptchaRequired(String key) {
+        AttemptState state = LOGIN_ATTEMPTS.get(key);
+        return state != null && state.failures >= 3;
+    }
+
     private void registerFailedLogin(String key, long nowMs) {
+        String ip = getClientIpAddress();
         LOGIN_ATTEMPTS.compute(key, (k, state) -> {
             if (state == null) {
                 state = new AttemptState();
@@ -1096,15 +1170,40 @@ public class ClientHandler implements Runnable {
                 state.failures = 0;
             }
             state.failures++;
-            if (state.failures >= MAX_LOGIN_ATTEMPTS) {
-                state.blockedUntilMs = nowMs + LOGIN_LOCKOUT_MS;
+
+            // Progressive security: different lockout times based on failure count
+            if (state.failures >= 12) {
+                // Block IP completely after 12 failures
+                BLOCKED_IPS.put(ip, nowMs + (24 * 60 * 60 * 1000L)); // 24 hours
+                state.blockedUntilMs = nowMs + (24 * 60 * 60 * 1000L); // 24 hours
+            } else if (state.failures >= 9) {
+                state.blockedUntilMs = nowMs + (60 * 60 * 1000L); // 1 hour
+            } else if (state.failures >= 6) {
+                state.blockedUntilMs = nowMs + (10 * 60 * 1000L); // 10 minutes
+            } else if (state.failures >= 3) {
+                state.blockedUntilMs = nowMs + (60 * 1000L); // 1 minute
             }
+
             return state;
         });
     }
 
     private void clearLoginAttempts(String key) {
         LOGIN_ATTEMPTS.remove(key);
+    }
+
+    private boolean isIpBlocked() {
+        String ip = getClientIpAddress();
+        Long blockedUntil = BLOCKED_IPS.get(ip);
+        if (blockedUntil == null) return false;
+
+        long now = System.currentTimeMillis();
+        if (now >= blockedUntil) {
+            // Block expired, remove from map
+            BLOCKED_IPS.remove(ip);
+            return false;
+        }
+        return true;
     }
 
     private void applyProductImages(Request req, com.chrionline.model.Product product, Object currentImageUrlObj) {

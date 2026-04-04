@@ -16,6 +16,8 @@ public final class MessageProtocol {
     public static final String ACTION_RESEND_VERIFICATION_EMAIL = "RESEND_VERIFICATION_EMAIL";
     public static final String ACTION_VERIFY_LOGIN_IP = "VERIFY_LOGIN_IP";
     public static final String ACTION_RESEND_LOGIN_IP_VERIFICATION = "RESEND_LOGIN_IP_VERIFICATION";
+    public static final String ACTION_FORGOT_PASSWORD = "FORGOT_PASSWORD";
+    public static final String ACTION_RESET_PASSWORD = "RESET_PASSWORD";
 
     // Catalogue
     public static final String ACTION_GET_PRODUCTS   = "GET_PRODUCTS";

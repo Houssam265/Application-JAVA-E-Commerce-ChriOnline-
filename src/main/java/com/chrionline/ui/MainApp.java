@@ -1,5 +1,6 @@
 package com.chrionline.ui;
 
+import com.chrionline.service.EnvFileLoader;
 import atlantafx.base.theme.PrimerLight;
 import javafx.application.Application;
 import javafx.scene.image.Image;
@@ -25,6 +26,7 @@ public class MainApp extends Application {
 
     @Override
     public void start(Stage stage) throws IOException {
+        EnvFileLoader.loadFromProjectRoot();
         Application.setUserAgentStylesheet(new PrimerLight().getUserAgentStylesheet());
 
         primaryStage = stage;

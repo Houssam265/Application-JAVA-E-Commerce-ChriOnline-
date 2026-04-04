@@ -23,6 +23,8 @@ public class User {
     private LocalDateTime loginIpVerificationSentAt;
     private String loginIpVerificationPendingIp;
     private LocalDateTime createdAt;
+    private String passwordResetToken;
+    private LocalDateTime passwordResetExpiresAt;
 
     public enum Role {
         CLIENT,
@@ -100,6 +102,12 @@ public class User {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public String getPasswordResetToken() { return passwordResetToken; }
+    public void setPasswordResetToken(String passwordResetToken) { this.passwordResetToken = passwordResetToken; }
+
+    public LocalDateTime getPasswordResetExpiresAt() { return passwordResetExpiresAt; }
+    public void setPasswordResetExpiresAt(LocalDateTime passwordResetExpiresAt) { this.passwordResetExpiresAt = passwordResetExpiresAt; }
 
     @Override
     public String toString() {

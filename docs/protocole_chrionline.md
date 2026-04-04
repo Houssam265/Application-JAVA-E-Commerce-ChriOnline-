@@ -22,7 +22,7 @@ Les actions `VERIFY_EMAIL`, `RESEND_VERIFICATION_EMAIL`, `VERIFY_LOGIN_IP` et
 ### Auth
 - `LOGIN`
 ```json
-{"action":"LOGIN","payload":{"email":"user@ex.com","password":"secret"},"token":null}
+{"action":"LOGIN","payload":{"email":"user@ex.com","password":"secret","recaptchaToken":"<captcha_token>"},"token":null}
 ```
 Reponse possible si l'authentification reussit directement:
 ```json

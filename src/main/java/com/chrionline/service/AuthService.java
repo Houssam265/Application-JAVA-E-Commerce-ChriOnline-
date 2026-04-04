@@ -108,13 +108,9 @@ public class AuthService {
         }
 
         String normalizedIp = normalizeIp(clientIp);
-        if (requiresLoginIpVerification(user, normalizedIp)) {
-            ensureEmailServiceAvailable();
-            issueAndSendLoginIpVerificationCode(user, normalizedIp, false);
-            return new LoginResult(LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED, user);
-        }
-
-        return new LoginResult(LoginStatus.SUCCESS, user);
+        ensureEmailServiceAvailable();
+        issueAndSendLoginIpVerificationCode(user, normalizedIp, false);
+        return new LoginResult(LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED, user);
     }
 
     public User verifyEmail(String email, String code) {
@@ -174,10 +170,6 @@ public class AuthService {
         }
 
         String normalizedIp = normalizeIp(clientIp);
-        if (!requiresLoginIpVerification(user, normalizedIp)) {
-            throw new IllegalArgumentException("Cette adresse IP est deja verifiee.");
-        }
-
         issueAndSendLoginIpVerificationCode(user, normalizedIp, true);
     }
 
@@ -254,6 +246,53 @@ public class AuthService {
 
         userDAO.update(user);
         return user;
+    }
+
+    public void forgotPassword(String email) {
+        validateEmail(email);
+        ensureEmailServiceAvailable();
+
+        User user = userDAO.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Aucun compte trouve avec cet email."));
+
+        if (user.isSuspended()) {
+            throw new IllegalArgumentException("Compte suspendu. Contactez l'administrateur.");
+        }
+
+        String code = generatePasswordResetCode();
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiresAt = now.plusMinutes(VERIFICATION_TTL_MINUTES);
+
+        userDAO.updatePasswordResetChallenge(user.getUserId(), code, expiresAt);
+        user.setPasswordResetToken(code);
+        user.setPasswordResetExpiresAt(expiresAt);
+
+        try {
+            emailService.sendPasswordResetEmail(user, code, expiresAt);
+        } catch (RuntimeException e) {
+            LOG.warning("[AUTH] Password reset email send failed for userId=" + user.getUserId() + ": " + e.getMessage());
+            throw e;
+        }
+    }
+
+    public void resetPassword(String code, String newPlainPassword) {
+        if (code == null || code.isBlank()) {
+            throw new IllegalArgumentException("Le code de reinitialisation est requis.");
+        }
+        validateVerificationCode(code);
+        validatePasswordStrength(newPlainPassword);
+
+        User user = userDAO.findByPasswordResetToken(code)
+                .orElseThrow(() -> new IllegalArgumentException("Code de reinitialisation invalide."));
+
+        LocalDateTime expiresAt = user.getPasswordResetExpiresAt();
+        if (expiresAt == null || expiresAt.isBefore(LocalDateTime.now())) {
+            throw new IllegalArgumentException("Code de reinitialisation expire.");
+        }
+
+        userDAO.updatePassword(user.getUserId(), PasswordUtils.hash(newPlainPassword));
+        user.setPasswordResetToken(null);
+        user.setPasswordResetExpiresAt(null);
     }
 
     private void validateRegistrationInput(String username, String email, String plainPassword) {
@@ -346,6 +385,12 @@ public class AuthService {
     }
 
     private String generateVerificationCode() {
+        int bound = (int) Math.pow(10, VERIFICATION_CODE_LENGTH);
+        int value = secureRandom.nextInt(bound);
+        return String.format("%0" + VERIFICATION_CODE_LENGTH + "d", value);
+    }
+
+    private String generatePasswordResetCode() {
         int bound = (int) Math.pow(10, VERIFICATION_CODE_LENGTH);
         int value = secureRandom.nextInt(bound);
         return String.format("%0" + VERIFICATION_CODE_LENGTH + "d", value);

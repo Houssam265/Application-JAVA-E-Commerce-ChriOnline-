@@ -56,6 +56,7 @@ public class Server {
         UserDAO        userDAO        = new UserDAO();
         userDAO.ensureEmailVerificationSchema();
         userDAO.ensureLoginIpVerificationSchema();
+        userDAO.ensurePasswordResetSchema();
         SessionManager sessionManager = new SessionManager(userDAO);
         AuthService    authService    = new AuthService(userDAO);
         ProductService productService = new ProductService();

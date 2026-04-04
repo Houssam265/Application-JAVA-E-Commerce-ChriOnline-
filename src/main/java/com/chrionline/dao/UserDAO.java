@@ -57,6 +57,13 @@ public class UserDAO {
                 "ALTER TABLE users ADD COLUMN login_ip_verification_pending_ip VARCHAR(64) NULL");
     }
 
+    public void ensurePasswordResetSchema() {
+        ensureColumn("password_reset_token",
+                "ALTER TABLE users ADD COLUMN password_reset_token VARCHAR(64) NULL");
+        ensureColumn("password_reset_expires_at",
+                "ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME NULL");
+    }
+
     public User save(User user) {
         final String sql = """
             INSERT INTO users (
@@ -65,8 +72,8 @@ public class UserDAO {
                 email_verification_expires_at, email_verification_sent_at,
                 trusted_login_ip, login_ip_verification_code,
                 login_ip_verification_expires_at, login_ip_verification_sent_at,
-                login_ip_verification_pending_ip
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                login_ip_verification_pending_ip, password_reset_token, password_reset_expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
         try (PreparedStatement ps = conn().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -84,6 +91,8 @@ public class UserDAO {
             setTimestamp(ps, 12, user.getLoginIpVerificationExpiresAt());
             setTimestamp(ps, 13, user.getLoginIpVerificationSentAt());
             ps.setString(14, user.getLoginIpVerificationPendingIp());
+            ps.setString(15, user.getPasswordResetToken());
+            setTimestamp(ps, 16, user.getPasswordResetExpiresAt());
             ps.executeUpdate();
 
             try (ResultSet generated = ps.getGeneratedKeys()) {
@@ -123,6 +132,34 @@ public class UserDAO {
                 "UserDAO.existsByUsername failed for username='" + username + "': ");
     }
 
+    public Optional<User> findByPasswordResetToken(String token) {
+        return findOne("SELECT * FROM users WHERE password_reset_token = ?", ps -> ps.setString(1, token),
+                "UserDAO.findByPasswordResetToken failed for token='" + token + "': ");
+    }
+
+    public void updatePassword(int userId, String newPasswordHash) {
+        final String sql = "UPDATE users SET password_hash = ?, password_reset_token = NULL, password_reset_expires_at = NULL WHERE user_id = ?";
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, newPasswordHash);
+            ps.setInt(2, userId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.updatePassword failed for userId=" + userId + ": " + e.getMessage(), e);
+        }
+    }
+
+    public void updatePasswordResetChallenge(int userId, String token, LocalDateTime expiresAt) {
+        final String sql = "UPDATE users SET password_reset_token = ?, password_reset_expires_at = ? WHERE user_id = ?";
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, token);
+            setTimestamp(ps, 2, expiresAt);
+            ps.setInt(3, userId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.updatePasswordResetChallenge failed for userId=" + userId + ": " + e.getMessage(), e);
+        }
+    }
+
     public void update(User user) {
         final String sql = """
             UPDATE users
@@ -136,7 +173,9 @@ public class UserDAO {
                    login_ip_verification_code = ?,
                    login_ip_verification_expires_at = ?,
                    login_ip_verification_sent_at = ?,
-                   login_ip_verification_pending_ip = ?
+                   login_ip_verification_pending_ip = ?,
+                   password_reset_token = ?,
+                   password_reset_expires_at = ?
              WHERE user_id = ?
             """;
 
@@ -152,22 +191,12 @@ public class UserDAO {
             setTimestamp(ps, 9, user.getLoginIpVerificationExpiresAt());
             setTimestamp(ps, 10, user.getLoginIpVerificationSentAt());
             ps.setString(11, user.getLoginIpVerificationPendingIp());
-            ps.setInt(12, user.getUserId());
+            ps.setString(12, user.getPasswordResetToken());
+            setTimestamp(ps, 13, user.getPasswordResetExpiresAt());
+            ps.setInt(14, user.getUserId());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("UserDAO.update failed for userId=" + user.getUserId() + ": " + e.getMessage(), e);
-        }
-    }
-
-    public void updatePassword(int userId, String newPasswordHash) {
-        final String sql = "UPDATE users SET password_hash = ? WHERE user_id = ?";
-
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
-            ps.setString(1, newPasswordHash);
-            ps.setInt(2, userId);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            throw new RuntimeException("UserDAO.updatePassword failed for userId=" + userId + ": " + e.getMessage(), e);
         }
     }
 
@@ -383,6 +412,8 @@ public class UserDAO {
         u.setLoginIpVerificationSentAt(getLocalDateTimeOrNull(rs, "login_ip_verification_sent_at"));
         u.setLoginIpVerificationPendingIp(getStringOrNull(rs, "login_ip_verification_pending_ip"));
         u.setCreatedAt(getLocalDateTimeOrNull(rs, "created_at"));
+        u.setPasswordResetToken(getStringOrNull(rs, "password_reset_token"));
+        u.setPasswordResetExpiresAt(getLocalDateTimeOrNull(rs, "password_reset_expires_at"));
         return u;
     }
 

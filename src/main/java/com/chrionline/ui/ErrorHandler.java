@@ -79,6 +79,10 @@ public final class ErrorHandler {
         showDialog(title, message, Color.web("#ef4444"), "❌");
     }
 
+    public static void showInfoDialog(String title, String message) {
+        showDialog(title, message, Color.web("#10b981"), "✅");
+    }
+
     public static void showWarningDialog(String title, String message) {
         showDialog(title, message, Color.web("#f59e0b"), "⚠");
     }

@@ -29,6 +29,14 @@ public final class SceneManager {
         loadScene("/fxml/Register.fxml", "ChriOnline - Inscription");
     }
 
+    public static void showForgotPasswordRequest() {
+        loadScene("/fxml/ForgotPasswordRequest.fxml", "ChriOnline - Forgot Password");
+    }
+
+    public static void showResetPassword() {
+        loadScene("/fxml/ResetPassword.fxml", "ChriOnline - Reset Password");
+    }
+
     public static void showEmailVerification(String email) {
         showEmailVerification(email, EmailVerificationController.VerificationPurpose.ACCOUNT_EMAIL);
     }
