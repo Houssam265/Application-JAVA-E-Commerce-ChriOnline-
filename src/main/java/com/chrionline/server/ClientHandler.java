@@ -74,8 +74,12 @@ public class ClientHandler implements Runnable {
     private static final int  MAX_LOGIN_ATTEMPTS = 12;  // Increased to 12 for progressive security
     private static final long LOGIN_WINDOW_MS    = 60_000L;   // 1 minute
     private static final long LOGIN_LOCKOUT_MS   = 5 * 60_000L; // 5 minutes
+    private static final long ORDER_REPLAY_WINDOW_MS = 2 * 60_000L;
+    private static final long PAYMENT_REPLAY_WINDOW_MS = 2 * 60_000L;
     private static final ConcurrentMap<String, AttemptState> LOGIN_ATTEMPTS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Long> BLOCKED_IPS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, Long> SEEN_ORDER_REQUESTS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, Long> SEEN_PAYMENT_REQUESTS = new ConcurrentHashMap<>();
 
     private static final class AttemptState {
         int failures;
@@ -363,6 +367,90 @@ public class ClientHandler implements Runnable {
             return;
         }
         LOG.warn("[AUDIT] action={} status=ERROR userId={} details={}", action, userId, details);
+    }
+
+    private Response validateReplayProtectedPayment(Request req, Integer userId, Integer orderId) {
+        String requestId = req.getRequestId();
+        Long timestamp = req.getTimestamp();
+        long now = System.currentTimeMillis();
+
+        if (requestId == null || requestId.isBlank()) {
+            logActionError("PAYMENT_REPLAY_CHECK", userId, "Missing requestId");
+            return Response.error("Requete de paiement invalide: requestId manquant.");
+        }
+        if (timestamp == null || timestamp <= 0L) {
+            logActionError("PAYMENT_REPLAY_CHECK", userId, "Missing timestamp");
+            return Response.error("Requete de paiement invalide: timestamp manquant.");
+        }
+
+        cleanupSeenPaymentRequests(now);
+
+        long drift = Math.abs(now - timestamp);
+        if (drift > PAYMENT_REPLAY_WINDOW_MS) {
+            logActionError("PAYMENT_REPLAY_CHECK", userId,
+                    "Expired payment request requestId=" + requestId + " orderId=" + orderId + " driftMs=" + drift);
+            return Response.error("Requete de paiement expiree ou horodatage invalide.");
+        }
+
+        String replayKey = (userId == null ? 0 : userId) + ":" + requestId;
+        Long previous = SEEN_PAYMENT_REQUESTS.putIfAbsent(replayKey, now);
+        if (previous != null) {
+            logActionError("PAYMENT_REPLAY_CHECK", userId,
+                    "Replay detected requestId=" + requestId + " orderId=" + orderId);
+            return Response.error("Requete de paiement dupliquee detectee.");
+        }
+
+        logActionSuccess("PAYMENT_REPLAY_CHECK", userId,
+                "Accepted requestId=" + requestId + " orderId=" + orderId);
+        return null;
+    }
+
+    private Response validateReplayProtectedPlaceOrder(Request req, Integer userId) {
+        String requestId = req.getRequestId();
+        Long timestamp = req.getTimestamp();
+        long now = System.currentTimeMillis();
+
+        if (requestId == null || requestId.isBlank()) {
+            logActionError("PLACE_ORDER_REPLAY_CHECK", userId, "Missing requestId");
+            return Response.error("Requete de commande invalide: requestId manquant.");
+        }
+        if (timestamp == null || timestamp <= 0L) {
+            logActionError("PLACE_ORDER_REPLAY_CHECK", userId, "Missing timestamp");
+            return Response.error("Requete de commande invalide: timestamp manquant.");
+        }
+
+        cleanupSeenRequests(SEEN_ORDER_REQUESTS, now, ORDER_REPLAY_WINDOW_MS);
+
+        long drift = Math.abs(now - timestamp);
+        if (drift > ORDER_REPLAY_WINDOW_MS) {
+            logActionError("PLACE_ORDER_REPLAY_CHECK", userId,
+                    "Expired place-order request requestId=" + requestId + " driftMs=" + drift);
+            return Response.error("Requete de commande expiree ou horodatage invalide.");
+        }
+
+        String replayKey = (userId == null ? 0 : userId) + ":" + requestId;
+        Long previous = SEEN_ORDER_REQUESTS.putIfAbsent(replayKey, now);
+        if (previous != null) {
+            logActionError("PLACE_ORDER_REPLAY_CHECK", userId,
+                    "Replay detected requestId=" + requestId);
+            return Response.error("Requete de commande dupliquee detectee.");
+        }
+
+        logActionSuccess("PLACE_ORDER_REPLAY_CHECK", userId,
+                "Accepted requestId=" + requestId);
+        return null;
+    }
+
+    private void cleanupSeenPaymentRequests(long now) {
+        cleanupSeenRequests(SEEN_PAYMENT_REQUESTS, now, PAYMENT_REPLAY_WINDOW_MS);
+    }
+
+    private void cleanupSeenRequests(ConcurrentMap<String, Long> requests, long now, long windowMs) {
+        for (Map.Entry<String, Long> entry : requests.entrySet()) {
+            if (now - entry.getValue() > windowMs) {
+                requests.remove(entry.getKey(), entry.getValue());
+            }
+        }
     }
 
     // ── AUTH handlers ─────────────────────────────────────────────────────────
@@ -780,6 +868,10 @@ public class ClientHandler implements Runnable {
             int userId = sessionManager.getUserFromToken(req.getToken())
                     .map(User::getUserId)
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            Response replayValidation = validateReplayProtectedPlaceOrder(req, userId);
+            if (replayValidation != null) {
+                return replayValidation;
+            }
             com.chrionline.model.Order order = orderService.placeOrderFromCart(userId);
             sendUdpNotification(
                     "ORDER_VALIDATED",
@@ -824,6 +916,11 @@ public class ClientHandler implements Runnable {
                     || expiry == null || expiry.isBlank()
                     || cvv == null || cvv.isBlank()) {
                 return Response.error("Champs requis : order_id, card_number, expiry (MM/YY), cvv.");
+            }
+
+            Response replayValidation = validateReplayProtectedPayment(req, userId, orderId);
+            if (replayValidation != null) {
+                return replayValidation;
             }
 
             Map<String, Object> result = paymentService.processSimulatedCardPayment(

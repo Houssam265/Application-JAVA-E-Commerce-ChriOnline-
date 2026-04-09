@@ -2,6 +2,7 @@ package com.chrionline.client;
 
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
+import com.chrionline.security.TlsSupport;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -10,10 +11,10 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 
 /**
  * Couche réseau TCP du client ChriOnline.
@@ -101,12 +102,15 @@ public class Client {
     }
 
     private void connectOnce() throws IOException {
-        socket = new Socket();
-        socket.connect(new InetSocketAddress(HOST, PORT), TIMEOUT_MS);
-        socket.setSoTimeout(TIMEOUT_MS);
+        try {
+            socket = TlsSupport.createClientSocket(HOST, PORT, TIMEOUT_MS);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Impossible d'etablir la connexion TLS avec le serveur.", e);
+        }
 
         writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
         reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+        LOG.info("Connexion client etablie vers {}:{} avec {}", HOST, PORT, TlsSupport.describeClientConfiguration());
         startUdpListener();
     }
 

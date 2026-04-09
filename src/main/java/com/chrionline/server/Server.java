@@ -1,6 +1,7 @@
 package com.chrionline.server;
 
 import com.chrionline.dao.UserDAO;
+import com.chrionline.security.TlsSupport;
 import com.chrionline.service.AuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
@@ -12,6 +13,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
@@ -78,8 +80,9 @@ public class Server {
         int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
         ExecutorService pool = Executors.newFixedThreadPool(poolSize);
 
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
-            LOG.info("Serveur TCP demarre sur le port " + port + " (pool=" + poolSize + " threads)");
+        try (ServerSocket serverSocket = TlsSupport.createServerSocket(port)) {
+            LOG.info("Serveur TCP securise demarre sur le port {} (pool={} threads)", port, poolSize);
+            LOG.info("{}", TlsSupport.describeServerConfiguration());
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> shutdown(serverSocket, pool)));
 
@@ -97,7 +100,7 @@ public class Server {
                 }
             }
 
-        } catch (IOException e) {
+        } catch (IOException | GeneralSecurityException e) {
             LOG.error("Impossible de demarrer le serveur", e);
         } finally {
             udpNotificationService.close();

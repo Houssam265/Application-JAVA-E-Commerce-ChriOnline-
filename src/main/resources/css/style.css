@@ -463,6 +463,12 @@
     -fx-padding: 3px 0 0 5px;
 }
 
+.helper-label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #64748b;
+    -fx-padding: 1px 0 0 5px;
+}
+
 .global-error {
     -fx-font-size: 14px;
     -fx-font-weight: 600;

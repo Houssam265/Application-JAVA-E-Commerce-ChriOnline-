@@ -4,6 +4,7 @@ import org.json.JSONObject;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Représente un message envoyé du CLIENT vers le SERVEUR via TCP.
@@ -25,6 +26,12 @@ public class Request {
     /** Session token (null for LOGIN / REGISTER). */
     private String token;
 
+    /** Unique request identifier used for anti-replay protection. */
+    private String requestId;
+
+    /** Client-side timestamp in epoch milliseconds. */
+    private Long timestamp;
+
     // ── Constructeurs ────────────────────────────────────────────────────────
 
     /** No-arg constructor required for Gson. */
@@ -34,6 +41,7 @@ public class Request {
         this.action  = action;
         this.payload = payload != null ? payload.toMap() : Collections.emptyMap();
         this.token   = token;
+        ensureMetadata();
     }
 
     /** Variante sans token (LOGIN / REGISTER). */
@@ -46,6 +54,7 @@ public class Request {
         this.action = action;
         this.payload = payload;
         this.token = token;
+        ensureMetadata();
     }
 
     // ── Sérialisation ────────────────────────────────────────────────────────
@@ -55,10 +64,13 @@ public class Request {
      * Le '\n' final sert de délimiteur de message (newline-delimited protocol).
      */
     public String toJson() {
+        ensureMetadata();
         JSONObject obj = new JSONObject();
         obj.put(MessageProtocol.KEY_ACTION,  action);
         obj.put(MessageProtocol.KEY_PAYLOAD, payload != null ? new JSONObject(payload) : new JSONObject());
         obj.put(MessageProtocol.KEY_TOKEN,   token == null ? JSONObject.NULL : token);
+        obj.put("requestId", requestId);
+        obj.put("timestamp", timestamp);
         return obj.toString() + "\n";
     }
 
@@ -72,6 +84,12 @@ public class Request {
 
     public String getToken()   { return token;   }
     public void   setToken(String token) { this.token = token; }
+
+    public String getRequestId() { return requestId; }
+    public void setRequestId(String requestId) { this.requestId = requestId; }
+
+    public Long getTimestamp() { return timestamp; }
+    public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
 
     /** Safe get of payload value as Integer (e.g. product_id, category_id). */
     public Integer getPayloadInt(String key) {
@@ -92,5 +110,14 @@ public class Request {
     @Override
     public String toString() {
         return toJson().trim();
+    }
+
+    private void ensureMetadata() {
+        if (requestId == null || requestId.isBlank()) {
+            requestId = UUID.randomUUID().toString();
+        }
+        if (timestamp == null || timestamp <= 0L) {
+            timestamp = System.currentTimeMillis();
+        }
     }
 }

@@ -1,5 +1,8 @@
 # Protocole TCP ChriOnline
 
+Le canal client/serveur est protege par TLS. Les messages JSON ci-dessous circulent
+dans une session TLS et non plus sur un socket TCP en clair.
+
 ## Format general
 Chaque message TCP est un objet JSON sur une seule ligne (newline-delimited).
 
@@ -103,8 +106,16 @@ Reponse possible si l'email est correct mais qu'une nouvelle IP doit etre verifi
 ### Commandes
 - `PLACE_ORDER`
 ```json
-{"action":"PLACE_ORDER","payload":{"payment_method":"SIMULATED"},"token":"<session_token>"}
+{"action":"PLACE_ORDER","payload":{"payment_method":"SIMULATED"},"token":"<session_token>","requestId":"<uuid>","timestamp":1712678400000}
 ```
+Pour limiter les attaques par rejeu, chaque requete `PLACE_ORDER` doit contenir :
+- `requestId` : identifiant unique de requete
+- `timestamp` : horodatage client en millisecondes epoch
+
+Le serveur rejette la commande si :
+- le `requestId` est absent
+- le `timestamp` est trop ancien ou incoherent
+- le meme `requestId` est recu une seconde fois pour le meme utilisateur
 - `GET_ORDERS`
 ```json
 {"action":"GET_ORDERS","payload":{},"token":"<session_token>"}
@@ -121,8 +132,16 @@ Reponse possible si l'email est correct mais qu'une nouvelle IP doit etre verifi
 ### Paiement
 - `PAYMENT`
 ```json
-{"action":"PAYMENT","payload":{"order_id":123,"method":"SIMULATED","amount":199.99},"token":"<session_token>"}
+{"action":"PAYMENT","payload":{"order_id":123,"method":"SIMULATED","amount":199.99},"token":"<session_token>","requestId":"<uuid>","timestamp":1712678400000}
 ```
+Pour limiter les attaques par rejeu, chaque requete `PAYMENT` doit contenir :
+- `requestId` : identifiant unique de requete
+- `timestamp` : horodatage client en millisecondes epoch
+
+Le serveur rejette un paiement si :
+- le `requestId` est absent
+- le `timestamp` est trop ancien ou incoherent
+- le meme `requestId` est recu une seconde fois pour le meme utilisateur
 
 ### Notifications
 - `GET_NOTIFICATIONS`

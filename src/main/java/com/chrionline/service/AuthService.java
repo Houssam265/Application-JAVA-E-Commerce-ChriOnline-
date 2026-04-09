@@ -214,7 +214,7 @@ public class AuthService {
             throw new IllegalArgumentException("Current password is incorrect");
         }
 
-        validatePasswordStrength(newPlainPassword);
+        validatePasswordStrength(user.getUsername(), newPlainPassword);
         userDAO.updatePassword(userId, PasswordUtils.hash(newPlainPassword));
     }
 
@@ -281,10 +281,10 @@ public class AuthService {
             throw new IllegalArgumentException("Le code de reinitialisation est requis.");
         }
         validateVerificationCode(code);
-        validatePasswordStrength(newPlainPassword);
 
         User user = userDAO.findByPasswordResetToken(code)
                 .orElseThrow(() -> new IllegalArgumentException("Code de reinitialisation invalide."));
+        validatePasswordStrength(user.getUsername(), newPlainPassword);
 
         LocalDateTime expiresAt = user.getPasswordResetExpiresAt();
         if (expiresAt == null || expiresAt.isBefore(LocalDateTime.now())) {
@@ -299,7 +299,7 @@ public class AuthService {
     private void validateRegistrationInput(String username, String email, String plainPassword) {
         validateUsername(username);
         validateEmail(email);
-        validatePasswordStrength(plainPassword);
+        validatePasswordStrength(username, plainPassword);
 
         if (userDAO.existsByEmail(email)) {
             throw new IllegalArgumentException("Email already in use");
@@ -413,10 +413,14 @@ public class AuthService {
         }
     }
 
-    private void validatePasswordStrength(String plainPassword) {
+    private void validatePasswordStrength(String username, String plainPassword) {
         if (!PasswordUtils.isStrongEnough(plainPassword)) {
             throw new IllegalArgumentException(
-                    "Password must be at least 8 characters and contain letters and digits");
+                    "Le mot de passe doit contenir au moins 8 caracteres, une majuscule, une minuscule, un chiffre et un caractere special.");
+        }
+        if (PasswordUtils.containsUsername(plainPassword, username)) {
+            throw new IllegalArgumentException(
+                    "Le mot de passe ne doit pas contenir le nom d'utilisateur.");
         }
     }
 

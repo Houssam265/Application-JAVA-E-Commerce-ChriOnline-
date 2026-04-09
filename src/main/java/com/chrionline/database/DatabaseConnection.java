@@ -7,16 +7,15 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
-
 public class DatabaseConnection {
 
     private static final Logger LOG = LogManager.getLogger(DatabaseConnection.class);
 
-    private static final String URL      = "jdbc:mysql://localhost:3306/chrionline"
-                                         + "?useSSL=false"
-                                         + "&serverTimezone=UTC"
-                                         + "&allowPublicKeyRetrieval=true"
-                                         + "&characterEncoding=utf8";
+    private static final String URL = "jdbc:mysql://localhost:3306/chrionline"
+        + "?useSSL=false"
+        + "&serverTimezone=UTC"
+        + "&allowPublicKeyRetrieval=true"
+        + "&characterEncoding=utf8";
     private static final String USERNAME = "root";
     private static final String PASSWORD = "";
 
@@ -28,18 +27,16 @@ public class DatabaseConnection {
         openConnection();
     }
 
-  
     public static DatabaseConnection getInstance() {
-        if (instance == null) {                         // first check (no lock)
+        if (instance == null) {
             synchronized (DatabaseConnection.class) {
-                if (instance == null) {                 // second check (inside lock)
+                if (instance == null) {
                     instance = new DatabaseConnection();
                 }
             }
         }
         return instance;
     }
-
 
     public Connection getConnection() {
         try {
@@ -68,23 +65,23 @@ public class DatabaseConnection {
         }
     }
 
-
     private void openConnection() {
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
-
             connection = DriverManager.getConnection(URL, USERNAME, PASSWORD);
             LOG.info("[DB] Connection established successfully -> {}", URL);
-
         } catch (ClassNotFoundException e) {
             throw new RuntimeException(
                 "[DB] MySQL JDBC driver not found on the classpath. "
-                + "Add mysql-connector-j to pom.xml: " + e.getMessage(), e);
-
+                    + "Add mysql-connector-j to pom.xml: " + e.getMessage(),
+                e
+            );
         } catch (SQLException e) {
             throw new RuntimeException(
                 "[DB] Unable to connect to the database at " + URL
-                + " — check credentials and that MySQL is running: " + e.getMessage(), e);
+                    + " - check credentials and that MySQL is running: " + e.getMessage(),
+                e
+            );
         }
     }
 }
