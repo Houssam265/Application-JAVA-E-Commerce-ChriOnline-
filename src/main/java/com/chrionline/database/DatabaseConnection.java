@@ -1,11 +1,16 @@
 package com.chrionline.database;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
 
 public class DatabaseConnection {
+
+    private static final Logger LOG = LogManager.getLogger(DatabaseConnection.class);
 
     private static final String URL      = "jdbc:mysql://localhost:3306/chrionline"
                                          + "?useSSL=false"
@@ -39,7 +44,7 @@ public class DatabaseConnection {
     public Connection getConnection() {
         try {
             if (connection == null || connection.isClosed()) {
-                System.out.println("[DB] Connection is not open — reconnecting …");
+                LOG.info("[DB] Connection is not open - reconnecting");
                 openConnection();
             }
         } catch (SQLException e) {
@@ -53,10 +58,10 @@ public class DatabaseConnection {
             try {
                 if (!connection.isClosed()) {
                     connection.close();
-                    System.out.println("[DB] Connection closed successfully.");
+                    LOG.info("[DB] Connection closed successfully.");
                 }
             } catch (SQLException e) {
-                System.err.println("[DB] Error while closing connection: " + e.getMessage());
+                LOG.warn("[DB] Error while closing connection: {}", e.getMessage(), e);
             } finally {
                 connection = null;
             }
@@ -69,7 +74,7 @@ public class DatabaseConnection {
             Class.forName("com.mysql.cj.jdbc.Driver");
 
             connection = DriverManager.getConnection(URL, USERNAME, PASSWORD);
-            System.out.println("[DB] Connection established successfully  →  " + URL);
+            LOG.info("[DB] Connection established successfully -> {}", URL);
 
         } catch (ClassNotFoundException e) {
             throw new RuntimeException(

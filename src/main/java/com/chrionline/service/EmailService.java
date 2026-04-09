@@ -9,15 +9,16 @@ import jakarta.mail.Session;
 import jakarta.mail.Transport;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Properties;
-import java.util.logging.Logger;
 
 public class EmailService {
 
-    private static final Logger LOG = Logger.getLogger(EmailService.class.getName());
+    private static final Logger LOG = LogManager.getLogger(EmailService.class);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private final String host = readConfig("CHRIONLINE_SMTP_HOST", "chrionline.smtp.host", "smtp.gmail.com");
@@ -98,7 +99,7 @@ public class EmailService {
 
     private void ensureConfigured() {
         if (!isConfigured()) {
-            LOG.warning("[EMAIL] SMTP non configure. " + getConfigurationHelp());
+            LOG.warn("[EMAIL] SMTP non configure. {}", getConfigurationHelp());
             throw new IllegalStateException("Service email non configure. " + getConfigurationHelp());
         }
     }

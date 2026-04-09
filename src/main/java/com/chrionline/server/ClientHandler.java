@@ -12,12 +12,11 @@ import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
 import com.chrionline.service.RecaptchaVerificationService;
-import com.chrionline.service.LogService;
-import com.chrionline.dao.LogDAO;
-import com.chrionline.model.ServerLog;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -39,8 +38,6 @@ import java.util.UUID;
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Handles one TCP client connection on its own thread.
@@ -57,7 +54,7 @@ import java.util.logging.Logger;
  */
 public class ClientHandler implements Runnable {
 
-    private static final Logger LOG  = Logger.getLogger(ClientHandler.class.getName());
+    private static final Logger LOG  = LogManager.getLogger(ClientHandler.class);
     private static final Gson   GSON = new GsonBuilder()
         .registerTypeAdapter(java.time.LocalDateTime.class, new com.google.gson.JsonSerializer<java.time.LocalDateTime>() {
             @Override
@@ -95,7 +92,6 @@ public class ClientHandler implements Runnable {
     private final PaymentService paymentService;
     private final AdminService   adminService;
     private final UDPNotificationService udpNotificationService;
-    private final LogService     logService;
     private final RecaptchaVerificationService recaptchaVerificationService = new RecaptchaVerificationService();
 
     // ── Per-connection state ──────────────────────────────────────────────────
@@ -127,7 +123,6 @@ public class ClientHandler implements Runnable {
                          OrderService orderService,
                          PaymentService paymentService,
                          AdminService adminService,
-                         LogService logService,
                          UDPNotificationService udpNotificationService) {
         this.socket         = socket;
         this.clientAddress  = socket.getInetAddress();
@@ -138,20 +133,7 @@ public class ClientHandler implements Runnable {
         this.orderService   = orderService;
         this.paymentService = paymentService;
         this.adminService   = adminService;
-        this.logService     = logService;
         this.udpNotificationService = udpNotificationService;
-    }
-
-    public ClientHandler(Socket socket,
-                         AuthService authService,
-                         SessionManager sessionManager,
-                         ProductService productService,
-                         CartService cartService,
-                         OrderService orderService,
-                         PaymentService paymentService,
-                         AdminService adminService,
-                         UDPNotificationService udpNotificationService) {
-        this(socket, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, new LogService(new LogDAO()), udpNotificationService);
     }
 
     // ── Runnable ──────────────────────────────────────────────────────────────
@@ -159,7 +141,7 @@ public class ClientHandler implements Runnable {
     @Override
     public void run() {
         String clientId = socket.getRemoteSocketAddress().toString();
-        LOG.info("Client connecte: " + clientId);
+        LOG.info("Client connecte: {}", clientId);
 
         try (Socket s = socket;
              BufferedReader in = new BufferedReader(
@@ -173,18 +155,18 @@ public class ClientHandler implements Runnable {
             while ((line = in.readLine()) != null) {
                 String msg = line.trim();
                 if (msg.isEmpty()) continue;
-                LOG.info("[" + clientId + "] << " + msg);
+                LOG.info("[{}] << {}", clientId, msg);
 
                 Response response = processRequest(msg);
                 String   jsonOut  = GSON.toJson(response);
                 out.println(jsonOut);
-                LOG.info("[" + clientId + "] >> " + jsonOut);
+                LOG.info("[{}] >> {}", clientId, jsonOut);
             }
 
         } catch (SocketException e) {
-            LOG.log(Level.INFO, "Connexion terminee avec " + clientId + ": " + e.getMessage());
+            LOG.info("Connexion terminee avec {}: {}", clientId, e.getMessage());
         } catch (IOException e) {
-            LOG.log(Level.WARNING, "Erreur reseau avec " + clientId + ": " + e.getMessage(), e);
+            LOG.warn("Erreur reseau avec {}: {}", clientId, e.getMessage(), e);
         } finally {
             this.out = null;
             if (connectionToken != null) {
@@ -195,7 +177,7 @@ public class ClientHandler implements Runnable {
                 ClientRegistry.getInstance().unregister(connectedUserId);
                 connectedUserId = 0;
             }
-            LOG.info("Client deconnecte: " + clientId);
+            LOG.info("Client deconnecte: {}", clientId);
         }
     }
 
@@ -210,7 +192,7 @@ public class ClientHandler implements Runnable {
         try {
             req = GSON.fromJson(jsonLine, Request.class);
         } catch (JsonSyntaxException e) {
-            LOG.warning("Invalid JSON received: " + e.getMessage());
+            LOG.warn("Invalid JSON received: {}", e.getMessage());
             return Response.error("Invalid JSON");
         }
 
@@ -263,12 +245,6 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_GET_CATEGORIES:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetCategories(req);
-            case MessageProtocol.GET_LOGS:
-                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
-                return handleGetLogs(req);
-            case MessageProtocol.GET_LOGS_BY_USER:
-                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
-                return handleGetLogsByUser(req);
 
             // ── Cart (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_GET_CART:
@@ -363,10 +339,30 @@ public class ClientHandler implements Runnable {
         if (udpNotificationService == null) return;
         java.net.InetAddress targetAddress = ClientRegistry.getInstance().getAddress(userId);
         if (targetAddress == null) {
-            LOG.fine("[UDP] userId=" + userId + " not connected — notification skipped.");
+            LOG.debug("[UDP] userId={} not connected - notification skipped.", userId);
             return;
         }
         udpNotificationService.sendNotification(targetAddress, type, message, orderId);
+    }
+
+    private void logActionSuccess(String action, Integer userId) {
+        logActionSuccess(action, userId, null);
+    }
+
+    private void logActionSuccess(String action, Integer userId, String details) {
+        if (details == null || details.isBlank()) {
+            LOG.info("[AUDIT] action={} status=SUCCESS userId={}", action, userId);
+            return;
+        }
+        LOG.info("[AUDIT] action={} status=SUCCESS userId={} details={}", action, userId, details);
+    }
+
+    private void logActionError(String action, Integer userId, String details) {
+        if (details == null || details.isBlank()) {
+            LOG.warn("[AUDIT] action={} status=ERROR userId={}", action, userId);
+            return;
+        }
+        LOG.warn("[AUDIT] action={} status=ERROR userId={} details={}", action, userId, details);
     }
 
     // ── AUTH handlers ─────────────────────────────────────────────────────────
@@ -435,16 +431,16 @@ public class ClientHandler implements Runnable {
             connectedUserId = user.getUserId();
             ClientRegistry.getInstance().register(user.getUserId(), clientAddress);
             Response r = new Response(true, "LOGIN_SUCCESS", payload, session.getToken());
-            logService.logSuccess("LOGIN", user.getUserId());
+            logActionSuccess("LOGIN", user.getUserId());
             clearLoginAttempts(key);
             return r;
 
         } catch (IllegalArgumentException e) {
             registerFailedLogin(key, nowMs);
-            logService.logError("LOGIN", null, "Invalid credentials from IP: " + clientAddress);
+            logActionError("LOGIN", null, "Invalid credentials from IP: " + clientAddress);
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[LOGIN] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[LOGIN] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de la connexion.");
         }
     }
@@ -481,13 +477,13 @@ public class ClientHandler implements Runnable {
             payload.put("emailVerified", false);
 
             Response r = Response.ok("REGISTER_SUCCESS", payload);
-            logService.logSuccess("REGISTER", user.getUserId());
+            logActionSuccess("REGISTER", user.getUserId());
             return r;
 
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[REGISTER] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[REGISTER] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de l'inscription.");
         }
     }
@@ -509,12 +505,12 @@ public class ClientHandler implements Runnable {
             payload.put("userId", user.getUserId());
             payload.put("email", user.getEmail());
             payload.put("emailVerified", true);
-            logService.logSuccess("VERIFY_EMAIL", user.getUserId());
+            logActionSuccess("VERIFY_EMAIL", user.getUserId());
             return Response.ok("EMAIL_VERIFIED", payload);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[VERIFY_EMAIL] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[VERIFY_EMAIL] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de la verification de l'email.");
         }
     }
@@ -549,7 +545,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[VERIFY_LOGIN_IP] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[VERIFY_LOGIN_IP] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de la verification de connexion.");
         }
     }
@@ -566,7 +562,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[RESEND_LOGIN_IP] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[RESEND_LOGIN_IP] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors du renvoi du code de verification.");
         }
     }
@@ -579,12 +575,12 @@ public class ClientHandler implements Runnable {
 
         try {
             authService.forgotPassword(email);
-            logService.logSuccess("FORGOT_PASSWORD", null);
+            logActionSuccess("FORGOT_PASSWORD", null);
             return Response.ok("PASSWORD_RESET_EMAIL_SENT", null);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[FORGOT_PASSWORD] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[FORGOT_PASSWORD] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de l'envoi de l'email de reinitialisation.");
         }
     }
@@ -601,12 +597,12 @@ public class ClientHandler implements Runnable {
 
         try {
             authService.resetPassword(token, newPassword);
-            logService.logSuccess("RESET_PASSWORD", null);
+            logActionSuccess("RESET_PASSWORD", null);
             return Response.ok("PASSWORD_RESET_SUCCESS", null);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[RESET_PASSWORD] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[RESET_PASSWORD] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de la reinitialisation du mot de passe.");
         }
     }
@@ -620,12 +616,12 @@ public class ClientHandler implements Runnable {
 
         try {
             authService.resendVerificationCode(email);
-            logService.logSuccess("RESEND_VERIFICATION_EMAIL", null);
+            logActionSuccess("RESEND_VERIFICATION_EMAIL", null);
             return Response.ok("VERIFICATION_EMAIL_RESENT", null);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[RESEND_VERIFICATION_EMAIL] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[RESEND_VERIFICATION_EMAIL] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors du renvoi du code.");
         }
     }
@@ -655,7 +651,7 @@ public class ClientHandler implements Runnable {
         List<?> products = productService.getProducts(categoryId, adminCatalog);
         Response r = Response.ok(products);
         if (user != null) {
-            logService.logSuccess("GET_PRODUCTS", user.getUserId());
+            logActionSuccess("GET_PRODUCTS", user.getUserId());
         }
         return r;
     }
@@ -695,7 +691,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[CART] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors du chargement du panier.");
         }
     }
@@ -713,12 +709,12 @@ public class ClientHandler implements Runnable {
             // Never trust client-provided price: server always reads product.price from DB
             cartService.addToCart(userId, productId, quantity);
             Response r = Response.ok("ADDED_TO_CART", cartService.getCartView(userId));
-            logService.logSuccess("ADD_TO_CART", userId);
+            logActionSuccess("ADD_TO_CART", userId);
             return r;
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[CART] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de l'ajout au panier.");
         }
     }
@@ -738,7 +734,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[CART] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de la mise à jour du panier.");
         }
     }
@@ -757,7 +753,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[CART] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de la suppression.");
         }
     }
@@ -772,7 +768,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[CART] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[CART] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors du vidage du panier.");
         }
     }
@@ -790,16 +786,16 @@ public class ClientHandler implements Runnable {
                     "Commande " + order.getOrderId() + " validee.",
                     String.valueOf(order.getOrderId()));
             Response r = Response.ok(order);
-            logService.logSuccess("PLACE_ORDER", userId);
-            logService.logSuccess("CHECKOUT", userId);
+            logActionSuccess("PLACE_ORDER", userId);
+            logActionSuccess("CHECKOUT", userId);
             return r;
         } catch (IllegalArgumentException e) {
             int uid = sessionManager.getUserFromToken(req.getToken()).map(User::getUserId).orElse(0);
             Integer u = uid > 0 ? uid : null;
-            logService.logError("PLACE_ORDER", u, e.getMessage());
+            logActionError("PLACE_ORDER", u, e.getMessage());
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[ORDER] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de la validation de la commande.");
         }
     }
@@ -839,16 +835,16 @@ public class ClientHandler implements Runnable {
                         "Paiement confirme pour la commande " + orderId + ".",
                         String.valueOf(orderId));
                 Response r = Response.ok("PAYMENT_OK", result);
-                logService.logSuccess("PAYMENT", userId);
+                logActionSuccess("PAYMENT", userId);
                 return r;
             }
             String msg = result.get("message") != null ? String.valueOf(result.get("message")) : "Paiement refusé.";
-            logService.logError("PAYMENT", userId, "Payment failed: " + msg);
+            logActionError("PAYMENT", userId, "Payment failed: " + msg);
             return Response.error(msg, result);
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[PAYMENT] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[PAYMENT] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors du paiement.");
         }
     }
@@ -881,7 +877,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[ORDER] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors du chargement des commandes.");
         }
     }
@@ -915,12 +911,12 @@ public class ClientHandler implements Runnable {
             });
 
             Response r = Response.ok("STATUS_UPDATED", null);
-            logService.logSuccess("UPDATE_ORDER_STATUS", admin.getUserId(), "new status: " + status);
+            logActionSuccess("UPDATE_ORDER_STATUS", admin.getUserId(), "new status: " + status);
             return r;
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[ORDER] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[ORDER] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de la mise à jour du statut.");
         }
     }
@@ -941,36 +937,10 @@ public class ClientHandler implements Runnable {
                     .map(Response::ok)
                     .orElse(Response.error("Order not found: " + orderId));
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[ORDER_DETAILS] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[ORDER_DETAILS] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors du chargement de la commande.");
         }
     }
-
-    private Response handleGetLogs(Request req) {
-        User admin = sessionManager.getUserFromToken(req.getToken())
-                .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-        if (!authService.isAdmin(admin)) {
-            return Response.error("Accès refusé (ADMIN uniquement).");
-        }
-        List<com.chrionline.model.ServerLog> logs = logService.getRecentLogs(50);
-        return Response.ok(logs);
-    }
-
-    private Response handleGetLogsByUser(Request req) {
-        User admin = sessionManager.getUserFromToken(req.getToken())
-                .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-        if (!authService.isAdmin(admin)) {
-            return Response.error("Accès refusé (ADMIN uniquement).");
-        }
-        Integer uid = req.getPayloadInt("user_id");
-        if (uid == null || uid <= 0) {
-            return Response.error("Missing user_id");
-        }
-        List<com.chrionline.model.ServerLog> logs = logService.getLogsByUser(uid);
-        return Response.ok(logs);
-    }
-
-    // ── PROFILE handlers ──────────────────────────────────────────────────
 
     /**
      * UPDATE_PROFILE — payload: "username", "email".
@@ -997,7 +967,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[PROFILE] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[PROFILE] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors de la mise à jour du profil.");
         }
     }
@@ -1023,7 +993,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[PASSWORD] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[PASSWORD] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors du changement de mot de passe.");
         }
     }
@@ -1120,7 +1090,7 @@ public class ClientHandler implements Runnable {
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "[ADMIN] Unexpected error: " + e.getMessage(), e);
+            LOG.warn("[ADMIN] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur admin.");
         }
     }

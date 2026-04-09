@@ -4,6 +4,8 @@ import com.chrionline.dao.UserDAO;
 import com.chrionline.database.DatabaseConnection;
 import com.chrionline.model.Session;
 import com.chrionline.model.User;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.sql.*;
 import java.time.LocalDateTime;
@@ -12,8 +14,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Manages user sessions for the ChriOnline server.
@@ -35,7 +35,7 @@ import java.util.logging.Logger;
  */
 public class SessionManager {
 
-    private static final Logger LOG = Logger.getLogger(SessionManager.class.getName());
+    private static final Logger LOG = LogManager.getLogger(SessionManager.class);
 
     /** Session duration: 30 minutes. */
     private static final long SESSION_DURATION_MINUTES = 30;
@@ -87,7 +87,7 @@ public class SessionManager {
         // 2. Put in runtime cache
         activeSessions.put(token, session);
 
-        LOG.info("[SESSION] Created for userId=" + user.getUserId() + " → token=" + token);
+        LOG.info("[SESSION] Created for userId={} -> token={}", user.getUserId(), token);
         return session;
     }
 
@@ -179,12 +179,12 @@ public class SessionManager {
             ps.setString(1, token);
             ps.executeUpdate();
         } catch (SQLException e) {
-            LOG.log(Level.WARNING, "[SESSION] invalidateSession DB update failed: " + e.getMessage(), e);
+            LOG.warn("[SESSION] invalidateSession DB update failed: {}", e.getMessage(), e);
         }
 
         // 2. Remove from cache
         activeSessions.remove(token);
-        LOG.info("[SESSION] Invalidated token=" + token);
+        LOG.info("[SESSION] Invalidated token={}", token);
     }
 
     /**
@@ -211,11 +211,11 @@ public class SessionManager {
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             removedFromDb = ps.executeUpdate();
         } catch (SQLException e) {
-            LOG.log(Level.WARNING, "[SESSION] cleanExpiredSessions DB delete failed: " + e.getMessage(), e);
+            LOG.warn("[SESSION] cleanExpiredSessions DB delete failed: {}", e.getMessage(), e);
         }
 
-        LOG.info("[SESSION] Cleanup done — removed from cache: " + removedFromCache
-                + ", removed from DB: " + removedFromDb);
+        LOG.info("[SESSION] Cleanup done - removed from cache: {}, removed from DB: {}",
+                removedFromCache, removedFromDb);
     }
 
     /**
@@ -283,7 +283,7 @@ public class SessionManager {
                 return Optional.of(s);
             }
         } catch (SQLException e) {
-            LOG.log(Level.WARNING, "[SESSION] findSessionInDb failed for token=" + token + ": " + e.getMessage(), e);
+            LOG.warn("[SESSION] findSessionInDb failed for token={}: {}", token, e.getMessage(), e);
             return Optional.empty();
         }
     }

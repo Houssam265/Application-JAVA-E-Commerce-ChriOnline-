@@ -2,6 +2,8 @@ package com.chrionline.client;
 
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -31,6 +33,8 @@ import java.nio.charset.StandardCharsets;
  * Pattern Singleton : une seule connexion TCP partagée entre tous les écrans.
  */
 public class Client {
+
+    private static final Logger LOG = LogManager.getLogger(Client.class);
 
     // ── Configuration ────────────────────────────────────────────────────────
     private static final String HOST            = "localhost";
@@ -136,7 +140,7 @@ public class Client {
             try {
                 udpListener.start();
             } catch (IOException e) {
-                System.err.println("[UDP] Notifications desactivees: " + e.getMessage());
+                LOG.warn("[UDP] Notifications desactivees: {}", e.getMessage(), e);
             }
         }
     }

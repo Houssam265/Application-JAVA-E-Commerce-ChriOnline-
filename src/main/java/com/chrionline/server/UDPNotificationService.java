@@ -1,6 +1,8 @@
 package com.chrionline.server;
 
 import com.google.gson.Gson;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -12,8 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * UDP notification sender (KAN-8).
@@ -26,7 +26,7 @@ public class UDPNotificationService implements Closeable {
     /** Legacy constant kept for API compatibility. */
     public static final int DEFAULT_PORT = 9090;
 
-    private static final Logger LOG = Logger.getLogger(UDPNotificationService.class.getName());
+    private static final Logger LOG = LogManager.getLogger(UDPNotificationService.class);
     private static final Gson GSON = new Gson();
 
     private final DatagramSocket socket;
@@ -58,9 +58,9 @@ public class UDPNotificationService implements Closeable {
         DatagramPacket packet = new DatagramPacket(data, data.length, address, clientPort);
         try {
             socket.send(packet);
-            LOG.info("[UDP] Sent " + type + " to " + address + ":" + clientPort);
+            LOG.info("[UDP] Sent {} to {}:{}", type, address, clientPort);
         } catch (IOException e) {
-            LOG.log(Level.FINE, "[UDP] Failed to send notification to " + address, e);
+            LOG.debug("[UDP] Failed to send notification to {}", address, e);
         }
     }
 

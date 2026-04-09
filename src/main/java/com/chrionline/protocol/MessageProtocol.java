@@ -62,7 +62,4 @@ public final class MessageProtocol {
     public static final String ACTION_ADMIN_UPDATE_CATEGORY = "UPDATE_CATEGORY";
     public static final String ACTION_ADMIN_DELETE_CATEGORY = "DELETE_CATEGORY";
 
-    // Logs (KAN-41)
-    public static final String GET_LOGS = "GET_LOGS";
-    public static final String GET_LOGS_BY_USER = "GET_LOGS_BY_USER";
 }

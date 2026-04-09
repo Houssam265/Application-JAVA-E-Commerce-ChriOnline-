@@ -2,10 +2,11 @@ package com.chrionline.service;
 
 import com.chrionline.dao.UserDAO;
 import com.chrionline.model.User;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.logging.Logger;
 
 /**
  * Business logic for user authentication and email verification.
@@ -15,7 +16,7 @@ public class AuthService {
     public static final String EMAIL_NOT_VERIFIED_MESSAGE =
             "Email non verifie. Entrez le code recu par email ou demandez un nouvel envoi.";
 
-    private static final Logger LOG = Logger.getLogger(AuthService.class.getName());
+    private static final Logger LOG = LogManager.getLogger(AuthService.class);
     private static final String EMAIL_REGEX = "^[\\w._%+\\-]+@[\\w.\\-]+\\.[a-zA-Z]{2,}$";
     private static final int USERNAME_MIN = 3;
     private static final int USERNAME_MAX = 50;
@@ -270,7 +271,7 @@ public class AuthService {
         try {
             emailService.sendPasswordResetEmail(user, code, expiresAt);
         } catch (RuntimeException e) {
-            LOG.warning("[AUTH] Password reset email send failed for userId=" + user.getUserId() + ": " + e.getMessage());
+            LOG.warn("[AUTH] Password reset email send failed for userId={}: {}", user.getUserId(), e.getMessage());
             throw e;
         }
     }
@@ -334,7 +335,7 @@ public class AuthService {
             emailService.sendVerificationEmail(user, code, expiresAt);
         } catch (RuntimeException e) {
             if (!initialSend) {
-                LOG.warning("[AUTH] Email verification send failed for userId=" + user.getUserId() + ": " + e.getMessage());
+                LOG.warn("[AUTH] Email verification send failed for userId={}: {}", user.getUserId(), e.getMessage());
             }
             throw e;
         }
@@ -379,7 +380,7 @@ public class AuthService {
         try {
             emailService.sendLoginIpVerificationEmail(user, code, expiresAt, clientIp);
         } catch (RuntimeException e) {
-            LOG.warning("[AUTH] Login IP verification send failed for userId=" + user.getUserId() + ": " + e.getMessage());
+            LOG.warn("[AUTH] Login IP verification send failed for userId={}: {}", user.getUserId(), e.getMessage());
             throw e;
         }
     }

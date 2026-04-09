@@ -484,7 +484,8 @@ public class LoginController {
     private void sendSecurityAlertEmail() {
         // In a real implementation, this would send an email to the user
         // For now, we'll just log it
-        System.out.println("SECURITY ALERT: Multiple failed login attempts detected. IP blocked.");
+        org.apache.logging.log4j.LogManager.getLogger(LoginController.class)
+                .warn("SECURITY ALERT: Multiple failed login attempts detected. IP blocked.");
     }
 
     private void showCaptchaIfNeeded() {

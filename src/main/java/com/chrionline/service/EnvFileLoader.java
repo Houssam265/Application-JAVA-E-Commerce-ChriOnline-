@@ -5,14 +5,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.logging.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Loads a local .env file into Java system properties for this process.
  */
 public final class EnvFileLoader {
 
-    private static final Logger LOG = Logger.getLogger(EnvFileLoader.class.getName());
+    private static final Logger LOG = LogManager.getLogger(EnvFileLoader.class);
 
     private EnvFileLoader() {}
 
@@ -51,9 +52,9 @@ public final class EnvFileLoader {
 
                 System.setProperty(key, value);
             }
-            LOG.info("[ENV] Loaded configuration from " + path.toAbsolutePath().normalize());
+            LOG.info("[ENV] Loaded configuration from {}", path.toAbsolutePath().normalize());
         } catch (IOException e) {
-            LOG.warning("[ENV] Failed to load .env file: " + e.getMessage());
+            LOG.warn("[ENV] Failed to load .env file: {}", e.getMessage(), e);
         }
     }
 }
