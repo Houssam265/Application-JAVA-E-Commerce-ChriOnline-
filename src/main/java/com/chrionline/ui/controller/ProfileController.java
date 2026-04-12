@@ -47,6 +47,12 @@ public class ProfileController {
     @FXML private Label strengthLabel;
     @FXML private Label globalMessage;
     @FXML private Button adminButton;
+    @FXML private TextField headerSearchField;
+    @FXML private MenuButton accountMenuButton;
+    @FXML private MenuItem accountProfileItem;
+    @FXML private MenuItem accountOrdersItem;
+    @FXML private MenuItem accountAdminItem;
+    @FXML private MenuItem accountLogoutItem;
 
     // Notifications
     @FXML private Button bellButton;
@@ -57,7 +63,8 @@ public class ProfileController {
     @FXML private ListView<AppNotification> notificationsList;
 
     // Navbar active state
-    @FXML private Button navProfileBtn;
+    @FXML private Button navHomeBtn;
+    @FXML private Button navCatalogueBtn;
 
     private boolean editMode = false;
 
@@ -68,9 +75,9 @@ public class ProfileController {
             adminButton.setVisible(true);
             adminButton.setManaged(true);
         }
+        configureAccountMenu(session);
         hydrateFromSession();
         bindNotifications();
-        setActiveNav();
 
         if (newPasswordField != null) {
             newPasswordField.textProperty().addListener((obs, ov, nv) -> updateStrength(nv));
@@ -194,12 +201,6 @@ public class ProfileController {
             unreadBadge.setVisible(show);
             unreadBadge.setManaged(show);
         });
-    }
-
-    private void setActiveNav() {
-        if (navProfileBtn != null && !navProfileBtn.getStyleClass().contains("nav-pill-active")) {
-            navProfileBtn.getStyleClass().add("nav-pill-active");
-        }
     }
 
     @FXML
@@ -462,10 +463,46 @@ public class ProfileController {
         runTask(t);
     }
 
-    @FXML private void goHome() { SceneManager.showHome(); }
-    @FXML private void goCart() { SceneManager.showCart(); }
-    @FXML private void goOrders() { SceneManager.showOrderHistory(); }
+    @FXML private void handleOpenHome() { SceneManager.showHome(); }
+    @FXML private void handleOpenCatalogue() { SceneManager.showCatalogue(); }
+    @FXML private void handleHeaderSearch() {
+        String query = headerSearchField == null || headerSearchField.getText() == null
+                ? ""
+                : headerSearchField.getText().trim();
+        SceneManager.showCatalogue(query);
+    }
+    @FXML private void handleOpenCart() { SceneManager.showCart(); }
+    @FXML private void handleOpenProfile() { SceneManager.showProfile(); }
+    @FXML private void handleOpenOrders() { SceneManager.showOrderHistory(); }
     @FXML private void handleOpenAdmin() { SceneManager.showAdmin(); }
+
+    private void configureAccountMenu(ClientSession session) {
+        if (accountMenuButton == null) return;
+        String username = session.getUsername() == null || session.getUsername().isBlank()
+                ? "Utilisateur"
+                : session.getUsername();
+        accountMenuButton.setText("Bonjour, " + username);
+
+        if (accountProfileItem != null) {
+            accountProfileItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-user"));
+            accountProfileItem.setOnAction(e -> handleOpenProfile());
+        }
+        if (accountOrdersItem != null) {
+            accountOrdersItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-box-open"));
+            accountOrdersItem.setOnAction(e -> handleOpenOrders());
+        }
+        if (accountAdminItem != null) {
+            accountAdminItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-user-shield"));
+            accountAdminItem.setOnAction(e -> handleOpenAdmin());
+            boolean isAdmin = session.isAdmin();
+            accountAdminItem.setVisible(isAdmin);
+            accountAdminItem.setDisable(!isAdmin);
+        }
+        if (accountLogoutItem != null) {
+            accountLogoutItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-sign-out-alt"));
+            accountLogoutItem.setOnAction(e -> handleLogout());
+        }
+    }
 
     private void fadeOutThen(Runnable after) {
         // Fade the whole screen if possible

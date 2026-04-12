@@ -266,6 +266,12 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_GET_CATEGORIES:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetCategories(req);
+            case MessageProtocol.ACTION_GET_TOP_SELLING_PRODUCTS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetTopSellingProducts(req);
+            case MessageProtocol.ACTION_GET_RECENT_PRODUCTS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetRecentProducts(req);
             case MessageProtocol.ACTION_GET_OPERATION_NONCE:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetOperationNonce(req);
@@ -870,6 +876,18 @@ public class ClientHandler implements Runnable {
     private Response handleGetCategories(Request req) {
         List<?> categories = productService.getCategories();
         return Response.ok(categories);
+    }
+
+    private Response handleGetTopSellingProducts(Request req) {
+        Integer limit = req.getPayloadInt("limit");
+        int resolvedLimit = limit != null && limit > 0 ? limit : 4;
+        return Response.ok(productService.getTopSellingProducts(resolvedLimit));
+    }
+
+    private Response handleGetRecentProducts(Request req) {
+        Integer limit = req.getPayloadInt("limit");
+        int resolvedLimit = limit != null && limit > 0 ? limit : 4;
+        return Response.ok(productService.getRecentProducts(resolvedLimit));
     }
 
     // ── CART handlers ─────────────────────────────────────────────────────────

@@ -28,6 +28,9 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -77,6 +80,14 @@ public class CartController {
     @FXML private Button checkoutButton;
     @FXML private Label messageLabel;
     @FXML private Button navCartBtn;
+    @FXML private Button navHomeBtn;
+    @FXML private Button navCatalogueBtn;
+    @FXML private TextField headerSearchField;
+    @FXML private MenuButton accountMenuButton;
+    @FXML private MenuItem accountProfileItem;
+    @FXML private MenuItem accountOrdersItem;
+    @FXML private MenuItem accountAdminItem;
+    @FXML private MenuItem accountLogoutItem;
     @FXML private Button adminButton;
     @FXML private Button bellButton;
     @FXML private Label unreadBadge;
@@ -97,6 +108,7 @@ public class CartController {
             adminButton.setVisible(true);
             adminButton.setManaged(true);
         }
+        configureAccountMenu(session);
         if (navCartBtn != null && !navCartBtn.getStyleClass().contains("nav-pill-active")) {
             navCartBtn.getStyleClass().add("nav-pill-active");
         }
@@ -256,13 +268,24 @@ public class CartController {
     }
 
     @FXML
-    private void goHome() { SceneManager.showHome(); }
+    private void handleOpenHome() { SceneManager.showHome(); }
 
     @FXML
-    private void goProfile() { SceneManager.showProfile(); }
+    private void handleOpenCatalogue() { SceneManager.showCatalogue(); }
 
     @FXML
-    private void goOrders() { SceneManager.showOrderHistory(); }
+    private void handleHeaderSearch() {
+        String query = headerSearchField == null || headerSearchField.getText() == null
+                ? ""
+                : headerSearchField.getText().trim();
+        SceneManager.showCatalogue(query);
+    }
+
+    @FXML
+    private void handleOpenProfile() { SceneManager.showProfile(); }
+
+    @FXML
+    private void handleOpenOrders() { SceneManager.showOrderHistory(); }
 
     @FXML
     private void handleOpenAdmin() { SceneManager.showAdmin(); }
@@ -293,6 +316,34 @@ public class CartController {
             }
         });
         runTask(t);
+    }
+
+    private void configureAccountMenu(ClientSession session) {
+        if (accountMenuButton == null) return;
+        String username = session.getUsername() == null || session.getUsername().isBlank()
+                ? "Utilisateur"
+                : session.getUsername();
+        accountMenuButton.setText("Bonjour, " + username);
+
+        if (accountProfileItem != null) {
+            accountProfileItem.setGraphic(new FontIcon("fas-user"));
+            accountProfileItem.setOnAction(e -> handleOpenProfile());
+        }
+        if (accountOrdersItem != null) {
+            accountOrdersItem.setGraphic(new FontIcon("fas-box-open"));
+            accountOrdersItem.setOnAction(e -> handleOpenOrders());
+        }
+        if (accountAdminItem != null) {
+            accountAdminItem.setGraphic(new FontIcon("fas-user-shield"));
+            accountAdminItem.setOnAction(e -> handleOpenAdmin());
+            boolean isAdmin = session.isAdmin();
+            accountAdminItem.setVisible(isAdmin);
+            accountAdminItem.setDisable(!isAdmin);
+        }
+        if (accountLogoutItem != null) {
+            accountLogoutItem.setGraphic(new FontIcon("fas-sign-out-alt"));
+            accountLogoutItem.setOnAction(e -> handleLogout());
+        }
     }
 
     private Scene getSceneOrNull() {

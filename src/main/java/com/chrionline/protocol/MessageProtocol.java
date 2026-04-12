@@ -26,6 +26,8 @@ public final class MessageProtocol {
     public static final String ACTION_GET_PRODUCTS   = "GET_PRODUCTS";
     public static final String ACTION_GET_PRODUCT    = "GET_PRODUCT";
     public static final String ACTION_GET_CATEGORIES = "GET_CATEGORIES";
+    public static final String ACTION_GET_TOP_SELLING_PRODUCTS = "GET_TOP_SELLING_PRODUCTS";
+    public static final String ACTION_GET_RECENT_PRODUCTS = "GET_RECENT_PRODUCTS";
     public static final String ACTION_GET_OPERATION_NONCE = "GET_OPERATION_NONCE";
 
     // Cart
