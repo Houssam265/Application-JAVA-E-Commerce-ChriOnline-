@@ -493,7 +493,18 @@ public class CartController {
                 Client client = Client.getInstance();
                 client.connect();
                 JSONObject payload = new JSONObject();
-                return client.send(new Request(MessageProtocol.ACTION_PLACE_ORDER, payload, client.getSessionToken()));
+                Response nonceResponse = client.requestOperationNonce(MessageProtocol.ACTION_PLACE_ORDER, null);
+                if (!nonceResponse.isSuccess()) {
+                    return nonceResponse;
+                }
+                JSONObject noncePayload = nonceResponse.getPayloadAsJsonObject();
+                String operationNonce = noncePayload.optString("nonce", null);
+                if (operationNonce == null || operationNonce.isBlank()) {
+                    return Response.error("Nonce serveur introuvable.");
+                }
+                Request request = new Request(MessageProtocol.ACTION_PLACE_ORDER, payload, client.getSessionToken());
+                request.setOperationNonce(operationNonce);
+                return client.send(request);
             }
         };
         t.setOnSucceeded(e -> {

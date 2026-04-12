@@ -1,5 +1,6 @@
 package com.chrionline.server;
 
+import com.chrionline.dao.UserDAO;
 import com.chrionline.model.Session;
 import com.chrionline.model.User;
 import com.chrionline.protocol.MessageProtocol;
@@ -8,10 +9,10 @@ import com.chrionline.protocol.Response;
 import com.chrionline.service.AuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
+import com.chrionline.service.LoginCaptchaService;
 import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
-import com.chrionline.service.RecaptchaVerificationService;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
@@ -76,19 +77,28 @@ public class ClientHandler implements Runnable {
     private static final long LOGIN_LOCKOUT_MS   = 5 * 60_000L; // 5 minutes
     private static final long ORDER_REPLAY_WINDOW_MS = 2 * 60_000L;
     private static final long PAYMENT_REPLAY_WINDOW_MS = 2 * 60_000L;
-    private static final ConcurrentMap<String, AttemptState> LOGIN_ATTEMPTS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<String, Long> BLOCKED_IPS = new ConcurrentHashMap<>();
+    private static final long OPERATION_NONCE_WINDOW_MS = 2 * 60_000L;
     private static final ConcurrentMap<String, Long> SEEN_ORDER_REQUESTS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Long> SEEN_PAYMENT_REQUESTS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, OperationNonce> ISSUED_OPERATION_NONCES = new ConcurrentHashMap<>();
 
-    private static final class AttemptState {
-        int failures;
-        long windowStartMs;
-        long blockedUntilMs;
+    private static final class OperationNonce {
+        final int userId;
+        final String action;
+        final String scope;
+        final long expiresAt;
+
+        OperationNonce(int userId, String action, String scope, long expiresAt) {
+            this.userId = userId;
+            this.action = action;
+            this.scope = scope;
+            this.expiresAt = expiresAt;
+        }
     }
 
     // ── Injected dependencies (shared across all threads) ────────────────────
     private final AuthService    authService;
+    private final UserDAO        userDAO;
     private final SessionManager sessionManager;
     private final ProductService productService;
     private final CartService    cartService;
@@ -96,7 +106,7 @@ public class ClientHandler implements Runnable {
     private final PaymentService paymentService;
     private final AdminService   adminService;
     private final UDPNotificationService udpNotificationService;
-    private final RecaptchaVerificationService recaptchaVerificationService = new RecaptchaVerificationService();
+    private final LoginCaptchaService loginCaptchaService = LoginCaptchaService.getInstance();
 
     // ── Per-connection state ──────────────────────────────────────────────────
     private final Socket socket;
@@ -120,6 +130,7 @@ public class ClientHandler implements Runnable {
      * @param productService shared ProductService instance (created once in {@link Server})
      */
     public ClientHandler(Socket socket,
+                         UserDAO userDAO,
                          AuthService authService,
                          SessionManager sessionManager,
                          ProductService productService,
@@ -130,6 +141,7 @@ public class ClientHandler implements Runnable {
                          UDPNotificationService udpNotificationService) {
         this.socket         = socket;
         this.clientAddress  = socket.getInetAddress();
+        this.userDAO        = userDAO;
         this.authService    = authService;
         this.sessionManager = sessionManager;
         this.productService = productService;
@@ -233,6 +245,11 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_RESET_PASSWORD:
                 if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
                 return handleResetPassword(req);
+            case MessageProtocol.ACTION_GET_LOGIN_CAPTCHA:
+                if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
+                return handleGetLoginCaptcha();
+            case MessageProtocol.ACTION_GET_LOGIN_SECURITY_STATE:
+                return handleGetLoginSecurityState(req);
 
             // ── Auth (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_LOGOUT:
@@ -249,6 +266,9 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_GET_CATEGORIES:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetCategories(req);
+            case MessageProtocol.ACTION_GET_OPERATION_NONCE:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleGetOperationNonce(req);
 
             // ── Cart (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_GET_CART:
@@ -322,6 +342,7 @@ public class ClientHandler implements Runnable {
         String token = req.getToken();
         boolean valid = sessionManager.isTokenValid(token);
         if (valid && token != null) {
+            sessionManager.refreshSession(token);
             connectionToken = token;
             // Register this client's IP so order-status notifications can reach it
             sessionManager.getUserFromToken(token).ifPresent(u -> {
@@ -445,6 +466,54 @@ public class ClientHandler implements Runnable {
         cleanupSeenRequests(SEEN_PAYMENT_REQUESTS, now, PAYMENT_REPLAY_WINDOW_MS);
     }
 
+    private Response validateOperationNonce(Request req, int userId, String expectedOperation, String expectedScope) {
+        String nonce = req.getOperationNonce();
+        if (nonce == null || nonce.isBlank()) {
+            logActionError("OPERATION_NONCE", userId, "Missing operationNonce for " + expectedOperation);
+            return Response.error("Nonce serveur manquant pour cette operation.");
+        }
+
+        long now = System.currentTimeMillis();
+        cleanupExpiredOperationNonces(now);
+
+        OperationNonce stored = ISSUED_OPERATION_NONCES.get(nonce);
+        if (stored == null) {
+            logActionError("OPERATION_NONCE", userId,
+                    "Unknown or expired nonce for operation=" + expectedOperation);
+            return Response.error("Nonce serveur invalide ou expire.");
+        }
+
+        if (stored.userId != userId
+                || !expectedOperation.equals(stored.action)
+                || !matchesScope(stored.scope, expectedScope)
+                || stored.expiresAt < now) {
+            logActionError("OPERATION_NONCE", userId,
+                    "Nonce scope mismatch for operation=" + expectedOperation);
+            return Response.error("Nonce serveur invalide ou expire.");
+        }
+
+        if (!ISSUED_OPERATION_NONCES.remove(nonce, stored)) {
+            logActionError("OPERATION_NONCE", userId,
+                    "Replay detected for operation=" + expectedOperation);
+            return Response.error("Nonce serveur deja utilise.");
+        }
+
+        logActionSuccess("OPERATION_NONCE", userId,
+                "Consumed nonce for operation=" + expectedOperation);
+        return null;
+    }
+
+    private boolean matchesScope(String storedScope, String expectedScope) {
+        if (storedScope == null || storedScope.isBlank()) {
+            return expectedScope == null || expectedScope.isBlank();
+        }
+        return storedScope.equals(expectedScope);
+    }
+
+    private void cleanupExpiredOperationNonces(long now) {
+        ISSUED_OPERATION_NONCES.entrySet().removeIf(entry -> entry.getValue() == null || entry.getValue().expiresAt < now);
+    }
+
     private void cleanupSeenRequests(ConcurrentMap<String, Long> requests, long now, long windowMs) {
         for (Map.Entry<String, Long> entry : requests.entrySet()) {
             if (now - entry.getValue() > windowMs) {
@@ -458,13 +527,14 @@ public class ClientHandler implements Runnable {
     /**
      * LOGIN — payload: {@code email}, {@code password}.
      *
-     * <p>Authenticates via {@link AuthService#login(String, String)} (no
+     * <p>Authenticates via  (no
      * password logic here), creates a session, and returns the token + role.
      */
     private Response handleLogin(Request req) {
         String email    = getPayloadString(req, "email");
         String password = getPayloadString(req, "password");
-        String recaptchaToken = getPayloadString(req, "recaptchaToken");
+        String captchaId = getPayloadString(req, "captchaId");
+        String captchaAnswer = getPayloadString(req, "captchaAnswer");
 
         if (email == null || email.isBlank()) {
             return Response.error("Le champ 'email' est requis.");
@@ -473,23 +543,21 @@ public class ClientHandler implements Runnable {
             return Response.error("Le champ 'password' est requis.");
         }
 
-        String key = buildLoginKey(email);
         long nowMs = System.currentTimeMillis();
-        long blockedForMs = getBlockedRemainingMs(key, nowMs);
+        long blockedForMs = getBlockedRemainingMs(email, nowMs);
         if (blockedForMs > 0) {
             long seconds = Math.max(1L, blockedForMs / 1000L);
             return Response.error("Trop de tentatives. Réessayez dans " + seconds + "s.");
         }
 
-        boolean recaptchaConfigured = recaptchaVerificationService.isConfigured();
-        boolean recaptchaTokenProvided = recaptchaToken != null && !recaptchaToken.isBlank();
-        boolean recaptchaRequired = recaptchaConfigured && isRecaptchaRequired(key);
-
-        if (recaptchaConfigured && (recaptchaTokenProvided || recaptchaRequired)) {
-            RecaptchaVerificationService.VerificationResult captchaResult =
-                    recaptchaVerificationService.verify(recaptchaToken, getClientIpAddress());
+        boolean captchaRequired = isRecaptchaRequired(email, nowMs);
+        if (captchaRequired) {
+            LoginCaptchaService.ValidationResult captchaResult =
+                    loginCaptchaService.validate(captchaId, captchaAnswer, getClientIpAddress());
             if (!captchaResult.isSuccess()) {
-                return Response.error("reCAPTCHA invalide ou manquant. " + captchaResult.getMessage());
+                Map<String, Object> payload = new HashMap<>();
+                payload.put("captchaRequired", true);
+                return Response.error("CAPTCHA invalide ou manquant. " + captchaResult.getMessage(), payload);
             }
         }
 
@@ -520,11 +588,11 @@ public class ClientHandler implements Runnable {
             ClientRegistry.getInstance().register(user.getUserId(), clientAddress);
             Response r = new Response(true, "LOGIN_SUCCESS", payload, session.getToken());
             logActionSuccess("LOGIN", user.getUserId());
-            clearLoginAttempts(key);
+            clearLoginAttempts(email);
             return r;
 
         } catch (IllegalArgumentException e) {
-            registerFailedLogin(key, nowMs);
+            registerFailedLogin(email, nowMs);
             logActionError("LOGIN", null, "Invalid credentials from IP: " + clientAddress);
             return Response.error(e.getMessage());
         } catch (RuntimeException e) {
@@ -533,12 +601,48 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private Response handleGetLoginCaptcha() {
+        LoginCaptchaService.CaptchaChallenge challenge = loginCaptchaService.issueChallenge(getClientIpAddress());
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("captchaId", challenge.challengeId());
+        payload.put("captchaText", challenge.captchaText());
+        payload.put("expiresInSeconds", challenge.expiresInSeconds());
+        return Response.ok("LOGIN_CAPTCHA_READY", payload);
+    }
+
     /**
      * REGISTER — payload: {@code username}, {@code email}, {@code password}.
      *
      * <p>Registers via {@link AuthService#register(String, String, String, String)}
      * and sends an email verification code. No session is created yet.
      */
+    private Response handleGetLoginSecurityState(Request req) {
+        String email = getPayloadString(req, "email");
+        long nowMs = System.currentTimeMillis();
+
+        Map<String, Object> payload = new HashMap<>();
+        long ipBlockedUntilMs = userDAO.getIpBlockedUntilMs(getClientIpAddress());
+        long ipBlockedRemainingMs = Math.max(0L, ipBlockedUntilMs - nowMs);
+        payload.put("ipBlocked", ipBlockedRemainingMs > 0L);
+        payload.put("ipBlockedSecondsRemaining", ipBlockedRemainingMs > 0L ? Math.max(1L, ipBlockedRemainingMs / 1000L) : 0L);
+
+        if (email == null || email.isBlank()) {
+            payload.put("captchaRequired", false);
+            payload.put("lockoutActive", false);
+            payload.put("lockoutSecondsRemaining", 0L);
+            payload.put("failures", 0);
+            return Response.ok("LOGIN_SECURITY_STATE", payload);
+        }
+
+        UserDAO.LoginSecurityState state = userDAO.getLoginSecurityState(email.trim(), getClientIpAddress(), nowMs);
+        long blockedRemainingMs = Math.max(0L, state.getBlockedUntilMs() - nowMs);
+        payload.put("captchaRequired", state.getFailures() >= 3);
+        payload.put("lockoutActive", blockedRemainingMs > 0L);
+        payload.put("lockoutSecondsRemaining", blockedRemainingMs > 0L ? Math.max(1L, blockedRemainingMs / 1000L) : 0L);
+        payload.put("failures", state.getFailures());
+        return Response.ok("LOGIN_SECURITY_STATE", payload);
+    }
+
     private Response handleRegister(Request req) {
         String username = getPayloadString(req, "username");
         String email    = getPayloadString(req, "email");
@@ -628,7 +732,7 @@ public class ClientHandler implements Runnable {
             connectionToken = session.getToken();
             connectedUserId = user.getUserId();
             ClientRegistry.getInstance().register(user.getUserId(), clientAddress);
-            clearLoginAttempts(buildLoginKey(email));
+            clearLoginAttempts(email);
             return new Response(true, "LOGIN_IP_VERIFIED", payload, session.getToken());
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -861,6 +965,53 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private Response handleGetOperationNonce(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+
+            String operation = payloadValueAsString(req, "operation");
+            if (operation == null || operation.isBlank()) {
+                return Response.error("operation manquant.");
+            }
+
+            String normalizedOperation = operation.trim();
+            if (!MessageProtocol.ACTION_PLACE_ORDER.equals(normalizedOperation)
+                    && !MessageProtocol.ACTION_PAYMENT.equals(normalizedOperation)) {
+                return Response.error("Operation non supportee pour la generation de nonce.");
+            }
+
+            String scope = payloadValueAsString(req, "scope");
+            if (scope == null || scope.isBlank()) {
+                scope = firstNonBlank(
+                        payloadValueAsString(req, "order_id"),
+                        payloadValueAsString(req, "orderId"));
+            }
+
+            long now = System.currentTimeMillis();
+            String nonce = UUID.randomUUID().toString().replace("-", "");
+            ISSUED_OPERATION_NONCES.put(nonce,
+                    new OperationNonce(userId, normalizedOperation, scope, now + OPERATION_NONCE_WINDOW_MS));
+            cleanupExpiredOperationNonces(now);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("nonce", nonce);
+            payload.put("operation", normalizedOperation);
+            payload.put("scope", scope);
+            payload.put("expiresAt", now + OPERATION_NONCE_WINDOW_MS);
+
+            logActionSuccess("GET_OPERATION_NONCE", userId,
+                    "Issued nonce for operation=" + normalizedOperation + " scope=" + scope);
+            return Response.ok("OPERATION_NONCE_READY", payload);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.warn("[NONCE] Unexpected error: {}", e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la generation du nonce.");
+        }
+    }
+
     // ── ORDER handlers ────────────────────────────────────────────────────────
 
     private Response handlePlaceOrder(Request req) {
@@ -868,6 +1019,10 @@ public class ClientHandler implements Runnable {
             int userId = sessionManager.getUserFromToken(req.getToken())
                     .map(User::getUserId)
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            Response nonceValidation = validateOperationNonce(req, userId, MessageProtocol.ACTION_PLACE_ORDER, null);
+            if (nonceValidation != null) {
+                return nonceValidation;
+            }
             Response replayValidation = validateReplayProtectedPlaceOrder(req, userId);
             if (replayValidation != null) {
                 return replayValidation;
@@ -916,6 +1071,11 @@ public class ClientHandler implements Runnable {
                     || expiry == null || expiry.isBlank()
                     || cvv == null || cvv.isBlank()) {
                 return Response.error("Champs requis : order_id, card_number, expiry (MM/YY), cvv.");
+            }
+
+            Response nonceValidation = validateOperationNonce(req, userId, MessageProtocol.ACTION_PAYMENT, String.valueOf(orderId));
+            if (nonceValidation != null) {
+                return nonceValidation;
             }
 
             Response replayValidation = validateReplayProtectedPayment(req, userId, orderId);
@@ -1213,64 +1373,41 @@ public class ClientHandler implements Runnable {
         return clientAddress != null ? clientAddress.getHostAddress() : "unknown";
     }
 
-    private long getBlockedRemainingMs(String key, long nowMs) {
-        AttemptState state = LOGIN_ATTEMPTS.get(key);
-        if (state == null) return 0L;
-        long remaining = state.blockedUntilMs - nowMs;
-        return Math.max(0L, remaining);
+    private long getBlockedRemainingMs(String email, long nowMs) {
+        UserDAO.LoginSecurityState state = userDAO.getLoginSecurityState(email, getClientIpAddress(), nowMs);
+        long ipBlockedRemaining = Math.max(0L, state.getIpBlockedUntilMs() - nowMs);
+        if (ipBlockedRemaining > 0L) {
+            return ipBlockedRemaining;
+        }
+        return Math.max(0L, state.getBlockedUntilMs() - nowMs);
     }
 
-    private boolean isRecaptchaRequired(String key) {
-        AttemptState state = LOGIN_ATTEMPTS.get(key);
-        return state != null && state.failures >= 3;
+    private boolean isRecaptchaRequired(String email, long nowMs) {
+        UserDAO.LoginSecurityState state = userDAO.getLoginSecurityState(email, getClientIpAddress(), nowMs);
+        return state.getFailures() >= 3;
     }
 
-    private void registerFailedLogin(String key, long nowMs) {
-        String ip = getClientIpAddress();
-        LOGIN_ATTEMPTS.compute(key, (k, state) -> {
-            if (state == null) {
-                state = new AttemptState();
-                state.windowStartMs = nowMs;
-            }
-            if (nowMs - state.windowStartMs > LOGIN_WINDOW_MS) {
-                state.windowStartMs = nowMs;
-                state.failures = 0;
-            }
-            state.failures++;
-
-            // Progressive security: different lockout times based on failure count
-            if (state.failures >= 12) {
-                // Block IP completely after 12 failures
-                BLOCKED_IPS.put(ip, nowMs + (24 * 60 * 60 * 1000L)); // 24 hours
-                state.blockedUntilMs = nowMs + (24 * 60 * 60 * 1000L); // 24 hours
-            } else if (state.failures >= 9) {
-                state.blockedUntilMs = nowMs + (60 * 60 * 1000L); // 1 hour
-            } else if (state.failures >= 6) {
-                state.blockedUntilMs = nowMs + (10 * 60 * 1000L); // 10 minutes
-            } else if (state.failures >= 3) {
-                state.blockedUntilMs = nowMs + (60 * 1000L); // 1 minute
-            }
-
-            return state;
-        });
+    private void registerFailedLogin(String email, long nowMs) {
+        UserDAO.LoginSecurityState state = userDAO.registerFailedLoginAttempt(
+            email,
+            getClientIpAddress(),
+            nowMs,
+            LOGIN_WINDOW_MS,
+            MAX_LOGIN_ATTEMPTS
+        );
+        if (state.getFailures() == 3) {
+            authService.notifyFailedLoginAlert(email, getClientIpAddress(), state.getFailures());
+        }
     }
 
-    private void clearLoginAttempts(String key) {
-        LOGIN_ATTEMPTS.remove(key);
+    private void clearLoginAttempts(String email) {
+        userDAO.clearLoginSecurityState(email, getClientIpAddress());
     }
 
     private boolean isIpBlocked() {
-        String ip = getClientIpAddress();
-        Long blockedUntil = BLOCKED_IPS.get(ip);
-        if (blockedUntil == null) return false;
-
         long now = System.currentTimeMillis();
-        if (now >= blockedUntil) {
-            // Block expired, remove from map
-            BLOCKED_IPS.remove(ip);
-            return false;
-        }
-        return true;
+        long blockedUntil = userDAO.getIpBlockedUntilMs(getClientIpAddress());
+        return blockedUntil > now;
     }
 
     private void applyProductImages(Request req, com.chrionline.model.Product product, Object currentImageUrlObj) {

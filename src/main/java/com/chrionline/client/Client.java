@@ -1,8 +1,10 @@
 package com.chrionline.client;
 
+import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.security.TlsSupport;
+import org.json.JSONObject;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -203,6 +205,15 @@ public class Client {
             this.sessionToken = response.getToken();
         }
         return response;
+    }
+
+    /**
+     * Request a one-time server nonce for a sensitive operation.
+     */
+    public Response requestOperationNonce(String operation, JSONObject scopePayload) throws IOException {
+        JSONObject payload = scopePayload != null ? new JSONObject(scopePayload.toString()) : new JSONObject();
+        payload.put("operation", operation);
+        return send(new Request(MessageProtocol.ACTION_GET_OPERATION_NONCE, payload, getSessionToken()));
     }
 
     public String getSessionToken()              { return sessionToken; }

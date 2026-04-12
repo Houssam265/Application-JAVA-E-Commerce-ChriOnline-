@@ -30,7 +30,7 @@
 
             <!-- Heading -->
             <VBox spacing="8" maxWidth="400" prefWidth="400" minWidth="400">
-                <Label text="Welcome back 👋" styleClass="page-title"/>
+                <Label text="Welcome back" styleClass="page-title"/>
                 <Label text="Sign in to your account to continue shopping" styleClass="brand-subtitle"/>
             </VBox>
 
@@ -67,13 +67,21 @@
             <!-- ERROR -->
             <Label fx:id="globalError" styleClass="global-error" wrapText="true" visible="false" managed="false" maxWidth="400" prefWidth="400" minWidth="400" alignment="CENTER"/>
 
-            <VBox fx:id="recaptchaBox" spacing="6" visible="false" managed="false" maxWidth="400" prefWidth="400" minWidth="400">
-                <HBox alignment="CENTER_LEFT" spacing="6">
+            <VBox fx:id="captchaBox" spacing="6" visible="false" managed="false" maxWidth="400" prefWidth="400" minWidth="400">
+                <HBox alignment="CENTER_LEFT" spacing="10" maxWidth="400" prefWidth="400" minWidth="400">
                     <FontIcon iconLiteral="fas-shield-alt" iconSize="14" styleClass="ikonli-muted"/>
                     <Label text="Security check" styleClass="field-label"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Button fx:id="captchaToggleButton" text="Open check" onAction="#toggleCaptchaPanel" styleClass="btn-outline captcha-toggle" focusTraversable="false"/>
                 </HBox>
-                <StackPane fx:id="recaptchaContainer" styleClass="recaptcha-panel" maxWidth="400" prefWidth="400" minWidth="400"/>
-                <Label fx:id="recaptchaHintLabel" styleClass="info-box-text" visible="false" managed="false" alignment="CENTER" maxWidth="400" prefWidth="400" minWidth="400"/>
+                <VBox fx:id="captchaPanel" spacing="10" visible="false" managed="false" maxWidth="400" prefWidth="400" minWidth="400" styleClass="captcha-card">
+                    <StackPane fx:id="captchaContainer" styleClass="captcha-panel" maxWidth="Infinity"/>
+                    <HBox spacing="10" alignment="CENTER_LEFT" maxWidth="Infinity" fillHeight="true">
+                        <TextField fx:id="captchaAnswerField" promptText="Saisissez le texte" styleClass="auth-field captcha-input" HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
+                        <Button fx:id="captchaRefreshButton" text="↻" onAction="#refreshCaptcha" styleClass="captcha-refresh" focusTraversable="false"/>
+                    </HBox>
+                    <Label fx:id="captchaHintLabel" styleClass="info-box-text captcha-help" visible="false" managed="false" alignment="CENTER_LEFT" maxWidth="Infinity"/>
+                </VBox>
             </VBox>
 
             <!-- ACTION BUTTONS -->

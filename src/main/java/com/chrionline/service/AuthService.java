@@ -296,6 +296,26 @@ public class AuthService {
         user.setPasswordResetExpiresAt(null);
     }
 
+    public void notifyFailedLoginAlert(String email, String clientIp, int failures) {
+        if (email == null || email.isBlank() || failures < 3 || !emailService.isConfigured()) {
+            if (!emailService.isConfigured()) {
+                LOG.warn("[AUTH] Failed-login alert skipped because SMTP is not configured.");
+            }
+            return;
+        }
+
+        userDAO.findByEmail(email).ifPresent(user -> {
+            try {
+                LOG.info("[AUTH] Sending failed-login alert email to userId={} email={} failures={} ip={}",
+                        user.getUserId(), user.getEmail(), failures, clientIp);
+                emailService.sendFailedLoginAlertEmail(user, clientIp, failures);
+                LOG.info("[AUTH] Failed-login alert email sent to userId={}", user.getUserId());
+            } catch (RuntimeException e) {
+                LOG.warn("[AUTH] Failed-login alert email send failed for userId={}: {}", user.getUserId(), e.getMessage());
+            }
+        });
+    }
+
     private void validateRegistrationInput(String username, String email, String plainPassword) {
         validateUsername(username);
         validateEmail(email);

@@ -451,12 +451,26 @@ public class CheckoutController {
             @Override protected Response call() throws Exception {
                 Client client = Client.getInstance();
                 client.connect();
+                JSONObject nonceRequestPayload = new JSONObject();
+                nonceRequestPayload.put("order_id", orderId);
+
                 JSONObject payload = new JSONObject();
                 payload.put("order_id", orderId);
                 payload.put("card_number", cardNumber);
                 payload.put("expiry", expiry);
                 payload.put("cvv", cvv);
-                return client.send(new Request(MessageProtocol.ACTION_PAYMENT, payload, client.getSessionToken()));
+                Response nonceResponse = client.requestOperationNonce(MessageProtocol.ACTION_PAYMENT, nonceRequestPayload);
+                if (!nonceResponse.isSuccess()) {
+                    return nonceResponse;
+                }
+                JSONObject noncePayload = nonceResponse.getPayloadAsJsonObject();
+                String operationNonce = noncePayload.optString("nonce", null);
+                if (operationNonce == null || operationNonce.isBlank()) {
+                    return Response.error("Nonce serveur introuvable.");
+                }
+                Request request = new Request(MessageProtocol.ACTION_PAYMENT, payload, client.getSessionToken());
+                request.setOperationNonce(operationNonce);
+                return client.send(request);
             }
         };
 

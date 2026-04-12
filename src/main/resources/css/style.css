@@ -57,7 +57,7 @@
 
 .left-pane {
     -fx-background-color: transparent;
-    -fx-padding: 50px 60px;
+    -fx-padding: 44px 56px;
 }
 
 /* =====================================================================
@@ -518,15 +518,53 @@
     -fx-wrap-text: true;
 }
 
-.recaptcha-panel {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-    -fx-padding: 0;
-    -fx-min-height: 88px;
-    -fx-pref-height: 88px;
-    -fx-max-height: 88px;
+.captcha-panel {
+    -fx-background-color: rgba(255, 255, 255, 0.82);
+    -fx-border-color: rgba(251, 146, 60, 0.28);
+    -fx-border-radius: 14px;
+    -fx-background-radius: 14px;
+    -fx-padding: 8px;
+    -fx-min-height: 108px;
+    -fx-pref-height: 108px;
+    -fx-max-height: 108px;
     -fx-max-width: Infinity;
     -fx-alignment: center;
+}
+
+.captcha-card {
+    -fx-background-color: rgba(255, 247, 237, 0.8);
+    -fx-background-radius: 16px;
+    -fx-border-color: rgba(251, 146, 60, 0.18);
+    -fx-border-radius: 16px;
+    -fx-border-width: 1px;
+    -fx-padding: 12px;
+    -fx-max-width: Infinity;
+}
+
+.captcha-toggle {
+    -fx-pref-height: 34px;
+    -fx-padding: 0 14px;
+    -fx-font-size: 12px;
+}
+
+.captcha-refresh {
+    -fx-background-color: linear-gradient(to right, #f46a3d, #fb923c);
+    -fx-text-fill: white;
+    -fx-font-size: 16px;
+    -fx-font-weight: 800;
+    -fx-background-radius: 12px;
+    -fx-pref-width: 48px;
+    -fx-pref-height: 48px;
+    -fx-cursor: hand;
+}
+
+.captcha-input {
+    -fx-pref-height: 48px;
+    -fx-padding: 0 16px;
+}
+
+.captcha-help {
+    -fx-padding: 0 2px;
 }
 
 /* =====================================================================

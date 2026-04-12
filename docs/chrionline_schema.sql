@@ -234,3 +234,23 @@ CREATE INDEX idx_notif_user ON notifications(user_id);
 -- ─────────────────────────────────────────
 -- Runtime logs are now written by Log4j2 to logs/chrionline.log
 
+-- —————————————————————————————————————————
+--  11. LOGIN SECURITY
+--  Persists anti-bruteforce state across client/server restarts.
+-- —————————————————————————————————————————
+CREATE TABLE IF NOT EXISTS login_security (
+    email            VARCHAR(150) NOT NULL,
+    ip_address       VARCHAR(64)  NOT NULL,
+    failures         INT          NOT NULL DEFAULT 0,
+    window_started_at DATETIME    NULL,
+    blocked_until    DATETIME     NULL,
+    ip_blocked_until DATETIME     NULL,
+    updated_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                  ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (email, ip_address)
+);
+
+CREATE INDEX idx_login_security_ip ON login_security(ip_address);
+CREATE INDEX idx_login_security_ip_blocked ON login_security(ip_address, ip_blocked_until);
+

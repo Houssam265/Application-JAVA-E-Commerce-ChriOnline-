@@ -135,5 +135,6 @@ public final class SceneManager {
             scene.setRoot(root);
         }
         stage.setTitle(title);
+        SessionTimeoutManager.attach(scene);
     }
 }

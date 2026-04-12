@@ -1,6 +1,10 @@
 package com.chrionline.ui;
 
-import javafx.animation.*;
+import javafx.animation.Interpolator;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.Timeline;
+import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -34,14 +38,14 @@ public final class ErrorHandler {
         errorLabel.setManaged(true);
         errorLabel.setOpacity(0);
         Timeline in = new Timeline(new KeyFrame(javafx.util.Duration.millis(200),
-                new KeyValue(errorLabel.opacityProperty(), 1, Interpolator.EASE_OUT)));
+            new KeyValue(errorLabel.opacityProperty(), 1, Interpolator.EASE_OUT)));
         in.play();
     }
 
     public static void clearFieldError(Label errorLabel) {
         if (errorLabel == null || !errorLabel.isVisible()) return;
         Timeline out = new Timeline(new KeyFrame(javafx.util.Duration.millis(160),
-                new KeyValue(errorLabel.opacityProperty(), 0, Interpolator.EASE_IN)));
+            new KeyValue(errorLabel.opacityProperty(), 0, Interpolator.EASE_IN)));
         out.setOnFinished(e -> {
             errorLabel.setText("");
             errorLabel.setVisible(false);
@@ -61,7 +65,7 @@ public final class ErrorHandler {
         shake.setFromX(-6);
         shake.setToX(6);
         shake.setAutoReverse(true);
-        shake.setCycleCount(6); // 3 shakes
+        shake.setCycleCount(6);
         shake.setOnFinished(e -> targetNode.setTranslateX(0));
         shake.play();
     }
@@ -71,8 +75,8 @@ public final class ErrorHandler {
         String style = targetNode.getStyle();
         if (style == null) return;
         targetNode.setStyle(style
-                .replace("; -fx-border-color: #FF4444; -fx-border-width: 1.8px;", "")
-                .replace("-fx-border-color: #FF4444; -fx-border-width: 1.8px;", ""));
+            .replace("; -fx-border-color: #FF4444; -fx-border-width: 1.8px;", "")
+            .replace("-fx-border-color: #FF4444; -fx-border-width: 1.8px;", ""));
     }
 
     public static void showErrorDialog(String title, String message) {
@@ -96,34 +100,31 @@ public final class ErrorHandler {
             s.setTitle(title == null ? "Erreur" : title);
 
             BorderPane card = new BorderPane();
-            // Carte pro (theme clair): fond blanc + bordure légère + ombre.
             card.setStyle("-fx-background-color: rgba(255,255,255,0.99)"
-                    + "; -fx-background-radius: 16px;"
-                    + "; -fx-border-color: rgba(15, 23, 42, 0.12)"
-                    + "; -fx-border-width: 1px;"
-                    + "; -fx-border-radius: 16px;"
-                    + "; -fx-effect: dropshadow(gaussian, rgba(15, 23, 42, 0.14), 26, 0.18, 0, 10);");
+                + "; -fx-background-radius: 16px;"
+                + "; -fx-border-color: rgba(15, 23, 42, 0.12)"
+                + "; -fx-border-width: 1px;"
+                + "; -fx-border-radius: 16px;"
+                + "; -fx-effect: dropshadow(gaussian, rgba(15, 23, 42, 0.14), 26, 0.18, 0, 10);");
             card.setPrefWidth(460);
 
-            // Accents (exigence: barre à gauche)
             card.setLeft(new StackPane() {{
                 setStyle("-fx-background-color: " + toRgba(accent) + ";"
-                        + " -fx-background-radius: 16px 0 0 16px;");
+                    + " -fx-background-radius: 16px 0 0 16px;");
                 setPrefWidth(6);
             }});
 
-            // En-tête avec pastille icône
             Label iconLbl = new Label(icon == null ? "" : icon);
             iconLbl.setStyle("-fx-text-fill: white; -fx-font-size: 14px; -fx-font-weight: 900;");
             StackPane iconBubble = new StackPane(iconLbl);
             iconBubble.setPrefSize(34, 34);
             iconBubble.setStyle("-fx-background-color: " + toRgba(accent) + ";"
-                    + " -fx-background-radius: 999px;");
+                + " -fx-background-radius: 999px;");
 
             Label titleLbl = new Label(title == null ? "" : title);
             titleLbl.setStyle("-fx-text-fill: #0f172a;"
-                    + " -fx-font-size: 16px;"
-                    + " -fx-font-weight: 900;");
+                + " -fx-font-size: 16px;"
+                + " -fx-font-weight: 900;");
 
             HBox header = new HBox(12, iconBubble, titleLbl);
             header.setAlignment(Pos.CENTER_LEFT);
@@ -131,16 +132,16 @@ public final class ErrorHandler {
             Label msgLbl = new Label(message == null ? "" : message);
             msgLbl.setWrapText(true);
             msgLbl.setStyle("-fx-text-fill: #334155;"
-                    + " -fx-font-size: 13px;"
-                    + " -fx-font-weight: 600;");
+                + " -fx-font-size: 13px;"
+                + " -fx-font-weight: 600;");
 
             Button ok = new Button("OK");
             ok.setStyle("-fx-background-color: linear-gradient(to right, #f46a3d, #fb923c);"
-                    + " -fx-text-fill: white;"
-                    + " -fx-font-weight: 800;"
-                    + " -fx-background-radius: 12px;"
-                    + " -fx-effect: dropshadow(gaussian, rgba(244, 106, 61, 0.35), 12, 0, 0, 2);"
-                    + " -fx-padding: 10 22 10 22;");
+                + " -fx-text-fill: white;"
+                + " -fx-font-weight: 800;"
+                + " -fx-background-radius: 12px;"
+                + " -fx-effect: dropshadow(gaussian, rgba(244, 106, 61, 0.35), 12, 0, 0, 2);"
+                + " -fx-padding: 10 22 10 22;");
             ok.setOnAction(e -> s.close());
 
             HBox actions = new HBox(ok);
@@ -152,7 +153,6 @@ public final class ErrorHandler {
 
             StackPane root = new StackPane(card);
             root.setPadding(new Insets(14));
-            // Voile léger: plus sombre que l'avant pour améliorer la lisibilité.
             root.setStyle("-fx-background-color: rgba(15, 23, 42, 0.26);");
 
             Scene scene = new Scene(root);
@@ -167,13 +167,13 @@ public final class ErrorHandler {
         Platform.runLater(() -> {
             BannerState st = BANNERS.computeIfAbsent(scene, k -> createBannerState(scene));
             st.remainingSeconds = 10;
-            st.label.setText("⚠ Serveur indisponible — Nouvelle tentative dans 10s...");
+            st.label.setText("⚠ Serveur indisponible - Nouvelle tentative dans 10s...");
             if (!st.container.isVisible()) {
                 st.container.setVisible(true);
                 st.container.setManaged(true);
                 st.container.setTranslateY(-56);
                 new Timeline(new KeyFrame(javafx.util.Duration.millis(220),
-                        new KeyValue(st.container.translateYProperty(), 0, Interpolator.EASE_OUT))).play();
+                    new KeyValue(st.container.translateYProperty(), 0, Interpolator.EASE_OUT))).play();
             }
             if (st.timeline != null) st.timeline.stop();
             st.timeline = new Timeline(new KeyFrame(javafx.util.Duration.seconds(1), e -> {
@@ -183,7 +183,7 @@ public final class ErrorHandler {
                     hideBanner(st);
                     retryAction.run();
                 } else {
-                    st.label.setText("⚠ Serveur indisponible — Nouvelle tentative dans " + st.remainingSeconds + "s...");
+                    st.label.setText("⚠ Serveur indisponible - Nouvelle tentative dans " + st.remainingSeconds + "s...");
                 }
             }));
             st.timeline.setCycleCount(10);
@@ -217,7 +217,7 @@ public final class ErrorHandler {
 
     private static void hideBanner(BannerState st) {
         Timeline out = new Timeline(new KeyFrame(javafx.util.Duration.millis(180),
-                new KeyValue(st.container.translateYProperty(), -56, Interpolator.EASE_IN)));
+            new KeyValue(st.container.translateYProperty(), -56, Interpolator.EASE_IN)));
         out.setOnFinished(e -> {
             st.container.setVisible(false);
             st.container.setManaged(false);
@@ -233,16 +233,19 @@ public final class ErrorHandler {
     }
 
     public static void handleSessionExpired() {
-        showWarningDialog("Session expirée", "Session expirée. Veuillez vous reconnecter.");
+        com.chrionline.client.Client.getInstance().disconnect();
+        ClientSession.getInstance().clear();
+        SessionTimeoutManager.stop();
+        showWarningDialog("Session expiree", "Session expiree. Veuillez vous reconnecter.");
         Platform.runLater(SceneManager::showLogin);
     }
 
     private static String toRgba(Color c) {
         return String.format("rgba(%d,%d,%d,%.2f)",
-                (int) Math.round(c.getRed() * 255),
-                (int) Math.round(c.getGreen() * 255),
-                (int) Math.round(c.getBlue() * 255),
-                c.getOpacity());
+            (int) Math.round(c.getRed() * 255),
+            (int) Math.round(c.getGreen() * 255),
+            (int) Math.round(c.getBlue() * 255),
+            c.getOpacity());
     }
 
     private static final class BannerState {
@@ -252,4 +255,3 @@ public final class ErrorHandler {
         private int remainingSeconds = 10;
     }
 }
-

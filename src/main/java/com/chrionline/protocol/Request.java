@@ -32,6 +32,9 @@ public class Request {
     /** Client-side timestamp in epoch milliseconds. */
     private Long timestamp;
 
+    /** Server-issued one-time nonce for sensitive operations. */
+    private String operationNonce;
+
     // ── Constructeurs ────────────────────────────────────────────────────────
 
     /** No-arg constructor required for Gson. */
@@ -69,6 +72,7 @@ public class Request {
         obj.put(MessageProtocol.KEY_ACTION,  action);
         obj.put(MessageProtocol.KEY_PAYLOAD, payload != null ? new JSONObject(payload) : new JSONObject());
         obj.put(MessageProtocol.KEY_TOKEN,   token == null ? JSONObject.NULL : token);
+        obj.put(MessageProtocol.KEY_OPERATION_NONCE, operationNonce == null ? JSONObject.NULL : operationNonce);
         obj.put("requestId", requestId);
         obj.put("timestamp", timestamp);
         return obj.toString() + "\n";
@@ -90,6 +94,9 @@ public class Request {
 
     public Long getTimestamp() { return timestamp; }
     public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
+
+    public String getOperationNonce() { return operationNonce; }
+    public void setOperationNonce(String operationNonce) { this.operationNonce = operationNonce; }
 
     /** Safe get of payload value as Integer (e.g. product_id, category_id). */
     public Integer getPayloadInt(String key) {

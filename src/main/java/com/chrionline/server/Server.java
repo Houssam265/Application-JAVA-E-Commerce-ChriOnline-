@@ -59,6 +59,7 @@ public class Server {
         userDAO.ensureEmailVerificationSchema();
         userDAO.ensureLoginIpVerificationSchema();
         userDAO.ensurePasswordResetSchema();
+        userDAO.ensureLoginSecuritySchema();
         SessionManager sessionManager = new SessionManager(userDAO);
         AuthService    authService    = new AuthService(userDAO);
         ProductService productService = new ProductService();
@@ -90,7 +91,7 @@ public class Server {
                 try {
                     Socket clientSocket = serverSocket.accept();
                     // Pass the SAME shared instances — no new service created per thread
-                    pool.execute(new ClientHandler(clientSocket, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService));
+                    pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService));
                 } catch (SocketException e) {
                     if (serverSocket.isClosed()) break;
                     LOG.info("SocketException pendant accept(): {}", e.getMessage(), e);

@@ -19,6 +19,30 @@ import java.util.Optional;
  */
 public class UserDAO {
 
+    public static final class LoginSecurityState {
+        private final int failures;
+        private final long blockedUntilMs;
+        private final long ipBlockedUntilMs;
+
+        public LoginSecurityState(int failures, long blockedUntilMs, long ipBlockedUntilMs) {
+            this.failures = failures;
+            this.blockedUntilMs = blockedUntilMs;
+            this.ipBlockedUntilMs = ipBlockedUntilMs;
+        }
+
+        public int getFailures() {
+            return failures;
+        }
+
+        public long getBlockedUntilMs() {
+            return blockedUntilMs;
+        }
+
+        public long getIpBlockedUntilMs() {
+            return ipBlockedUntilMs;
+        }
+    }
+
     private Connection conn() {
         return DatabaseConnection.getInstance().getConnection();
     }
@@ -62,6 +86,29 @@ public class UserDAO {
                 "ALTER TABLE users ADD COLUMN password_reset_token VARCHAR(64) NULL");
         ensureColumn("password_reset_expires_at",
                 "ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME NULL");
+    }
+
+    public void ensureLoginSecuritySchema() {
+        final String sql = """
+            CREATE TABLE IF NOT EXISTS login_security (
+                email VARCHAR(150) NOT NULL,
+                ip_address VARCHAR(64) NOT NULL,
+                failures INT NOT NULL DEFAULT 0,
+                window_started_at DATETIME NULL,
+                blocked_until DATETIME NULL,
+                ip_blocked_until DATETIME NULL,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                           ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (email, ip_address),
+                INDEX idx_login_security_ip (ip_address),
+                INDEX idx_login_security_ip_blocked (ip_address, ip_blocked_until)
+            )
+            """;
+        try (Statement st = conn().createStatement()) {
+            st.executeUpdate(sql);
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.ensureLoginSecuritySchema failed: " + e.getMessage(), e);
+        }
     }
 
     public User save(User user) {
@@ -336,6 +383,161 @@ public class UserDAO {
         }
     }
 
+    public synchronized LoginSecurityState getLoginSecurityState(String email, String ipAddress, long nowMs) {
+        final String sql = """
+            SELECT failures, blocked_until, ip_blocked_until
+              FROM login_security
+             WHERE email = ? AND ip_address = ?
+             LIMIT 1
+            """;
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, email);
+            ps.setString(2, ipAddress);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return new LoginSecurityState(0, 0L, getIpBlockedUntilMs(ipAddress));
+                }
+                long blockedUntilMs = toEpochMillis(rs.getTimestamp("blocked_until"));
+                long ipBlockedUntilMs = toEpochMillis(rs.getTimestamp("ip_blocked_until"));
+                if (blockedUntilMs <= nowMs) {
+                    blockedUntilMs = 0L;
+                }
+                if (ipBlockedUntilMs <= nowMs) {
+                    ipBlockedUntilMs = 0L;
+                }
+                return new LoginSecurityState(rs.getInt("failures"), blockedUntilMs, ipBlockedUntilMs);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.getLoginSecurityState failed for email='" + email + "', ip='" + ipAddress + "': " + e.getMessage(), e);
+        }
+    }
+
+    public synchronized long getIpBlockedUntilMs(String ipAddress) {
+        final String sql = """
+            SELECT MAX(ip_blocked_until) AS ip_blocked_until
+              FROM login_security
+             WHERE ip_address = ?
+            """;
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, ipAddress);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return 0L;
+                }
+                return toEpochMillis(rs.getTimestamp("ip_blocked_until"));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.getIpBlockedUntilMs failed for ip='" + ipAddress + "': " + e.getMessage(), e);
+        }
+    }
+
+    public synchronized LoginSecurityState registerFailedLoginAttempt(String email,
+                                                                      String ipAddress,
+                                                                      long nowMs,
+                                                                      long loginWindowMs,
+                                                                      int maxLoginAttempts) {
+        final String selectSql = """
+            SELECT failures, window_started_at
+              FROM login_security
+             WHERE email = ? AND ip_address = ?
+             LIMIT 1
+            """;
+        final String insertSql = """
+            INSERT INTO login_security (
+                email, ip_address, failures, window_started_at, blocked_until, ip_blocked_until
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """;
+        final String updateSql = """
+            UPDATE login_security
+               SET failures = ?,
+                   window_started_at = ?,
+                   blocked_until = ?,
+                   ip_blocked_until = ?
+             WHERE email = ? AND ip_address = ?
+            """;
+
+        try {
+            int failures = 0;
+            LocalDateTime windowStartedAt = LocalDateTime.now();
+            boolean exists = false;
+
+            try (PreparedStatement ps = conn().prepareStatement(selectSql)) {
+                ps.setString(1, email);
+                ps.setString(2, ipAddress);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        exists = true;
+                        failures = rs.getInt("failures");
+                        Timestamp windowTs = rs.getTimestamp("window_started_at");
+                        if (windowTs != null) {
+                            windowStartedAt = windowTs.toLocalDateTime();
+                        }
+                    }
+                }
+            }
+
+            long windowStartedMs = Timestamp.valueOf(windowStartedAt).getTime();
+            if (!exists || nowMs - windowStartedMs > loginWindowMs) {
+                failures = 0;
+                windowStartedAt = LocalDateTime.now();
+            }
+
+            failures++;
+            LocalDateTime blockedUntil = null;
+            LocalDateTime ipBlockedUntil = null;
+            if (failures >= maxLoginAttempts) {
+                ipBlockedUntil = LocalDateTime.now().plusHours(24);
+                blockedUntil = ipBlockedUntil;
+            } else if (failures >= 9) {
+                blockedUntil = LocalDateTime.now().plusHours(1);
+            } else if (failures >= 6) {
+                blockedUntil = LocalDateTime.now().plusMinutes(10);
+            } else if (failures >= 3) {
+                blockedUntil = LocalDateTime.now().plusMinutes(1);
+            }
+
+            if (exists) {
+                try (PreparedStatement ps = conn().prepareStatement(updateSql)) {
+                    ps.setInt(1, failures);
+                    setTimestamp(ps, 2, windowStartedAt);
+                    setTimestamp(ps, 3, blockedUntil);
+                    setTimestamp(ps, 4, ipBlockedUntil);
+                    ps.setString(5, email);
+                    ps.setString(6, ipAddress);
+                    ps.executeUpdate();
+                }
+            } else {
+                try (PreparedStatement ps = conn().prepareStatement(insertSql)) {
+                    ps.setString(1, email);
+                    ps.setString(2, ipAddress);
+                    ps.setInt(3, failures);
+                    setTimestamp(ps, 4, windowStartedAt);
+                    setTimestamp(ps, 5, blockedUntil);
+                    setTimestamp(ps, 6, ipBlockedUntil);
+                    ps.executeUpdate();
+                }
+            }
+            return new LoginSecurityState(
+                failures,
+                blockedUntil != null ? Timestamp.valueOf(blockedUntil).getTime() : 0L,
+                ipBlockedUntil != null ? Timestamp.valueOf(ipBlockedUntil).getTime() : 0L
+            );
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.registerFailedLoginAttempt failed for email='" + email + "', ip='" + ipAddress + "': " + e.getMessage(), e);
+        }
+    }
+
+    public synchronized void clearLoginSecurityState(String email, String ipAddress) {
+        final String sql = "DELETE FROM login_security WHERE email = ? AND ip_address = ?";
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, email);
+            ps.setString(2, ipAddress);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.clearLoginSecurityState failed for email='" + email + "', ip='" + ipAddress + "': " + e.getMessage(), e);
+        }
+    }
+
     private Optional<User> findOne(String sql, SqlConsumer<PreparedStatement> binder, String errorPrefix) {
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             binder.accept(ps);
@@ -392,6 +594,10 @@ public class UserDAO {
         } else {
             ps.setTimestamp(index, Timestamp.valueOf(value));
         }
+    }
+
+    private long toEpochMillis(Timestamp timestamp) {
+        return timestamp != null ? timestamp.getTime() : 0L;
     }
 
     private User mapRow(ResultSet rs) throws SQLException {

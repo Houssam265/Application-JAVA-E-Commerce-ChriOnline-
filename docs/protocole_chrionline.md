@@ -25,7 +25,7 @@ Les actions `VERIFY_EMAIL`, `RESEND_VERIFICATION_EMAIL`, `VERIFY_LOGIN_IP` et
 ### Auth
 - `LOGIN`
 ```json
-{"action":"LOGIN","payload":{"email":"user@ex.com","password":"secret","recaptchaToken":"<captcha_token>"},"token":null}
+{"action":"LOGIN","payload":{"email":"user@ex.com","password":"secret","captchaId":"<captcha_id>","captchaAnswer":"AB12CD"},"token":null}
 ```
 Reponse possible si l'authentification reussit directement:
 ```json
@@ -34,6 +34,14 @@ Reponse possible si l'authentification reussit directement:
 Reponse possible si l'email est correct mais qu'une nouvelle IP doit etre verifiee:
 ```json
 {"success":false,"message":"Nouvelle adresse IP detectee. Un code de verification a ete envoye par email.","payload":{"email":"user@ex.com","verificationType":"login_ip","message":"Verification requise pour cette nouvelle adresse IP."},"token":null}
+```
+- `GET_LOGIN_CAPTCHA`
+```json
+{"action":"GET_LOGIN_CAPTCHA","payload":{},"token":null}
+```
+Reponse:
+```json
+{"success":true,"message":"LOGIN_CAPTCHA_READY","payload":{"captchaId":"<captcha_id>","captchaText":"AB12CD","expiresInSeconds":120},"token":null}
 ```
 - `REGISTER`
 ```json
@@ -81,6 +89,21 @@ Reponse possible si l'email est correct mais qu'une nouvelle IP doit etre verifi
 {"action":"GET_CATEGORIES","payload":{},"token":"<session_token>"}
 ```
 
+### Nonce serveur
+- `GET_OPERATION_NONCE`
+```json
+{"action":"GET_OPERATION_NONCE","payload":{"operation":"PLACE_ORDER"},"token":"<session_token>"}
+```
+Reponse:
+```json
+{"success":true,"message":"OPERATION_NONCE_READY","payload":{"nonce":"<nonce>","operation":"PLACE_ORDER","scope":null,"expiresAt":1712678460000},"token":null}
+```
+Le `nonce` est:
+- emis par le serveur
+- associe a l'utilisateur connecte
+- valable une seule fois
+- valable pour une seule operation sensible
+
 ### Panier
 - `GET_CART`
 ```json
@@ -106,16 +129,18 @@ Reponse possible si l'email est correct mais qu'une nouvelle IP doit etre verifi
 ### Commandes
 - `PLACE_ORDER`
 ```json
-{"action":"PLACE_ORDER","payload":{"payment_method":"SIMULATED"},"token":"<session_token>","requestId":"<uuid>","timestamp":1712678400000}
+{"action":"PLACE_ORDER","payload":{"payment_method":"SIMULATED"},"token":"<session_token>","operationNonce":"<nonce>","requestId":"<uuid>","timestamp":1712678400000}
 ```
 Pour limiter les attaques par rejeu, chaque requete `PLACE_ORDER` doit contenir :
 - `requestId` : identifiant unique de requete
 - `timestamp` : horodatage client en millisecondes epoch
+- `operationNonce` : nonce serveur a usage unique, recupere via `GET_OPERATION_NONCE`
 
 Le serveur rejette la commande si :
 - le `requestId` est absent
 - le `timestamp` est trop ancien ou incoherent
 - le meme `requestId` est recu une seconde fois pour le meme utilisateur
+- le `operationNonce` est absent, invalide, expire ou deja consomme
 - `GET_ORDERS`
 ```json
 {"action":"GET_ORDERS","payload":{},"token":"<session_token>"}
@@ -132,16 +157,18 @@ Le serveur rejette la commande si :
 ### Paiement
 - `PAYMENT`
 ```json
-{"action":"PAYMENT","payload":{"order_id":123,"method":"SIMULATED","amount":199.99},"token":"<session_token>","requestId":"<uuid>","timestamp":1712678400000}
+{"action":"PAYMENT","payload":{"order_id":123,"method":"SIMULATED","amount":199.99},"token":"<session_token>","operationNonce":"<nonce>","requestId":"<uuid>","timestamp":1712678400000}
 ```
 Pour limiter les attaques par rejeu, chaque requete `PAYMENT` doit contenir :
 - `requestId` : identifiant unique de requete
 - `timestamp` : horodatage client en millisecondes epoch
+- `operationNonce` : nonce serveur a usage unique, recupere via `GET_OPERATION_NONCE`
 
 Le serveur rejette un paiement si :
 - le `requestId` est absent
 - le `timestamp` est trop ancien ou incoherent
 - le meme `requestId` est recu une seconde fois pour le meme utilisateur
+- le `operationNonce` est absent, invalide, expire ou deja consomme
 
 ### Notifications
 - `GET_NOTIFICATIONS`

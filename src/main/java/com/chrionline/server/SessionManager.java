@@ -37,8 +37,8 @@ public class SessionManager {
 
     private static final Logger LOG = LogManager.getLogger(SessionManager.class);
 
-    /** Session duration: 30 minutes. */
-    private static final long SESSION_DURATION_MINUTES = 30;
+    /** Session inactivity timeout: 10 minutes. */
+    private static final long SESSION_DURATION_MINUTES = 10;
 
     // ── Dependencies ──────────────────────────────────────────────────────────
 
@@ -227,6 +227,29 @@ public class SessionManager {
     public synchronized Optional<User> getUserFromToken(String token) {
         return getSession(token)
                 .flatMap(session -> userDAO.findById(session.getUserId()));
+    }
+
+    /**
+     * Extends a valid session after each authenticated action.
+     */
+    public synchronized void refreshSession(String token) {
+        Optional<Session> sessionOpt = getSession(token);
+        if (sessionOpt.isEmpty()) {
+            return;
+        }
+
+        Session session = sessionOpt.get();
+        LocalDateTime newExpiresAt = LocalDateTime.now().plusMinutes(SESSION_DURATION_MINUTES);
+        session.setExpiresAt(newExpiresAt);
+
+        final String sql = "UPDATE sessions SET expires_at = ? WHERE token = ?";
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setTimestamp(1, Timestamp.valueOf(newExpiresAt));
+            ps.setString(2, token);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.warn("[SESSION] refreshSession DB update failed for token={}: {}", token, e.getMessage(), e);
+        }
     }
 
     // ── Private DB helpers ────────────────────────────────────────────────────
