@@ -1,0 +1,8 @@
+2026-04-09 22:10:08.404 [com.chrionline.server.Server.main()] INFO  c.c.s.EnvFileLoader - [ENV] Loaded configuration from C:\ENSA\2eme_annee\S2\Securite reseau\Mini_Projet1\Application-JAVA-E-Commerce-ChriOnline-\.env
+2026-04-09 22:10:08.615 [com.chrionline.server.Server.main()] INFO  c.c.d.DatabaseConnection - [DB] Connection established successfully -> jdbc:mysql://localhost:3306/chrionline?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=utf8
+2026-04-09 22:10:08.730 [com.chrionline.server.Server.main()] INFO  c.c.s.Server - [SERVER] Seeding default admin account if not present...
+2026-04-09 22:10:08.737 [com.chrionline.server.Server.main()] INFO  c.c.s.AuthService - [AUTH] Admin account already exists - skipping seed
+2026-04-09 22:10:08.737 [com.chrionline.server.Server.main()] INFO  c.c.s.Server - [SERVER] Cleaning expired sessions...
+2026-04-09 22:10:08.737 [com.chrionline.server.Server.main()] INFO  c.c.s.SessionManager - [SESSION] Cleanup done - removed from cache: 0, removed from DB: 0
+2026-04-09 22:10:08.995 [com.chrionline.server.Server.main()] INFO  c.c.s.Server - Serveur TCP securise demarre sur le port 8081 (pool=16 threads)
+2026-04-09 22:10:08.996 [com.chrionline.server.Server.main()] INFO  c.c.s.Server - TLS actif (keystore=C:\ENSA\2eme_annee\S2\Securite reseau\Mini_Projet1\Application-JAVA-E-Commerce-ChriOnline-\config\tls\server-keystore.p12)

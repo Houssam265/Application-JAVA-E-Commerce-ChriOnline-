@@ -67,4 +67,12 @@ public class ProductService {
     public List<Category> getCategories() {
         return categoryDAO.findAll();
     }
+
+    public List<Product> getTopSellingProducts(int limit) {
+        return productDAO.findTopSellingAvailable(limit);
+    }
+
+    public List<Product> getRecentProducts(int limit) {
+        return productDAO.findRecentAvailable(limit);
+    }
 }

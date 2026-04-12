@@ -59,13 +59,26 @@ public final class PasswordUtils {
         if (plainPassword == null || plainPassword.length() < 8) {
             return false;
         }
-        boolean hasLetter = false;
-        boolean hasDigit  = false;
+        boolean hasUpper = false;
+        boolean hasLower = false;
+        boolean hasDigit = false;
+        boolean hasSpecial = false;
         for (char c : plainPassword.toCharArray()) {
-            if (Character.isLetter(c)) hasLetter = true;
-            if (Character.isDigit(c))  hasDigit  = true;
-            if (hasLetter && hasDigit) return true;
+            if (Character.isUpperCase(c)) hasUpper = true;
+            else if (Character.isLowerCase(c)) hasLower = true;
+            else if (Character.isDigit(c)) hasDigit = true;
+            else hasSpecial = true;
+            if (hasUpper && hasLower && hasDigit && hasSpecial) return true;
         }
         return false;
+    }
+
+    public static boolean containsUsername(String plainPassword, String username) {
+        if (plainPassword == null || username == null) {
+            return false;
+        }
+        String normalizedUsername = username.trim().toLowerCase();
+        return !normalizedUsername.isBlank()
+                && plainPassword.toLowerCase().contains(normalizedUsername);
     }
 }

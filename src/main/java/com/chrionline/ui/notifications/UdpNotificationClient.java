@@ -1,14 +1,14 @@
 package com.chrionline.ui.notifications;
 
 import org.json.JSONObject;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketTimeoutException;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Background daemon thread that listens for UDP server push notifications (KAN-31).
@@ -17,7 +17,7 @@ import java.util.logging.Logger;
  * so that both server and client can run on the same machine without port conflicts.
  */
 public final class UdpNotificationClient {
-    private static final Logger LOG = Logger.getLogger(UdpNotificationClient.class.getName());
+    private static final Logger LOG = LogManager.getLogger(UdpNotificationClient.class);
 
     /** Port the CLIENT listens on. Must differ from the server's bind port (9090). */
     public static final int CLIENT_PORT = 9091;
@@ -68,14 +68,14 @@ public final class UdpNotificationClient {
                     // keep listening, allows graceful shutdown checks
                 } catch (Exception malformed) {
                     // malformed packet or transient decoding/network issue: keep thread alive
-                    LOG.log(Level.FINE, "Ignoring malformed UDP packet: " + malformed.getMessage(), malformed);
+                    LOG.debug("Ignoring malformed UDP packet: {}", malformed.getMessage(), malformed);
                 }
             }
         } catch (SocketException se) {
             // Port may be unavailable; keep UI running without surfacing noisy toasts.
-            LOG.log(Level.INFO, "UDP listener unavailable on port " + port + ": " + se.getMessage());
+            LOG.info("UDP listener unavailable on port {}: {}", port, se.getMessage());
         } catch (Exception e) {
-            LOG.log(Level.WARNING, "UDP listener terminated unexpectedly: " + e.getMessage(), e);
+            LOG.warn("UDP listener terminated unexpectedly: {}", e.getMessage(), e);
         }
     }
 

@@ -24,8 +24,11 @@ import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.FlowPane;
@@ -64,6 +67,13 @@ public class ProductDetailController {
 
     @FXML private Button adminButton;
     @FXML private Button navHomeBtn;
+    @FXML private Button navCatalogueBtn;
+    @FXML private TextField headerSearchField;
+    @FXML private MenuButton accountMenuButton;
+    @FXML private MenuItem accountProfileItem;
+    @FXML private MenuItem accountOrdersItem;
+    @FXML private MenuItem accountAdminItem;
+    @FXML private MenuItem accountLogoutItem;
     @FXML private Button bellButton;
     @FXML private Label unreadBadge;
     @FXML private VBox toastLayer;
@@ -82,9 +92,7 @@ public class ProductDetailController {
             adminButton.setVisible(true);
             adminButton.setManaged(true);
         }
-        if (navHomeBtn != null && !navHomeBtn.getStyleClass().contains("nav-pill-active")) {
-            navHomeBtn.getStyleClass().add("nav-pill-active");
-        }
+        configureAccountMenu(session);
         if (quantitySpinner != null) {
             quantitySpinner.getStyleClass().add("premium-spinner");
             quantitySpinner.setEditable(true);
@@ -164,12 +172,25 @@ public class ProductDetailController {
 
     @FXML
     private void handleBackToCatalog() {
-        SceneManager.showHome();
+        SceneManager.showCatalogue();
     }
 
     @FXML
     private void handleOpenHome() {
         SceneManager.showHome();
+    }
+
+    @FXML
+    private void handleOpenCatalogue() {
+        SceneManager.showCatalogue();
+    }
+
+    @FXML
+    private void handleHeaderSearch() {
+        String query = headerSearchField == null || headerSearchField.getText() == null
+                ? ""
+                : headerSearchField.getText().trim();
+        SceneManager.showCatalogue(query);
     }
 
     @FXML
@@ -190,6 +211,34 @@ public class ProductDetailController {
     @FXML
     private void handleOpenAdmin() {
         SceneManager.showAdmin();
+    }
+
+    private void configureAccountMenu(ClientSession session) {
+        if (accountMenuButton == null) return;
+        String username = session.getUsername() == null || session.getUsername().isBlank()
+                ? "Utilisateur"
+                : session.getUsername();
+        accountMenuButton.setText("Bonjour, " + username);
+
+        if (accountProfileItem != null) {
+            accountProfileItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-user"));
+            accountProfileItem.setOnAction(e -> handleOpenProfile());
+        }
+        if (accountOrdersItem != null) {
+            accountOrdersItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-box-open"));
+            accountOrdersItem.setOnAction(e -> handleOpenOrders());
+        }
+        if (accountAdminItem != null) {
+            accountAdminItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-user-shield"));
+            accountAdminItem.setOnAction(e -> handleOpenAdmin());
+            boolean isAdmin = session.isAdmin();
+            accountAdminItem.setVisible(isAdmin);
+            accountAdminItem.setDisable(!isAdmin);
+        }
+        if (accountLogoutItem != null) {
+            accountLogoutItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-sign-out-alt"));
+            accountLogoutItem.setOnAction(e -> handleLogout());
+        }
     }
 
     @FXML

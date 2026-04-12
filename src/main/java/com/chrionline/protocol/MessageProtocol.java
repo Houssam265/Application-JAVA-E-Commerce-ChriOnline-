@@ -7,6 +7,7 @@ public final class MessageProtocol {
     public static final String KEY_ACTION  = "action";
     public static final String KEY_PAYLOAD = "payload";
     public static final String KEY_TOKEN   = "token";
+    public static final String KEY_OPERATION_NONCE = "operationNonce";
 
     // Auth
     public static final String ACTION_LOGIN = "LOGIN";
@@ -18,11 +19,16 @@ public final class MessageProtocol {
     public static final String ACTION_RESEND_LOGIN_IP_VERIFICATION = "RESEND_LOGIN_IP_VERIFICATION";
     public static final String ACTION_FORGOT_PASSWORD = "FORGOT_PASSWORD";
     public static final String ACTION_RESET_PASSWORD = "RESET_PASSWORD";
+    public static final String ACTION_GET_LOGIN_CAPTCHA = "GET_LOGIN_CAPTCHA";
+    public static final String ACTION_GET_LOGIN_SECURITY_STATE = "GET_LOGIN_SECURITY_STATE";
 
     // Catalogue
     public static final String ACTION_GET_PRODUCTS   = "GET_PRODUCTS";
     public static final String ACTION_GET_PRODUCT    = "GET_PRODUCT";
     public static final String ACTION_GET_CATEGORIES = "GET_CATEGORIES";
+    public static final String ACTION_GET_TOP_SELLING_PRODUCTS = "GET_TOP_SELLING_PRODUCTS";
+    public static final String ACTION_GET_RECENT_PRODUCTS = "GET_RECENT_PRODUCTS";
+    public static final String ACTION_GET_OPERATION_NONCE = "GET_OPERATION_NONCE";
 
     // Cart
     public static final String ACTION_GET_CART          = "GET_CART";
@@ -62,7 +68,4 @@ public final class MessageProtocol {
     public static final String ACTION_ADMIN_UPDATE_CATEGORY = "UPDATE_CATEGORY";
     public static final String ACTION_ADMIN_DELETE_CATEGORY = "DELETE_CATEGORY";
 
-    // Logs (KAN-41)
-    public static final String GET_LOGS = "GET_LOGS";
-    public static final String GET_LOGS_BY_USER = "GET_LOGS_BY_USER";
 }

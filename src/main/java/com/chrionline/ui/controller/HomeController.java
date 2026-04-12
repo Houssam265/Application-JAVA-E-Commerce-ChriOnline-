@@ -25,6 +25,7 @@ import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.kordamp.ikonli.javafx.FontIcon;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -49,9 +50,16 @@ public class HomeController {
     @FXML private ScrollPane homeScroll;
     @FXML private FlowPane productsGrid;
     @FXML private VBox productsSection;
+    @FXML private TextField headerSearchField;
+    @FXML private MenuButton accountMenuButton;
+    @FXML private MenuItem accountProfileItem;
+    @FXML private MenuItem accountOrdersItem;
+    @FXML private MenuItem accountAdminItem;
+    @FXML private MenuItem accountLogoutItem;
     @FXML private Button adminButton;
     @FXML private Button bellButton;
     @FXML private Button navHomeBtn;
+    @FXML private Button navCatalogueBtn;
     @FXML private Label unreadBadge;
     @FXML private VBox toastLayer;
     @FXML private StackPane drawerScrim;
@@ -64,6 +72,7 @@ public class HomeController {
     private final Map<String, Integer> categoryIdByName = new HashMap<>();
     /** "Toutes" ou nom exact d'une catégorie renvoyée par le serveur. */
     private String selectedCategoryName = "Toutes";
+    private String initialSearch;
 
     @FXML
     public void initialize() {
@@ -76,6 +85,14 @@ public class HomeController {
         allProducts = new ArrayList<>();
 
         searchField.textProperty().addListener((observable, oldValue, newValue) -> filterProducts());
+        if (headerSearchField != null) {
+            headerSearchField.textProperty().addListener((observable, oldValue, newValue) -> {
+                if (searchField != null && !newValue.equals(searchField.getText())) {
+                    searchField.setText(newValue);
+                }
+            });
+        }
+        configureAccountMenu(session);
 
         // Load categories + products from server (DB)
         loadCatalogueFromServer();
@@ -188,8 +205,68 @@ public class HomeController {
     }
 
     private void setActiveNav() {
-        if (navHomeBtn != null && !navHomeBtn.getStyleClass().contains("nav-pill-active")) {
-            navHomeBtn.getStyleClass().add("nav-pill-active");
+        if (navCatalogueBtn != null && !navCatalogueBtn.getStyleClass().contains("nav-pill-active")) {
+            navCatalogueBtn.getStyleClass().add("nav-pill-active");
+        }
+        if (navHomeBtn != null) {
+            navHomeBtn.getStyleClass().remove("nav-pill-active");
+        }
+    }
+
+    public void setInitialSearch(String initialSearch) {
+        this.initialSearch = initialSearch;
+        if (searchField != null && initialSearch != null && !initialSearch.isBlank()) {
+            searchField.setText(initialSearch);
+        }
+        if (headerSearchField != null && initialSearch != null && !initialSearch.isBlank()) {
+            headerSearchField.setText(initialSearch);
+        }
+    }
+
+    private void configureAccountMenu(ClientSession session) {
+        if (accountMenuButton == null) return;
+        String username = session.getUsername() == null || session.getUsername().isBlank()
+                ? "Utilisateur"
+                : session.getUsername();
+        accountMenuButton.setText("Bonjour, " + username);
+
+        if (accountProfileItem != null) {
+            accountProfileItem.setGraphic(new FontIcon("fas-user"));
+            accountProfileItem.setOnAction(e -> handleOpenProfile());
+        }
+        if (accountOrdersItem != null) {
+            accountOrdersItem.setGraphic(new FontIcon("fas-box-open"));
+            accountOrdersItem.setOnAction(e -> handleOpenOrders());
+        }
+        if (accountAdminItem != null) {
+            accountAdminItem.setGraphic(new FontIcon("fas-user-shield"));
+            accountAdminItem.setOnAction(e -> handleOpenAdmin());
+            boolean isAdmin = session.isAdmin();
+            accountAdminItem.setVisible(isAdmin);
+            accountAdminItem.setDisable(!isAdmin);
+        }
+        if (accountLogoutItem != null) {
+            accountLogoutItem.setGraphic(new FontIcon("fas-sign-out-alt"));
+            accountLogoutItem.setOnAction(e -> handleLogout());
+        }
+    }
+
+    @FXML
+    private void handleOpenHome() {
+        SceneManager.showHome();
+    }
+
+    @FXML
+    private void handleOpenCatalogue() {
+        noop();
+    }
+
+    @FXML
+    private void handleHeaderSearch() {
+        if (headerSearchField == null) return;
+        String query = headerSearchField.getText() == null ? "" : headerSearchField.getText().trim();
+        if (searchField != null) {
+            searchField.setText(query);
         }
     }
 

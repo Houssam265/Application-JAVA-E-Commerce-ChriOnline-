@@ -1,6 +1,8 @@
 package com.chrionline.client;
 
 import org.json.JSONObject;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -14,6 +16,8 @@ import java.nio.charset.StandardCharsets;
  * UDP daemon listener for server notifications (KAN-8).
  */
 public class UDPNotificationListener implements Closeable {
+
+    private static final Logger LOG = LogManager.getLogger(UDPNotificationListener.class);
 
     public static final int DEFAULT_PORT = 9090;
     private static final int BUFFER_SIZE = 4096;
@@ -73,9 +77,9 @@ public class UDPNotificationListener implements Closeable {
             sb.append(type);
             if (!orderId.isBlank()) sb.append(" order=").append(orderId);
             if (!message.isBlank()) sb.append(" - ").append(message);
-            System.out.println(sb);
+            LOG.info(sb.toString());
         } catch (Exception e) {
-            System.out.println("[UDP] Notification brute: " + json);
+            LOG.info("[UDP] Notification brute: {}", json);
         }
     }
 

@@ -1,7 +1,7 @@
 -- ============================================================
 --  ChriOnline E-Commerce — MySQL Schema
 --  Matches the UML class diagram
---  v2 — Added: server_logs table · indexes · auto-increment integer orders
+--  v2 - Added: auto-increment integer orders
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS chrionline
@@ -232,27 +232,25 @@ CREATE TABLE notifications (
 CREATE INDEX idx_notif_user ON notifications(user_id);
 
 -- ─────────────────────────────────────────
---  11. SERVER LOGS  (KAN-41)
---  Persists all server-side actions for the
---  admin dashboard. user_id is nullable because
---  some events occur before authentication
---  (e.g. failed login attempt, server start).
--- ─────────────────────────────────────────
-CREATE TABLE server_logs (
-    log_id      INT          NOT NULL AUTO_INCREMENT,
-    user_id     INT,                                  -- NULL = pre-auth or system event
-    action      VARCHAR(100) NOT NULL,                -- e.g. LOGIN, PLACE_ORDER, PAYMENT
-    status      ENUM('SUCCESS','ERROR') NOT NULL,
-    message     TEXT,                                 -- error detail or context
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-- Runtime logs are now written by Log4j2 to logs/chrionline.log
 
-    PRIMARY KEY (log_id),
-    CONSTRAINT fk_log_user
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
-        ON DELETE SET NULL                            -- keep logs even if user is deleted
+-- —————————————————————————————————————————
+--  11. LOGIN SECURITY
+--  Persists anti-bruteforce state across client/server restarts.
+-- —————————————————————————————————————————
+CREATE TABLE IF NOT EXISTS login_security (
+    email            VARCHAR(150) NOT NULL,
+    ip_address       VARCHAR(64)  NOT NULL,
+    failures         INT          NOT NULL DEFAULT 0,
+    window_started_at DATETIME    NULL,
+    blocked_until    DATETIME     NULL,
+    ip_blocked_until DATETIME     NULL,
+    updated_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                  ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (email, ip_address)
 );
 
--- Filter logs by user or time range in admin dashboard
-CREATE INDEX idx_log_user       ON server_logs(user_id);
-CREATE INDEX idx_log_created_at ON server_logs(created_at);
+CREATE INDEX idx_login_security_ip ON login_security(ip_address);
+CREATE INDEX idx_login_security_ip_blocked ON login_security(ip_address, ip_blocked_until);
 

@@ -63,6 +63,30 @@ public final class SceneManager {
         loadScene("/fxml/Home.fxml", "ChriOnline - Accueil");
     }
 
+    public static void showCatalogue() {
+        loadScene("/fxml/Catalogue.fxml", "ChriOnline - Catalogue");
+    }
+
+    public static void showCatalogue(String initialSearch) {
+        try {
+            FXMLLoader loader = new FXMLLoader(requireResource("/fxml/Catalogue.fxml"));
+            Parent root = loader.load();
+
+            Object controller = loader.getController();
+            if (controller instanceof com.chrionline.ui.controller.HomeController homeController) {
+                homeController.setInitialSearch(initialSearch);
+            }
+
+            setSceneRoot(root, "ChriOnline - Catalogue");
+        } catch (Exception e) {
+            e.printStackTrace();
+            ErrorHandler.showErrorDialog(
+                    "Navigation impossible",
+                    "Impossible de charger l'ecran Catalogue.\n" + e.getMessage()
+            );
+        }
+    }
+
     public static void showCart() {
         loadScene("/fxml/Cart.fxml", "ChriOnline - Panier");
     }
@@ -135,5 +159,6 @@ public final class SceneManager {
             scene.setRoot(root);
         }
         stage.setTitle(title);
+        SessionTimeoutManager.attach(scene);
     }
 }

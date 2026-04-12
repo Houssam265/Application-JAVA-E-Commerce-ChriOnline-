@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
@@ -8,9 +9,9 @@
 
 <StackPane xmlns="http://javafx.com/javafx/17"
            xmlns:fx="http://javafx.com/fxml/1"
-           fx:controller="com.chrionline.ui.controller.LandingController"
+           fx:controller="com.chrionline.ui.controller.HomeController"
            styleClass="root-pane">
-    <ScrollPane fitToWidth="true" styleClass="content-scroll" StackPane.alignment="TOP_LEFT">
+    <ScrollPane fx:id="homeScroll" fitToWidth="true" styleClass="content-scroll" StackPane.alignment="TOP_LEFT">
         <content>
             <VBox spacing="0" style="-fx-background-color: transparent;">
 
@@ -29,7 +30,7 @@
                         <Region HBox.hgrow="ALWAYS"/>
 
                         <HBox alignment="CENTER" spacing="18">
-                            <Button fx:id="navHomeBtn" onAction="#noop" styleClass="nav-pill">
+                            <Button fx:id="navHomeBtn" onAction="#handleOpenHome" styleClass="nav-pill">
                                 <graphic>
                                     <HBox alignment="CENTER" spacing="8">
                                         <FontIcon iconLiteral="fas-home" iconSize="14" styleClass="ikonli-muted"/>
@@ -109,83 +110,36 @@
                 </HBox>
 
                 <StackPane styleClass="hero-section">
-                    <VBox alignment="CENTER_LEFT" spacing="24" maxWidth="1200" style="-fx-padding: 90px 60px;">
-                        <Label text="New Collection 2026" styleClass="hero-badge"/>
-                        <Label text="Discover products&#10;you'll love" styleClass="hero-super-title"/>
-                        <Label text="Browse our strongest selection, then jump into the full catalogue to filter by category and explore every product." styleClass="hero-subtitle" wrapText="true"/>
-                        <HBox alignment="CENTER_LEFT" spacing="14" style="-fx-padding: 10px 0 0 0;">
-                            <Button onAction="#handleShopNow" styleClass="btn-primary">
-                                <graphic>
-                                    <HBox alignment="CENTER" spacing="8">
-                                        <FontIcon iconLiteral="fas-bolt" iconSize="14" styleClass="ikonli-on-primary"/>
-                                        <Label text="Open Catalogue" style="-fx-text-fill: white; -fx-font-weight: 700;"/>
-                                    </HBox>
-                                </graphic>
-                            </Button>
-                        </HBox>
+                    <VBox alignment="CENTER_LEFT" spacing="18" maxWidth="1200" style="-fx-padding: 72px 60px;">
+                        <Label text="Catalogue Complet" styleClass="hero-badge"/>
+                        <Label text="Explore all products&#10;with smart filters" styleClass="hero-super-title"/>
+                        <Label text="Filtrez par categorie, recherchez rapidement et ouvrez chaque fiche produit en un clic." styleClass="hero-subtitle"/>
                     </VBox>
                 </StackPane>
 
-                <HBox alignment="CENTER" spacing="0" style="-fx-background-color: rgba(255,255,255,0.03); -fx-border-color: transparent transparent rgba(255,255,255,0.06) transparent; -fx-border-width:1px; -fx-padding: 30px 20px;">
-                    <HBox alignment="CENTER" spacing="70" maxWidth="1100" HBox.hgrow="ALWAYS">
-                        <HBox alignment="CENTER" spacing="14">
-                            <StackPane style="-fx-background-color: rgba(244,106,61,0.12); -fx-background-radius: 50%; -fx-padding: 14px;">
-                                <FontIcon iconLiteral="fas-truck" iconSize="22" styleClass="ikonli-accent"/>
-                            </StackPane>
-                            <VBox spacing="2">
-                                <Label text="Free Shipping" styleClass="trust-title"/>
-                                <Label text="On orders" styleClass="trust-subtitle"/>
-                            </VBox>
-                        </HBox>
-                        <HBox alignment="CENTER" spacing="14">
-                            <StackPane style="-fx-background-color: rgba(192,132,252,0.12); -fx-background-radius: 50%; -fx-padding: 14px;">
-                                <FontIcon iconLiteral="fas-shield-alt" iconSize="22" styleClass="ikonli-purple"/>
-                            </StackPane>
-                            <VBox spacing="2">
-                                <Label text="Secure Payments" styleClass="trust-title"/>
-                                <Label text="100% protected" styleClass="trust-subtitle"/>
-                            </VBox>
-                        </HBox>
-                        <HBox alignment="CENTER" spacing="14">
-                            <StackPane style="-fx-background-color: rgba(34,197,94,0.12); -fx-background-radius: 50%; -fx-padding: 14px;">
-                                <FontIcon iconLiteral="fas-undo" iconSize="22" styleClass="ikonli-green"/>
-                            </StackPane>
-                            <VBox spacing="2">
-                                <Label text="Easy Returns" styleClass="trust-title"/>
-                                <Label text="30-day guarantee" styleClass="trust-subtitle"/>
-                            </VBox>
-                        </HBox>
-                        <HBox alignment="CENTER" spacing="14">
-                            <StackPane style="-fx-background-color: rgba(251,191,36,0.12); -fx-background-radius: 50%; -fx-padding: 14px;">
-                                <FontIcon iconLiteral="fas-headset" iconSize="22" styleClass="ikonli-yellow"/>
-                            </StackPane>
-                            <VBox spacing="2">
-                                <Label text="24/7 Support" styleClass="trust-title"/>
-                                <Label text="Always here for you" styleClass="trust-subtitle"/>
-                            </VBox>
-                        </HBox>
-                    </HBox>
-                </HBox>
-
                 <VBox alignment="TOP_CENTER" style="-fx-padding: 50px 40px 80px 40px;">
-                    <VBox maxWidth="1200" spacing="46" VBox.vgrow="ALWAYS">
-                        <VBox spacing="24">
-                            <HBox alignment="CENTER_LEFT" spacing="8">
-                                <FontIcon iconLiteral="fas-fire" iconSize="18" styleClass="ikonli-accent"/>
-                                <Label text="Top Features" styleClass="section-title"/>
+                    <VBox maxWidth="1200" spacing="40" VBox.vgrow="ALWAYS">
+
+                        <VBox spacing="18">
+                            <HBox alignment="CENTER_LEFT">
+                                <HBox alignment="CENTER_LEFT" spacing="8">
+                                    <FontIcon iconLiteral="fas-layer-group" iconSize="18" styleClass="ikonli-accent"/>
+                                    <Label text="Catalogue" styleClass="section-title"/>
+                                </HBox>
                             </HBox>
-                            <Label text="Les 4 produits les plus vendus du moment." styleClass="body-text"/>
+                            <FlowPane fx:id="categoryPills" hgap="12" vgap="12" alignment="CENTER_LEFT"/>
+                        </VBox>
+
+                        <TextField fx:id="searchField" visible="false" managed="false"/>
+
+                        <VBox fx:id="productsSection" spacing="20">
+                            <HBox alignment="CENTER_LEFT" spacing="8">
+                                <FontIcon iconLiteral="fas-store" iconSize="18" styleClass="ikonli-accent"/>
+                                <Label text="Tous Les Produits" styleClass="section-title"/>
+                            </HBox>
                             <FlowPane fx:id="productsGrid" hgap="20" vgap="20" styleClass="products-grid"/>
                         </VBox>
 
-                        <VBox spacing="24">
-                            <HBox alignment="CENTER_LEFT" spacing="8">
-                                <FontIcon iconLiteral="fas-star" iconSize="18" styleClass="ikonli-accent"/>
-                                <Label text="Nouveautes" styleClass="section-title"/>
-                            </HBox>
-                            <Label text="Les 4 produits ajoutes le plus recemment." styleClass="body-text"/>
-                            <FlowPane fx:id="recentProductsGrid" hgap="20" vgap="20" styleClass="products-grid"/>
-                        </VBox>
                     </VBox>
                 </VBox>
 
@@ -201,11 +155,11 @@
                                     </ImageView>
                                     <Label text="ChriOnline" styleClass="footer-brand"/>
                                 </HBox>
-                                <Label text="ChriOnline met en avant ses meilleures ventes sur l'accueil et propose un catalogue complet avec filtres pour explorer tout le stock." styleClass="footer-text" wrapText="true"/>
+                                <Label text="Retrouvez dans le catalogue tous les produits disponibles avec filtrage par categorie et recherche instantanee." styleClass="footer-text" wrapText="true"/>
                             </VBox>
                             <VBox spacing="14" alignment="TOP_LEFT">
                                 <Label text="NAVIGATION" styleClass="footer-header"/>
-                                <Button text="Accueil" onAction="#noop" styleClass="footer-link"
+                                <Button text="Accueil" onAction="#handleOpenHome" styleClass="footer-link"
                                         style="-fx-background-color: transparent; -fx-padding: 0; -fx-alignment: CENTER_LEFT;"/>
                                 <Button text="Catalogue" onAction="#handleOpenCatalogue" styleClass="footer-link"
                                         style="-fx-background-color: transparent; -fx-padding: 0; -fx-alignment: CENTER_LEFT;"/>

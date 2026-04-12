@@ -37,6 +37,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import org.kordamp.ikonli.javafx.FontIcon;
 
 public class CheckoutController {
 
@@ -65,9 +66,17 @@ public class CheckoutController {
     @FXML private StackPane drawerScrim;
     @FXML private VBox drawerPanel;
     @FXML private ListView<AppNotification> notificationsList;
+    @FXML private TextField headerSearchField;
+    @FXML private MenuButton accountMenuButton;
+    @FXML private MenuItem accountProfileItem;
+    @FXML private MenuItem accountOrdersItem;
+    @FXML private MenuItem accountAdminItem;
+    @FXML private MenuItem accountLogoutItem;
+    @FXML private Button adminButton;
 
-    // Navbar buttons (active state)
-    @FXML private Button navCartBtn;
+    // Navbar buttons
+    @FXML private Button navHomeBtn;
+    @FXML private Button navCatalogueBtn;
 
     // Result overlay
     @FXML private StackPane resultOverlay;
@@ -85,6 +94,13 @@ public class CheckoutController {
 
     @FXML
     public void initialize() {
+        ClientSession session = ClientSession.getInstance();
+        if (session.isAdmin() && adminButton != null) {
+            adminButton.setVisible(true);
+            adminButton.setManaged(true);
+        }
+        configureAccountMenu(session);
+
         orderId = ClientSession.getInstance().getCurrentOrderId();
         if (orderIdLabel != null) {
             orderIdLabel.setText(orderId == null || orderId.isBlank() ? "Order #—" : OrderDisplayUtil.formatLabel(orderId));
@@ -99,8 +115,34 @@ public class CheckoutController {
     }
 
     private void setActiveNav() {
-        if (navCartBtn != null && !navCartBtn.getStyleClass().contains("nav-pill-active")) {
-            navCartBtn.getStyleClass().add("nav-pill-active");
+        // Checkout keeps neutral nav state.
+    }
+
+    private void configureAccountMenu(ClientSession session) {
+        if (accountMenuButton == null) return;
+        String username = session.getUsername() == null || session.getUsername().isBlank()
+                ? "Utilisateur"
+                : session.getUsername();
+        accountMenuButton.setText("Bonjour, " + username);
+
+        if (accountProfileItem != null) {
+            accountProfileItem.setGraphic(new FontIcon("fas-user"));
+            accountProfileItem.setOnAction(e -> handleOpenProfile());
+        }
+        if (accountOrdersItem != null) {
+            accountOrdersItem.setGraphic(new FontIcon("fas-box-open"));
+            accountOrdersItem.setOnAction(e -> handleOpenOrders());
+        }
+        if (accountAdminItem != null) {
+            accountAdminItem.setGraphic(new FontIcon("fas-user-shield"));
+            accountAdminItem.setOnAction(e -> handleOpenAdmin());
+            boolean isAdmin = session.isAdmin();
+            accountAdminItem.setVisible(isAdmin);
+            accountAdminItem.setDisable(!isAdmin);
+        }
+        if (accountLogoutItem != null) {
+            accountLogoutItem.setGraphic(new FontIcon("fas-sign-out-alt"));
+            accountLogoutItem.setOnAction(e -> handleLogout());
         }
     }
 
@@ -451,12 +493,26 @@ public class CheckoutController {
             @Override protected Response call() throws Exception {
                 Client client = Client.getInstance();
                 client.connect();
+                JSONObject nonceRequestPayload = new JSONObject();
+                nonceRequestPayload.put("order_id", orderId);
+
                 JSONObject payload = new JSONObject();
                 payload.put("order_id", orderId);
                 payload.put("card_number", cardNumber);
                 payload.put("expiry", expiry);
                 payload.put("cvv", cvv);
-                return client.send(new Request(MessageProtocol.ACTION_PAYMENT, payload, client.getSessionToken()));
+                Response nonceResponse = client.requestOperationNonce(MessageProtocol.ACTION_PAYMENT, nonceRequestPayload);
+                if (!nonceResponse.isSuccess()) {
+                    return nonceResponse;
+                }
+                JSONObject noncePayload = nonceResponse.getPayloadAsJsonObject();
+                String operationNonce = noncePayload.optString("nonce", null);
+                if (operationNonce == null || operationNonce.isBlank()) {
+                    return Response.error("Nonce serveur introuvable.");
+                }
+                Request request = new Request(MessageProtocol.ACTION_PAYMENT, payload, client.getSessionToken());
+                request.setOperationNonce(operationNonce);
+                return client.send(request);
             }
         };
 
@@ -803,10 +859,19 @@ public class CheckoutController {
         runTask(t);
     }
 
-    @FXML private void goHome() { SceneManager.showHome(); }
-    @FXML private void goCart() { SceneManager.showCart(); }
-    @FXML private void goProfile() { SceneManager.showProfile(); }
-    @FXML private void goOrders() { SceneManager.showOrderHistory(); }
+    @FXML private void handleOpenHome() { SceneManager.showHome(); }
+    @FXML private void handleOpenCatalogue() { SceneManager.showCatalogue(); }
+    @FXML private void handleOpenCart() { SceneManager.showCart(); }
+    @FXML private void handleOpenProfile() { SceneManager.showProfile(); }
+    @FXML private void handleOpenOrders() { SceneManager.showOrderHistory(); }
+    @FXML private void handleOpenAdmin() { SceneManager.showAdmin(); }
+
+    @FXML
+    private void handleHeaderSearch() {
+        if (headerSearchField == null) return;
+        String query = headerSearchField.getText() == null ? "" : headerSearchField.getText().trim();
+        SceneManager.showCatalogue(query);
+    }
 
     private void runTask(Task<?> t) {
         Thread th = new Thread(t);

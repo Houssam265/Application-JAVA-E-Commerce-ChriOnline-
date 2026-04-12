@@ -35,6 +35,8 @@ public class RegisterController {
     private static final String EMAIL_REGEX = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
     private static final String USERNAME_REGEX = "^[A-Za-z0-9_]{3,30}$";
     private static final int MIN_PASSWORD = 8;
+    private static final String PASSWORD_RULES =
+            "8+ caracteres, majuscule, minuscule, chiffre, caractere special, sans nom d'utilisateur";
 
     @FXML
     public void initialize() {
@@ -233,7 +235,34 @@ public class RegisterController {
             ErrorHandler.showInlineError(passwordField, "trop court");
             return false;
         }
+        if (!isStrongPassword(password)) {
+            ErrorHandler.showFieldError(passwordError, "Mot de passe faible: " + PASSWORD_RULES);
+            ErrorHandler.showInlineError(passwordField, "mot de passe faible");
+            return false;
+        }
+        String username = usernameField.getText() == null ? "" : usernameField.getText().trim();
+        if (!username.isEmpty() && password.toLowerCase().contains(username.toLowerCase())) {
+            ErrorHandler.showFieldError(passwordError, "Le mot de passe ne doit pas contenir le nom d'utilisateur");
+            ErrorHandler.showInlineError(passwordField, "contient username");
+            return false;
+        }
         return true;
+    }
+
+    private boolean isStrongPassword(String password) {
+        boolean hasUpper = false;
+        boolean hasLower = false;
+        boolean hasDigit = false;
+        boolean hasSpecial = false;
+
+        for (char c : password.toCharArray()) {
+            if (Character.isUpperCase(c)) hasUpper = true;
+            else if (Character.isLowerCase(c)) hasLower = true;
+            else if (Character.isDigit(c)) hasDigit = true;
+            else hasSpecial = true;
+        }
+
+        return hasUpper && hasLower && hasDigit && hasSpecial;
     }
 
     private boolean validateConfirmPasswordField() {

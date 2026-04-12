@@ -9,21 +9,22 @@ import jakarta.mail.Session;
 import jakarta.mail.Transport;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Properties;
-import java.util.logging.Logger;
 
 public class EmailService {
 
-    private static final Logger LOG = Logger.getLogger(EmailService.class.getName());
+    private static final Logger LOG = LogManager.getLogger(EmailService.class);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private final String host = readConfig("CHRIONLINE_SMTP_HOST", "chrionline.smtp.host", "smtp.gmail.com");
     private final int port = Integer.parseInt(readConfig("CHRIONLINE_SMTP_PORT", "chrionline.smtp.port", "587"));
     private final String username = readConfig("CHRIONLINE_SMTP_USERNAME", "chrionline.smtp.username");
-    private final String password = readConfig("CHRIONLINE_SMTP_PASSWORD", "chrionline.smtp.password");
+    private final String password = normalizeSmtpPassword(readConfig("CHRIONLINE_SMTP_PASSWORD", "chrionline.smtp.password"));
     private final String from = readConfig("CHRIONLINE_SMTP_FROM", "chrionline.smtp.from", username);
     private final boolean auth = Boolean.parseBoolean(readConfig("CHRIONLINE_SMTP_AUTH", "chrionline.smtp.auth", "true"));
     private final boolean startTls = Boolean.parseBoolean(readConfig("CHRIONLINE_SMTP_STARTTLS", "chrionline.smtp.starttls", "true"));
@@ -85,6 +86,25 @@ public class EmailService {
         }
     }
 
+    public void sendFailedLoginAlertEmail(User user, String clientIp, int failures) {
+        ensureConfigured();
+
+        String subject = "Alerte de securite ChriOnline";
+        String html = buildFailedLoginAlertHtmlBody(user, clientIp, failures);
+
+        try {
+            Session session = buildSession();
+            MimeMessage message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(user.getEmail(), false));
+            message.setSubject(subject, "UTF-8");
+            message.setContent(html, "text/html; charset=UTF-8");
+            Transport.send(message);
+        } catch (MessagingException e) {
+            throw new RuntimeException("Impossible d'envoyer l'email d'alerte de connexion: " + e.getMessage(), e);
+        }
+    }
+
     public boolean isConfigured() {
         return host != null && !host.isBlank()
                 && from != null && !from.isBlank()
@@ -98,7 +118,7 @@ public class EmailService {
 
     private void ensureConfigured() {
         if (!isConfigured()) {
-            LOG.warning("[EMAIL] SMTP non configure. " + getConfigurationHelp());
+            LOG.warn("[EMAIL] SMTP non configure. {}", getConfigurationHelp());
             throw new IllegalStateException("Service email non configure. " + getConfigurationHelp());
         }
     }
@@ -179,6 +199,24 @@ public class EmailService {
         );
     }
 
+    private String buildFailedLoginAlertHtmlBody(User user, String clientIp, int failures) {
+        return """
+            <html>
+              <body style="font-family: Arial, sans-serif; color: #0f172a;">
+                <h2 style="margin-bottom: 8px;">Alerte de securite</h2>
+                <p>Bonjour %s,</p>
+                <p>Nous avons detecte %s tentatives de connexion echouees sur votre compte ChriOnline.</p>
+                <p>Adresse IP source : <strong>%s</strong></p>
+                <p>Si cette activite ne vient pas de vous, nous vous recommandons de changer votre mot de passe et de verifier vos acces.</p>
+              </body>
+            </html>
+            """.formatted(
+                escapeHtml(user.getUsername()),
+                failures,
+                escapeHtml(clientIp == null || clientIp.isBlank() ? "inconnue" : clientIp)
+        );
+    }
+
     private String escapeHtml(String value) {
         if (value == null) {
             return "";
@@ -206,5 +244,12 @@ public class EmailService {
             return property.trim();
         }
         return defaultValue;
+    }
+
+    private String normalizeSmtpPassword(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replace(" ", "").trim();
     }
 }

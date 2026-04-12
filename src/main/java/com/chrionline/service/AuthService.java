@@ -2,10 +2,11 @@ package com.chrionline.service;
 
 import com.chrionline.dao.UserDAO;
 import com.chrionline.model.User;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.logging.Logger;
 
 /**
  * Business logic for user authentication and email verification.
@@ -15,7 +16,7 @@ public class AuthService {
     public static final String EMAIL_NOT_VERIFIED_MESSAGE =
             "Email non verifie. Entrez le code recu par email ou demandez un nouvel envoi.";
 
-    private static final Logger LOG = Logger.getLogger(AuthService.class.getName());
+    private static final Logger LOG = LogManager.getLogger(AuthService.class);
     private static final String EMAIL_REGEX = "^[\\w._%+\\-]+@[\\w.\\-]+\\.[a-zA-Z]{2,}$";
     private static final int USERNAME_MIN = 3;
     private static final int USERNAME_MAX = 50;
@@ -213,7 +214,7 @@ public class AuthService {
             throw new IllegalArgumentException("Current password is incorrect");
         }
 
-        validatePasswordStrength(newPlainPassword);
+        validatePasswordStrength(user.getUsername(), newPlainPassword);
         userDAO.updatePassword(userId, PasswordUtils.hash(newPlainPassword));
     }
 
@@ -270,7 +271,7 @@ public class AuthService {
         try {
             emailService.sendPasswordResetEmail(user, code, expiresAt);
         } catch (RuntimeException e) {
-            LOG.warning("[AUTH] Password reset email send failed for userId=" + user.getUserId() + ": " + e.getMessage());
+            LOG.warn("[AUTH] Password reset email send failed for userId={}: {}", user.getUserId(), e.getMessage());
             throw e;
         }
     }
@@ -280,10 +281,10 @@ public class AuthService {
             throw new IllegalArgumentException("Le code de reinitialisation est requis.");
         }
         validateVerificationCode(code);
-        validatePasswordStrength(newPlainPassword);
 
         User user = userDAO.findByPasswordResetToken(code)
                 .orElseThrow(() -> new IllegalArgumentException("Code de reinitialisation invalide."));
+        validatePasswordStrength(user.getUsername(), newPlainPassword);
 
         LocalDateTime expiresAt = user.getPasswordResetExpiresAt();
         if (expiresAt == null || expiresAt.isBefore(LocalDateTime.now())) {
@@ -295,10 +296,30 @@ public class AuthService {
         user.setPasswordResetExpiresAt(null);
     }
 
+    public void notifyFailedLoginAlert(String email, String clientIp, int failures) {
+        if (email == null || email.isBlank() || failures < 3 || !emailService.isConfigured()) {
+            if (!emailService.isConfigured()) {
+                LOG.warn("[AUTH] Failed-login alert skipped because SMTP is not configured.");
+            }
+            return;
+        }
+
+        userDAO.findByEmail(email).ifPresent(user -> {
+            try {
+                LOG.info("[AUTH] Sending failed-login alert email to userId={} email={} failures={} ip={}",
+                        user.getUserId(), user.getEmail(), failures, clientIp);
+                emailService.sendFailedLoginAlertEmail(user, clientIp, failures);
+                LOG.info("[AUTH] Failed-login alert email sent to userId={}", user.getUserId());
+            } catch (RuntimeException e) {
+                LOG.warn("[AUTH] Failed-login alert email send failed for userId={}: {}", user.getUserId(), e.getMessage());
+            }
+        });
+    }
+
     private void validateRegistrationInput(String username, String email, String plainPassword) {
         validateUsername(username);
         validateEmail(email);
-        validatePasswordStrength(plainPassword);
+        validatePasswordStrength(username, plainPassword);
 
         if (userDAO.existsByEmail(email)) {
             throw new IllegalArgumentException("Email already in use");
@@ -334,7 +355,7 @@ public class AuthService {
             emailService.sendVerificationEmail(user, code, expiresAt);
         } catch (RuntimeException e) {
             if (!initialSend) {
-                LOG.warning("[AUTH] Email verification send failed for userId=" + user.getUserId() + ": " + e.getMessage());
+                LOG.warn("[AUTH] Email verification send failed for userId={}: {}", user.getUserId(), e.getMessage());
             }
             throw e;
         }
@@ -379,7 +400,7 @@ public class AuthService {
         try {
             emailService.sendLoginIpVerificationEmail(user, code, expiresAt, clientIp);
         } catch (RuntimeException e) {
-            LOG.warning("[AUTH] Login IP verification send failed for userId=" + user.getUserId() + ": " + e.getMessage());
+            LOG.warn("[AUTH] Login IP verification send failed for userId={}: {}", user.getUserId(), e.getMessage());
             throw e;
         }
     }
@@ -412,10 +433,14 @@ public class AuthService {
         }
     }
 
-    private void validatePasswordStrength(String plainPassword) {
+    private void validatePasswordStrength(String username, String plainPassword) {
         if (!PasswordUtils.isStrongEnough(plainPassword)) {
             throw new IllegalArgumentException(
-                    "Password must be at least 8 characters and contain letters and digits");
+                    "Le mot de passe doit contenir au moins 8 caracteres, une majuscule, une minuscule, un chiffre et un caractere special.");
+        }
+        if (PasswordUtils.containsUsername(plainPassword, username)) {
+            throw new IllegalArgumentException(
+                    "Le mot de passe ne doit pas contenir le nom d'utilisateur.");
         }
     }
 

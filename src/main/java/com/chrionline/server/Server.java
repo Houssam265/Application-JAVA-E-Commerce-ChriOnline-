@@ -1,6 +1,7 @@
 package com.chrionline.server;
 
 import com.chrionline.dao.UserDAO;
+import com.chrionline.security.TlsSupport;
 import com.chrionline.service.AuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
@@ -8,16 +9,17 @@ import com.chrionline.service.EnvFileLoader;
 import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * TCP server entry-point for ChriOnline.
@@ -38,7 +40,7 @@ import java.util.logging.Logger;
 public class Server {
 
     public static final int PORT = 8080;
-    private static final Logger LOG = Logger.getLogger(Server.class.getName());
+    private static final Logger LOG = LogManager.getLogger(Server.class);
 
     public static void main(String[] args) {
         EnvFileLoader.loadFromProjectRoot();
@@ -48,7 +50,7 @@ public class Server {
             try {
                 port = Integer.parseInt(args[0]);
             } catch (NumberFormatException e) {
-                LOG.warning("Port invalide '" + args[0] + "', utilisation de " + PORT);
+                LOG.warn("Port invalide '{}', utilisation de {}", args[0], PORT);
             }
         }
 
@@ -57,6 +59,7 @@ public class Server {
         userDAO.ensureEmailVerificationSchema();
         userDAO.ensureLoginIpVerificationSchema();
         userDAO.ensurePasswordResetSchema();
+        userDAO.ensureLoginSecuritySchema();
         SessionManager sessionManager = new SessionManager(userDAO);
         AuthService    authService    = new AuthService(userDAO);
         ProductService productService = new ProductService();
@@ -78,8 +81,9 @@ public class Server {
         int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
         ExecutorService pool = Executors.newFixedThreadPool(poolSize);
 
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
-            LOG.info("Serveur TCP demarre sur le port " + port + " (pool=" + poolSize + " threads)");
+        try (ServerSocket serverSocket = TlsSupport.createServerSocket(port)) {
+            LOG.info("Serveur TCP securise demarre sur le port {} (pool={} threads)", port, poolSize);
+            LOG.info("{}", TlsSupport.describeServerConfiguration());
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> shutdown(serverSocket, pool)));
 
@@ -87,18 +91,18 @@ public class Server {
                 try {
                     Socket clientSocket = serverSocket.accept();
                     // Pass the SAME shared instances — no new service created per thread
-                    pool.execute(new ClientHandler(clientSocket, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService));
+                    pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService));
                 } catch (SocketException e) {
                     if (serverSocket.isClosed()) break;
-                    LOG.log(Level.INFO, "SocketException pendant accept(): " + e.getMessage(), e);
+                    LOG.info("SocketException pendant accept(): {}", e.getMessage(), e);
                 } catch (IOException e) {
                     if (serverSocket.isClosed()) break;
-                    LOG.log(Level.WARNING, "Erreur lors de accept()", e);
+                    LOG.warn("Erreur lors de accept()", e);
                 }
             }
 
-        } catch (IOException e) {
-            LOG.log(Level.SEVERE, "Impossible de demarrer le serveur", e);
+        } catch (IOException | GeneralSecurityException e) {
+            LOG.error("Impossible de demarrer le serveur", e);
         } finally {
             udpNotificationService.close();
             shutdown(null, pool);

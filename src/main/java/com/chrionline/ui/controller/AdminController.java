@@ -40,12 +40,21 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
+import org.kordamp.ikonli.javafx.FontIcon;
 
 /**
  * KAN-9 — Admin interface (ADMIN only).
  * Tabs: Products CRUD, Orders list + status update, Users list + suspend.
  */
 public class AdminController {
+
+    // ── Header ──────────────────────────────────────────────────────────────
+    @FXML private TextField headerSearchField;
+    @FXML private MenuButton accountMenuButton;
+    @FXML private MenuItem accountProfileItem;
+    @FXML private MenuItem accountOrdersItem;
+    @FXML private MenuItem accountAdminItem;
+    @FXML private MenuItem accountLogoutItem;
 
     // ── View models ──────────────────────────────────────────────────────────
     public static final class ProductRow {
@@ -213,6 +222,8 @@ public class AdminController {
             return;
         }
 
+        configureAccountMenu();
+
         // Restrict text inputs
         prodStockField.setTextFormatter(new TextFormatter<>(change -> change.getControlNewText().matches("\\d*") ? change : null));
         prodPriceField.setTextFormatter(new TextFormatter<>(change -> change.getControlNewText().matches("\\d*([\\.]\\d*)?") ? change : null));
@@ -249,6 +260,64 @@ public class AdminController {
     @FXML
     private void handleBackToHome() {
         SceneManager.showHome();
+    }
+
+    @FXML
+    private void handleOpenHome() {
+        SceneManager.showHome();
+    }
+
+    @FXML
+    private void handleOpenCatalogue() {
+        SceneManager.showCatalogue();
+    }
+
+    @FXML
+    private void handleOpenCart() {
+        SceneManager.showCart();
+    }
+
+    @FXML
+    private void handleOpenProfile() {
+        SceneManager.showProfile();
+    }
+
+    @FXML
+    private void handleOpenOrders() {
+        SceneManager.showOrderHistory();
+    }
+
+    @FXML
+    private void handleHeaderSearch() {
+        if (headerSearchField == null) return;
+        String query = headerSearchField.getText() == null ? "" : headerSearchField.getText().trim();
+        SceneManager.showCatalogue(query);
+    }
+
+    private void configureAccountMenu() {
+        if (accountMenuButton == null) return;
+        ClientSession session = ClientSession.getInstance();
+        String username = session.getUsername() == null || session.getUsername().isBlank()
+                ? "Utilisateur"
+                : session.getUsername();
+        accountMenuButton.setText("Bonjour, " + username);
+
+        if (accountProfileItem != null) {
+            accountProfileItem.setGraphic(new FontIcon("fas-user"));
+            accountProfileItem.setOnAction(e -> handleOpenProfile());
+        }
+        if (accountOrdersItem != null) {
+            accountOrdersItem.setGraphic(new FontIcon("fas-box-open"));
+            accountOrdersItem.setOnAction(e -> handleOpenOrders());
+        }
+        if (accountAdminItem != null) {
+            accountAdminItem.setGraphic(new FontIcon("fas-user-shield"));
+            accountAdminItem.setDisable(false);
+        }
+        if (accountLogoutItem != null) {
+            accountLogoutItem.setGraphic(new FontIcon("fas-sign-out-alt"));
+            accountLogoutItem.setOnAction(e -> handleLogout());
+        }
     }
 
     @FXML

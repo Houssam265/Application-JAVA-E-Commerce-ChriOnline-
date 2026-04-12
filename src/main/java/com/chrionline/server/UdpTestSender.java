@@ -1,8 +1,13 @@
 package com.chrionline.server;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.net.*;
 
 public class UdpTestSender {
+    private static final Logger LOG = LogManager.getLogger(UdpTestSender.class);
+
     public static void main(String[] args) throws Exception {
         DatagramSocket socket = new DatagramSocket();
         InetAddress address = InetAddress.getByName("localhost");
@@ -19,7 +24,7 @@ public class UdpTestSender {
             byte[] buf = msg.getBytes("UTF-8");
             DatagramPacket packet = new DatagramPacket(buf, buf.length, address, port);
             socket.send(packet);
-            System.out.println("Envoyé: " + msg);
+            LOG.info("Envoye: {}", msg);
             Thread.sleep(2000); // 2 secondes entre chaque
         }
 

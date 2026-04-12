@@ -93,6 +93,56 @@ public class ProductDAO {
         return queryAllProducts(sql, null);
     }
 
+    public List<Product> findTopSellingAvailable(int limit) {
+        final String sql = """
+            SELECT p.*
+              FROM products p
+              JOIN order_items oi ON oi.product_id = p.product_id
+              JOIN orders o ON o.order_id = oi.order_id
+             WHERE p.is_available = TRUE
+               AND o.status IN ('VALIDATED', 'SHIPPED', 'DELIVERED')
+             GROUP BY p.product_id, p.category_id, p.name, p.description, p.price, p.stock, p.is_available, p.image_url
+             ORDER BY SUM(oi.quantity) DESC, p.product_id ASC
+             LIMIT ?
+            """;
+
+        List<Product> result = new ArrayList<>();
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setInt(1, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(mapRow(rs));
+                }
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new RuntimeException("ProductDAO.findTopSellingAvailable failed: " + e.getMessage(), e);
+        }
+    }
+
+    public List<Product> findRecentAvailable(int limit) {
+        final String sql = """
+            SELECT *
+              FROM products
+             WHERE is_available = TRUE
+             ORDER BY product_id DESC
+             LIMIT ?
+            """;
+
+        List<Product> result = new ArrayList<>();
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setInt(1, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(mapRow(rs));
+                }
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new RuntimeException("ProductDAO.findRecentAvailable failed: " + e.getMessage(), e);
+        }
+    }
+
     private List<Product> queryAllProducts(String sql, Integer categoryId) {
         List<Product> result = new ArrayList<>();
         try (PreparedStatement ps = conn().prepareStatement(sql)) {

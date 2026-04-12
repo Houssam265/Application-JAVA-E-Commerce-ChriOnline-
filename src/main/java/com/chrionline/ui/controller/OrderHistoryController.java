@@ -20,6 +20,9 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
@@ -47,8 +50,15 @@ public class OrderHistoryController {
     @FXML private ListView<AppNotification> notificationsList;
 
     // Navbar active state
-    @FXML private Button navOrdersBtn;
+    @FXML private Button navHomeBtn;
+    @FXML private Button navCatalogueBtn;
     @FXML private Button adminButton;
+    @FXML private TextField headerSearchField;
+    @FXML private MenuButton accountMenuButton;
+    @FXML private MenuItem accountProfileItem;
+    @FXML private MenuItem accountOrdersItem;
+    @FXML private MenuItem accountAdminItem;
+    @FXML private MenuItem accountLogoutItem;
 
     // Details
     @FXML private javafx.scene.layout.StackPane detailsOverlay;
@@ -85,9 +95,9 @@ public class OrderHistoryController {
             adminButton.setVisible(true);
             adminButton.setManaged(true);
         }
+        configureAccountMenu(session);
         setupFilter();
         bindNotifications();
-        setActiveNav();
         loadOrders();
     }
 
@@ -178,12 +188,6 @@ public class OrderHistoryController {
         });
     }
 
-    private void setActiveNav() {
-        if (navOrdersBtn != null && !navOrdersBtn.getStyleClass().contains("nav-pill-active")) {
-            navOrdersBtn.getStyleClass().add("nav-pill-active");
-        }
-    }
-
     @FXML
     private void toggleNotifications() {
         boolean open = drawerPanel != null && drawerPanel.isVisible();
@@ -250,10 +254,46 @@ public class OrderHistoryController {
         refreshNotificationsMenuList();
     }
 
-    @FXML private void goHome() { SceneManager.showHome(); }
-    @FXML private void goCart() { SceneManager.showCart(); }
-    @FXML private void goProfile() { SceneManager.showProfile(); }
+    @FXML private void handleOpenHome() { SceneManager.showHome(); }
+    @FXML private void handleOpenCatalogue() { SceneManager.showCatalogue(); }
+    @FXML private void handleHeaderSearch() {
+        String query = headerSearchField == null || headerSearchField.getText() == null
+                ? ""
+                : headerSearchField.getText().trim();
+        SceneManager.showCatalogue(query);
+    }
+    @FXML private void handleOpenCart() { SceneManager.showCart(); }
+    @FXML private void handleOpenProfile() { SceneManager.showProfile(); }
+    @FXML private void handleOpenOrders() { SceneManager.showOrderHistory(); }
     @FXML private void handleOpenAdmin() { SceneManager.showAdmin(); }
+
+    private void configureAccountMenu(ClientSession session) {
+        if (accountMenuButton == null) return;
+        String username = session.getUsername() == null || session.getUsername().isBlank()
+                ? "Utilisateur"
+                : session.getUsername();
+        accountMenuButton.setText("Bonjour, " + username);
+
+        if (accountProfileItem != null) {
+            accountProfileItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-user"));
+            accountProfileItem.setOnAction(e -> handleOpenProfile());
+        }
+        if (accountOrdersItem != null) {
+            accountOrdersItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-box-open"));
+            accountOrdersItem.setOnAction(e -> handleOpenOrders());
+        }
+        if (accountAdminItem != null) {
+            accountAdminItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-user-shield"));
+            accountAdminItem.setOnAction(e -> handleOpenAdmin());
+            boolean isAdmin = session.isAdmin();
+            accountAdminItem.setVisible(isAdmin);
+            accountAdminItem.setDisable(!isAdmin);
+        }
+        if (accountLogoutItem != null) {
+            accountLogoutItem.setGraphic(new org.kordamp.ikonli.javafx.FontIcon("fas-sign-out-alt"));
+            accountLogoutItem.setOnAction(e -> handleLogout());
+        }
+    }
 
     private void loadOrders() {
         Task<Response> t = new Task<>() {

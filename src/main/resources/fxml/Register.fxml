@@ -65,7 +65,12 @@
                 <Label text="Mot de passe" styleClass="field-label"/>
             </HBox>
             <PasswordField fx:id="passwordField" promptText="Minimum 8 caractères" styleClass="auth-field"/>
-            <Label fx:id="passwordError" styleClass="error-label" visible="false" managed="false"/>
+            <Label fx:id="passwordError"
+                   styleClass="error-label"
+                   visible="false"
+                   managed="false"
+                   wrapText="true"
+                   maxWidth="420"/>
         </VBox>
 
         <Region prefHeight="14"/>
