@@ -2,6 +2,7 @@ package com.chrionline.server;
 
 import com.chrionline.dao.UserDAO;
 import com.chrionline.security.TlsSupport;
+import com.chrionline.security.SecurityMonitor;
 import com.chrionline.service.AuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
@@ -76,6 +77,7 @@ public class Server {
         sessionManager.cleanExpiredSessions();
 
         UDPNotificationService udpNotificationService = new UDPNotificationService(UDPNotificationService.DEFAULT_PORT);
+        SecurityMonitor securityMonitor = new SecurityMonitor();
 
         // ── Thread pool ───────────────────────────────────────────────────────
         int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
@@ -90,7 +92,14 @@ public class Server {
             while (!serverSocket.isClosed()) {
                 try {
                     Socket clientSocket = serverSocket.accept();
-                    // Pass the SAME shared instances — no new service created per thread
+                    if (!securityMonitor.isSafeToAccept(clientSocket)) {
+                        try {
+                            clientSocket.close();
+                        } catch (IOException ignored) {
+                        }
+                        continue;
+                    }
+                    clientSocket.setSoTimeout(10_000);
                     pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService));
                 } catch (SocketException e) {
                     if (serverSocket.isClosed()) break;
