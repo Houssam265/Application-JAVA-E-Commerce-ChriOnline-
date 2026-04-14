@@ -13,6 +13,8 @@ import com.chrionline.service.LoginCaptchaService;
 import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
+import com.chrionline.security.InputValidator;
+import com.chrionline.security.ValidationException;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
@@ -213,10 +215,15 @@ public class ClientHandler implements Runnable {
         }
 
         if (req == null || req.getAction() == null || req.getAction().isBlank()) {
-            return Response.error("Missing action");
+            return Response.error("INVALID_INPUT: action is required.");
         }
 
         String action = req.getAction().trim();
+        try {
+            validateRequestInputForAction(action, req);
+        } catch (ValidationException e) {
+            return invalidInput(e.getMessage());
+        }
 
         switch (action) {
 
@@ -1382,6 +1389,152 @@ public class ClientHandler implements Runnable {
         return v instanceof String ? ((String) v).trim() : null;
     }
 
+    private Response invalidInput(String detail) {
+        return Response.error("INVALID_INPUT: " + detail);
+    }
+
+    private void validateRequestInputForAction(String action, Request req) {
+        switch (action) {
+            case MessageProtocol.ACTION_LOGIN:
+            case MessageProtocol.ACTION_GET_LOGIN_SECURITY_STATE:
+            case MessageProtocol.ACTION_VERIFY_EMAIL:
+            case MessageProtocol.ACTION_VERIFY_LOGIN_IP:
+            case MessageProtocol.ACTION_RESEND_LOGIN_IP_VERIFICATION:
+            case MessageProtocol.ACTION_FORGOT_PASSWORD:
+            case MessageProtocol.ACTION_RESEND_VERIFICATION_EMAIL:
+                validateEmailPayloadIfPresent(req, "email");
+                break;
+            case MessageProtocol.ACTION_REGISTER:
+            case MessageProtocol.ACTION_UPDATE_PROFILE:
+                validateEmailPayloadIfPresent(req, "email");
+                validateUsernamePayloadIfPresent(req, "username");
+                break;
+            case MessageProtocol.ACTION_GET_PRODUCT:
+            case MessageProtocol.ACTION_ADMIN_DELETE_PRODUCT:
+                InputValidator.validateProductId(req.getPayloadInt("product_id"));
+                break;
+            case MessageProtocol.ACTION_GET_PRODUCTS:
+                validateOptionalPositiveInt(req.getPayloadInt("category_id"), "category_id", 1, 1_000_000_000);
+                break;
+            case MessageProtocol.ACTION_GET_TOP_SELLING_PRODUCTS:
+            case MessageProtocol.ACTION_GET_RECENT_PRODUCTS:
+                validateOptionalPositiveInt(req.getPayloadInt("limit"), "limit", 1, 100);
+                break;
+            case MessageProtocol.ACTION_ADD_TO_CART:
+                InputValidator.validateProductId(req.getPayloadInt("product_id"));
+                InputValidator.validateQuantity(req.getPayloadInt("quantity"));
+                break;
+            case MessageProtocol.ACTION_UPDATE_CART_ITEM:
+                InputValidator.validatePositiveInt(req.getPayloadInt("cart_item_id"), "cart_item_id", 1, 1_000_000_000);
+                InputValidator.validateQuantity(req.getPayloadInt("quantity"));
+                break;
+            case MessageProtocol.ACTION_REMOVE_FROM_CART:
+                InputValidator.validatePositiveInt(req.getPayloadInt("cart_item_id"), "cart_item_id", 1, 1_000_000_000);
+                break;
+            case MessageProtocol.ACTION_PAYMENT: {
+                Integer orderId = firstNonBlankInt(req.getPayloadInt("order_id"), req.getPayloadInt("orderId"));
+                InputValidator.validatePositiveInt(orderId, "order_id", 1, 1_000_000_000);
+                InputValidator.sanitize(firstNonBlank(getPayloadString(req, "card_number"), getPayloadString(req, "cardNumber")), "card_number");
+                InputValidator.sanitize(firstNonBlank(getPayloadString(req, "expiry"), getPayloadString(req, "expiryMmYy")), "expiry");
+                InputValidator.sanitize(payloadValueAsString(req, "cvv"), "cvv");
+                break;
+            }
+            case MessageProtocol.ACTION_PLACE_ORDER: {
+                String rawOrderId = firstNonBlank(
+                        payloadValueAsString(req, "order_id"),
+                        payloadValueAsString(req, "orderId"));
+                if (rawOrderId != null && !rawOrderId.isBlank()) {
+                    InputValidator.validateOrderId(rawOrderId);
+                }
+                break;
+            }
+            case MessageProtocol.ACTION_UPDATE_ORDER_STATUS: {
+                Integer orderId = req.getPayloadInt("order_id");
+                InputValidator.validatePositiveInt(orderId, "order_id", 1, 1_000_000_000);
+                String status = getPayloadString(req, "status");
+                String safeStatus = InputValidator.sanitize(status, "status");
+                if (!"VALIDATED".equals(safeStatus)
+                        && !"SHIPPED".equals(safeStatus)
+                        && !"DELIVERED".equals(safeStatus)
+                        && !"CANCELLED".equals(safeStatus)) {
+                    throw new ValidationException("status is invalid.");
+                }
+                break;
+            }
+            case MessageProtocol.ACTION_GET_ORDER_DETAILS: {
+                Integer orderId = req.getPayloadInt("order_id");
+                if (orderId != null) {
+                    InputValidator.validateOrderId(String.valueOf(orderId));
+                }
+                break;
+            }
+            case MessageProtocol.ACTION_GET_OPERATION_NONCE:
+                InputValidator.sanitize(payloadValueAsString(req, "operation"), "operation");
+                sanitizeOptionalPayloadString(req, "scope");
+                sanitizeOptionalPayloadString(req, "order_id");
+                sanitizeOptionalPayloadString(req, "orderId");
+                break;
+            case MessageProtocol.ACTION_ADMIN_CREATE_PRODUCT:
+            case MessageProtocol.ACTION_ADMIN_UPDATE_PRODUCT:
+                validateOptionalPositiveInt(req.getPayloadInt("category_id"), "category_id", 1, 1_000_000_000);
+                sanitizeOptionalPayloadString(req, "name");
+                validateOptionalPrice(req.getPayload() == null ? null : req.getPayload().get("price"));
+                validateOptionalPositiveInt(req.getPayloadInt("stock"), "stock", 0, 1_000_000);
+                sanitizeOptionalPayloadString(req, "image_filename");
+                break;
+            case MessageProtocol.ACTION_ADMIN_ADD_CATEGORY:
+            case MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY:
+                sanitizeOptionalPayloadString(req, "name");
+                break;
+            case MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED:
+                InputValidator.validatePositiveInt(req.getPayloadInt("user_id"), "user_id", 1, 1_000_000_000);
+                break;
+            default:
+                throw new ValidationException("Unsupported action: " + action);
+        }
+    }
+
+    private void validateEmailPayloadIfPresent(Request req, String key) {
+        String value = getPayloadString(req, key);
+        if (value != null && !value.isBlank()) {
+            InputValidator.validateEmail(value);
+        }
+    }
+
+    private void validateUsernamePayloadIfPresent(Request req, String key) {
+        String value = getPayloadString(req, key);
+        if (value != null && !value.isBlank()) {
+            InputValidator.validateUsername(value);
+        }
+    }
+
+    private void sanitizeOptionalPayloadString(Request req, String key) {
+        String value = getPayloadString(req, key);
+        if (value != null && !value.isBlank()) {
+            InputValidator.sanitize(value, key);
+        }
+    }
+
+    private void validateOptionalPositiveInt(Integer value, String fieldName, int min, int max) {
+        if (value != null) {
+            InputValidator.validatePositiveInt(value, fieldName, min, max);
+        }
+    }
+
+    private void validateOptionalPrice(Object value) {
+        if (value instanceof Number number) {
+            InputValidator.validatePrice(number);
+            return;
+        }
+        if (value instanceof String s && !s.isBlank()) {
+            try {
+                InputValidator.validatePrice(Double.parseDouble(s.trim()));
+            } catch (NumberFormatException e) {
+                throw new ValidationException("price must be numeric.");
+            }
+        }
+    }
+
     private String buildLoginKey(String email) {
         String ip = getClientIpAddress();
         return ip + "|" + email.toLowerCase();
@@ -1445,7 +1598,7 @@ public class ClientHandler implements Runnable {
             if (b64Obj instanceof String b64 && !b64.isBlank()) {
                 try {
                     byte[] bytes = Base64.getDecoder().decode(b64);
-                    String originalName = getPayloadString(req, "image_filename");
+                    String originalName = InputValidator.validateFilename(getPayloadString(req, "image_filename"));
                     String ext = extractImageExtension(originalName);
 
                     Path uploadDir = Paths.get("uploads", "images").toAbsolutePath().normalize();
@@ -1497,7 +1650,9 @@ public class ClientHandler implements Runnable {
                     if (b64Obj == null) continue;
                     String b64 = String.valueOf(b64Obj).trim();
                     if (b64.isBlank()) continue;
-                    String filename = map.get("image_filename") == null ? null : String.valueOf(map.get("image_filename"));
+                    String filename = map.get("image_filename") == null
+                            ? null
+                            : InputValidator.validateFilename(String.valueOf(map.get("image_filename")));
                     resolved.add(storeProductImage(b64, filename));
                 }
             }
