@@ -3,6 +3,7 @@ package com.chrionline.server;
 import com.chrionline.dao.UserDAO;
 import com.chrionline.security.TlsSupport;
 import com.chrionline.security.SecurityMonitor;
+import com.chrionline.security.IpSpoofingDetector;
 import com.chrionline.service.AuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
@@ -92,7 +93,16 @@ public class Server {
             while (!serverSocket.isClosed()) {
                 try {
                     Socket clientSocket = serverSocket.accept();
+                    // Protection SYN Flood / DoS simple
                     if (!securityMonitor.isSafeToAccept(clientSocket)) {
+                        try {
+                            clientSocket.close();
+                        } catch (IOException ignored) {
+                        }
+                        continue;
+                    }
+                    // Verification basique de l'adresse IP source (IP spoofing / cas anormaux)
+                    if (IpSpoofingDetector.isSuspicious(clientSocket)) {
                         try {
                             clientSocket.close();
                         } catch (IOException ignored) {

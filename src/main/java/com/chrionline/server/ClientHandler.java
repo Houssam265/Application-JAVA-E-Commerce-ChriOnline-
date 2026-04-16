@@ -15,6 +15,8 @@ import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
 import com.chrionline.security.InputValidator;
 import com.chrionline.security.ValidationException;
+import com.chrionline.security.IpUtils;
+import com.chrionline.security.SecurityAuditLogger;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
@@ -123,6 +125,9 @@ public class ClientHandler implements Runnable {
     /** Output writer — kept as a field so helper methods can write responses. */
     private PrintWriter out;
 
+    /** Indique qu'il faut fermer la connexion TCP apres la prochaine reponse. */
+    private boolean disconnectAfterResponse = false;
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     /**
@@ -179,6 +184,10 @@ public class ClientHandler implements Runnable {
                 String   jsonOut  = GSON.toJson(response);
                 out.println(jsonOut);
                 LOG.info("[{}] >> {}", clientId, jsonOut);
+
+                if (disconnectAfterResponse) {
+                    break;
+                }
             }
 
         } catch (SocketException e) {
@@ -354,16 +363,34 @@ public class ClientHandler implements Runnable {
     private boolean requireValidToken(Request req) {
         String token = req.getToken();
         boolean valid = sessionManager.isTokenValid(token);
-        if (valid && token != null) {
-            sessionManager.refreshSession(token);
-            connectionToken = token;
-            // Register this client's IP so order-status notifications can reach it
-            sessionManager.getUserFromToken(token).ifPresent(u -> {
-                connectedUserId = u.getUserId();
-                ClientRegistry.getInstance().register(u.getUserId(), clientAddress);
-            });
+        if (!valid || token == null) {
+            return false;
         }
-        return valid;
+
+        String currentIp = getClientIpAddress();
+
+        // Verifie la coherence IP / session: si l'IP change en cours de session,
+        // on invalide immediatement la session et on deconnecte.
+        if (!sessionManager.isSessionIpConsistent(token, currentIp)) {
+            String previousIp = sessionManager.getSessionIp(token);
+            String username = sessionManager.getUserFromToken(token)
+                    .map(User::getUsername)
+                    .orElse(null);
+            SecurityAuditLogger.logSessionIpChangeDetected(username, previousIp, currentIp);
+            sessionManager.invalidateSession(token);
+            return false;
+        }
+
+        sessionManager.refreshSession(token);
+        connectionToken = token;
+
+        // Register this client's IP so order-status notifications can reach it
+        sessionManager.getUserFromToken(token).ifPresent(u -> {
+            connectedUserId = u.getUserId();
+            ClientRegistry.getInstance().register(u.getUserId(), clientAddress);
+        });
+
+        return true;
     }
 
     /** Best-effort UDP notification to the connected client (current connection). */
@@ -585,6 +612,14 @@ public class ClientHandler implements Runnable {
             }
 
             User user = loginResult.getUser();
+
+            // Restriction IP pour les comptes admin: seuls les reseaux internes/prives
+            // sont autorises. Une connexion admin depuis une IP externe est refusee.
+            String clientIp = getClientIpAddress();
+            if (user.getRole() == User.Role.ADMIN && !IpUtils.isPrivateIp(clientIp)) {
+                SecurityAuditLogger.logAdminExternalIpBlocked(user.getUsername(), clientIp);
+                return Response.error("Acces admin refuse depuis une adresse IP externe.");
+            }
             Session session = sessionManager.createSession(user);
 
             Map<String, Object> payload = new HashMap<>();
@@ -596,6 +631,8 @@ public class ClientHandler implements Runnable {
 
             // token is sent as the top-level Response.token field
             connectionToken = session.getToken();
+            // Lie la session a l'IP courante pour permettre la detection de changements d'IP
+            sessionManager.bindSessionIpIfAbsent(connectionToken, clientIp);
             // Register client IP so UDP notifications can reach this user
             connectedUserId = user.getUserId();
             ClientRegistry.getInstance().register(user.getUserId(), clientAddress);
@@ -1404,6 +1441,10 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_RESEND_VERIFICATION_EMAIL:
                 validateEmailPayloadIfPresent(req, "email");
                 break;
+            case MessageProtocol.ACTION_RESET_PASSWORD:
+                sanitizeOptionalPayloadString(req, "token");
+                sanitizeOptionalPayloadString(req, "newPassword");
+                break;
             case MessageProtocol.ACTION_REGISTER:
             case MessageProtocol.ACTION_UPDATE_PROFILE:
                 validateEmailPayloadIfPresent(req, "email");
@@ -1541,7 +1582,8 @@ public class ClientHandler implements Runnable {
     }
 
     private String getClientIpAddress() {
-        return clientAddress != null ? clientAddress.getHostAddress() : "unknown";
+    return clientAddress != null ? clientAddress.getHostAddress() : "unknown";
+//        return "85.12.45.67";
     }
 
     private long getBlockedRemainingMs(String email, long nowMs) {

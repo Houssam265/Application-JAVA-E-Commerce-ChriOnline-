@@ -49,6 +49,9 @@ public class SessionManager {
     /** Keyed by token string. Accessed from multiple threads — all methods are synchronized. */
     private final HashMap<String, Session> activeSessions = new HashMap<>();
 
+    /** IP d'origine associee a chaque token de session (en memoire uniquement). */
+    private final HashMap<String, String> sessionIpByToken = new HashMap<>();
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     /**
@@ -182,8 +185,9 @@ public class SessionManager {
             LOG.warn("[SESSION] invalidateSession DB update failed: {}", e.getMessage(), e);
         }
 
-        // 2. Remove from cache
+        // 2. Remove from caches
         activeSessions.remove(token);
+        sessionIpByToken.remove(token);
         LOG.info("[SESSION] Invalidated token={}", token);
     }
 
@@ -227,6 +231,51 @@ public class SessionManager {
     public synchronized Optional<User> getUserFromToken(String token) {
         return getSession(token)
                 .flatMap(session -> userDAO.findById(session.getUserId()));
+    }
+
+    /**
+     * Associe l'adresse IP initiale a un token de session, si aucune IP
+     * n'est encore enregistree pour ce token.
+     *
+     * @param token    token de session
+     * @param clientIp IP courante du socket
+     */
+    public synchronized void bindSessionIpIfAbsent(String token, String clientIp) {
+        if (token == null || token.isBlank() || clientIp == null || clientIp.isBlank()) {
+            return;
+        }
+        sessionIpByToken.putIfAbsent(token, clientIp);
+    }
+
+    /**
+     * Verifie la coherence entre l'IP actuelle et l'IP d'origine pour ce token.
+     *
+     * @param token       token de session
+     * @param currentIp   IP courante du socket
+     * @return true si aucune IP n'etait enregistree (desormais liee) ou si elle correspond,
+     *         false si une IP differente est detectee.
+     */
+    public synchronized boolean isSessionIpConsistent(String token, String currentIp) {
+        if (token == null || token.isBlank() || currentIp == null || currentIp.isBlank()) {
+            return true;
+        }
+        String stored = sessionIpByToken.get(token);
+        if (stored == null) {
+            sessionIpByToken.put(token, currentIp);
+            return true;
+        }
+        return stored.equals(currentIp);
+    }
+
+    /**
+     * Retourne l'IP d'origine enregistree pour ce token, ou {@code null}
+     * si aucune IP n'est connue.
+     */
+    public synchronized String getSessionIp(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        return sessionIpByToken.get(token);
     }
 
     /**

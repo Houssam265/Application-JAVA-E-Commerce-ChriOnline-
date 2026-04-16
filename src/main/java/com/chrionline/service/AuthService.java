@@ -109,9 +109,24 @@ public class AuthService {
         }
 
         String normalizedIp = normalizeIp(clientIp);
-        ensureEmailServiceAvailable();
-        issueAndSendLoginIpVerificationCode(user, normalizedIp, false);
-        return new LoginResult(LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED, user);
+
+        // Si l'IP de connexion n'est pas reconnue pour cet utilisateur,
+        // on exige une verification supplementaire (2FA sur IP) avant
+        // d'autoriser la creation d'une session.
+        if (requiresLoginIpVerification(user, normalizedIp)) {
+            boolean isAdmin = user.getRole() == User.Role.ADMIN;
+            com.chrionline.security.SecurityAuditLogger.logUnrecognizedIp2faRequired(
+                    user.getUsername(),
+                    normalizedIp,
+                    isAdmin
+            );
+            ensureEmailServiceAvailable();
+            issueAndSendLoginIpVerificationCode(user, normalizedIp, false);
+            return new LoginResult(LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED, user);
+        }
+
+        // IP reconnue / de confiance -> connexion directe
+        return new LoginResult(LoginStatus.SUCCESS, user);
     }
 
     public User verifyEmail(String email, String code) {
