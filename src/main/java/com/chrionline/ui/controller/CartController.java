@@ -88,7 +88,6 @@ public class CartController {
     @FXML private MenuItem accountOrdersItem;
     @FXML private MenuItem accountAdminItem;
     @FXML private MenuItem accountLogoutItem;
-    @FXML private Button adminButton;
     @FXML private Button bellButton;
     @FXML private Label unreadBadge;
     @FXML private VBox toastLayer;
@@ -104,10 +103,6 @@ public class CartController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
         configureAccountMenu(session);
         if (navCartBtn != null && !navCartBtn.getStyleClass().contains("nav-pill-active")) {
             navCartBtn.getStyleClass().add("nav-pill-active");

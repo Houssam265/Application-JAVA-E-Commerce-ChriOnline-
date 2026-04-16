@@ -109,7 +109,8 @@ public class Server {
                         }
                         continue;
                     }
-                    clientSocket.setSoTimeout(10_000);
+                    // Keep idle client connections alive longer to avoid frequent read timeouts.
+                    clientSocket.setSoTimeout(300_000);
                     pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService));
                 } catch (SocketException e) {
                     if (serverSocket.isClosed()) break;

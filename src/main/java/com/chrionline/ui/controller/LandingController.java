@@ -44,7 +44,6 @@ import java.util.List;
 
 public class LandingController {
 
-    @FXML private Button adminButton;
     @FXML private Button bellButton;
     @FXML private Button navHomeBtn;
     @FXML private Button navCatalogueBtn;
@@ -68,11 +67,6 @@ public class LandingController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
-
         configureAccountMenu(session);
         bindNotifications();
         setActiveNav();

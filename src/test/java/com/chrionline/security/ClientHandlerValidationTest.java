@@ -138,5 +138,17 @@ class ClientHandlerValidationTest {
             Response r = invoke("{\"action\":\"ADD_TO_CART\",\"payload\":{\"product_id\":1,\"quantity\":2},\"token\":\"t\"}");
             assertFalse(r.getMessage().contains("INVALID_INPUT"));
         }
+
+        @Test
+        void getLoginCaptcha_doesNotReturnInvalidInput() throws Exception {
+            Response r = invoke("{\"action\":\"GET_LOGIN_CAPTCHA\",\"payload\":{}}");
+            assertFalse(r.getMessage().contains("INVALID_INPUT"));
+        }
+
+        @Test
+        void updateOrderStatus_withPendingStatus_doesNotReturnInvalidInput() throws Exception {
+            Response r = invoke("{\"action\":\"UPDATE_ORDER_STATUS\",\"payload\":{\"order_id\":1,\"status\":\"PENDING\"},\"token\":\"t\"}");
+            assertFalse(r.getMessage().contains("INVALID_INPUT"));
+        }
     }
 }

@@ -37,8 +37,17 @@ public class AdminService {
         productDAO.update(p);
     }
 
-    public void deleteProduct(int productId) {
-        productDAO.delete(productId);
+    public boolean toggleProductAvailability(int productId) {
+        Product existing = productDAO.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("Produit introuvable."));
+
+        boolean nextAvailability = !existing.isAvailable();
+        if (nextAvailability && existing.getStock() <= 0) {
+            throw new IllegalArgumentException("Impossible d'activer un produit avec un stock nul.");
+        }
+
+        productDAO.updateAvailability(productId, nextAvailability);
+        return nextAvailability;
     }
 
     // Orders
@@ -134,7 +143,14 @@ public class AdminService {
         if (p.getStock() < 0) {
             throw new IllegalArgumentException("Le stock doit être >= 0.");
         }
-        p.setAvailable(p.getStock() > 0);
+        if (!requireId) {
+            p.setAvailable(p.getStock() > 0);
+            return;
+        }
+
+        Product existing = productDAO.findById(p.getProductId())
+                .orElseThrow(() -> new IllegalArgumentException("Produit introuvable."));
+        p.setAvailable(existing.isAvailable() && p.getStock() > 0);
     }
 }
 

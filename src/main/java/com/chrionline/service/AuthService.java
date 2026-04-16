@@ -83,7 +83,7 @@ public class AuthService {
 
     public void seedAdminIfNotExists() {
         if (!userDAO.existsByUsername("admin")) {
-            createAdminUser("admin", "admin@chrionline.ma", "admin1234");
+            createAdminUser("admin", "admin@chrionline.ma", "Secure!427");
             LOG.info("[AUTH] Default admin account created");
         } else {
             LOG.info("[AUTH] Admin account already exists - skipping seed");
@@ -110,23 +110,11 @@ public class AuthService {
 
         String normalizedIp = normalizeIp(clientIp);
 
-        // Si l'IP de connexion n'est pas reconnue pour cet utilisateur,
-        // on exige une verification supplementaire (2FA sur IP) avant
-        // d'autoriser la creation d'une session.
-        if (requiresLoginIpVerification(user, normalizedIp)) {
-            boolean isAdmin = user.getRole() == User.Role.ADMIN;
-            com.chrionline.security.SecurityAuditLogger.logUnrecognizedIp2faRequired(
-                    user.getUsername(),
-                    normalizedIp,
-                    isAdmin
-            );
-            ensureEmailServiceAvailable();
-            issueAndSendLoginIpVerificationCode(user, normalizedIp, false);
-            return new LoginResult(LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED, user);
-        }
-
-        // IP reconnue / de confiance -> connexion directe
-        return new LoginResult(LoginStatus.SUCCESS, user);
+        // Une verification email est requise a chaque connexion valide
+        // avant la creation effective d'une session.
+        ensureEmailServiceAvailable();
+        issueAndSendLoginIpVerificationCode(user, normalizedIp, false);
+        return new LoginResult(LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED, user);
     }
 
     public User verifyEmail(String email, String code) {

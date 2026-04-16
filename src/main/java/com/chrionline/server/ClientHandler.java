@@ -196,10 +196,9 @@ public class ClientHandler implements Runnable {
             LOG.warn("Erreur reseau avec {}: {}", clientId, e.getMessage(), e);
         } finally {
             this.out = null;
-            if (connectionToken != null) {
-                sessionManager.invalidateSession(connectionToken);
-                connectionToken = null;
-            }
+            // Do not invalidate server session on transient socket disconnects.
+            // Session must end on explicit LOGOUT or natural expiration.
+            connectionToken = null;
             if (connectedUserId > 0) {
                 ClientRegistry.getInstance().unregister(connectedUserId);
                 connectedUserId = 0;
@@ -1367,8 +1366,10 @@ public class ClientHandler implements Runnable {
                 case MessageProtocol.ACTION_ADMIN_DELETE_PRODUCT: {
                     Integer productId = req.getPayloadInt("product_id");
                     if (productId == null) return Response.error("Missing product_id");
-                    adminService.deleteProduct(productId);
-                    return Response.ok("DELETED", null);
+                    boolean available = adminService.toggleProductAvailability(productId);
+                    Map<String, Object> payload = new HashMap<>();
+                    payload.put("available", available);
+                    return Response.ok(available ? "ACTIVATED" : "DEACTIVATED", payload);
                 }
                 case MessageProtocol.ACTION_ADMIN_LIST_USERS: {
                     return Response.ok(adminService.listUsers());
@@ -1455,6 +1456,7 @@ public class ClientHandler implements Runnable {
                 InputValidator.validateProductId(req.getPayloadInt("product_id"));
                 break;
             case MessageProtocol.ACTION_GET_PRODUCTS:
+            case MessageProtocol.ACTION_GET_CATEGORIES:
                 validateOptionalPositiveInt(req.getPayloadInt("category_id"), "category_id", 1, 1_000_000_000);
                 break;
             case MessageProtocol.ACTION_GET_TOP_SELLING_PRODUCTS:
@@ -1489,12 +1491,18 @@ public class ClientHandler implements Runnable {
                 }
                 break;
             }
+            case MessageProtocol.ACTION_GET_CART:
+            case MessageProtocol.ACTION_GET_ORDERS:
+            case MessageProtocol.ACTION_GET_LOGIN_CAPTCHA:
+                // No required payload fields for these read actions.
+                break;
             case MessageProtocol.ACTION_UPDATE_ORDER_STATUS: {
                 Integer orderId = req.getPayloadInt("order_id");
                 InputValidator.validatePositiveInt(orderId, "order_id", 1, 1_000_000_000);
                 String status = getPayloadString(req, "status");
                 String safeStatus = InputValidator.sanitize(status, "status");
-                if (!"VALIDATED".equals(safeStatus)
+                if (!"PENDING".equals(safeStatus)
+                        && !"VALIDATED".equals(safeStatus)
                         && !"SHIPPED".equals(safeStatus)
                         && !"DELIVERED".equals(safeStatus)
                         && !"CANCELLED".equals(safeStatus)) {
@@ -1527,8 +1535,15 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY:
                 sanitizeOptionalPayloadString(req, "name");
                 break;
+            case MessageProtocol.ACTION_ADMIN_DELETE_CATEGORY:
+                validateOptionalPositiveInt(req.getPayloadInt("id"), "id", 1, 1_000_000_000);
+                break;
             case MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED:
                 InputValidator.validatePositiveInt(req.getPayloadInt("user_id"), "user_id", 1, 1_000_000_000);
+                break;
+            case MessageProtocol.ACTION_ADMIN_LIST_USERS:
+            case MessageProtocol.ACTION_ADMIN_LIST_ORDERS:
+                // No payload required.
                 break;
             default:
                 throw new ValidationException("Unsupported action: " + action);

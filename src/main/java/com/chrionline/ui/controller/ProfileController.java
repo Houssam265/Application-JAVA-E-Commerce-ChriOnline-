@@ -46,7 +46,6 @@ public class ProfileController {
     @FXML private Node strengthBar;
     @FXML private Label strengthLabel;
     @FXML private Label globalMessage;
-    @FXML private Button adminButton;
     @FXML private TextField headerSearchField;
     @FXML private MenuButton accountMenuButton;
     @FXML private MenuItem accountProfileItem;
@@ -71,10 +70,6 @@ public class ProfileController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
         configureAccountMenu(session);
         hydrateFromSession();
         bindNotifications();

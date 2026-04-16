@@ -63,6 +63,7 @@ public class AdminController {
         final StringProperty name = new SimpleStringProperty();
         final DoubleProperty price = new SimpleDoubleProperty();
         final IntegerProperty stock = new SimpleIntegerProperty();
+        final BooleanProperty available = new SimpleBooleanProperty();
         final StringProperty description = new SimpleStringProperty();
         final StringProperty imageUrl = new SimpleStringProperty();
         final List<String> imageUrls = new ArrayList<>();
@@ -356,7 +357,7 @@ public class AdminController {
         if (colProdAction != null) {
             colProdAction.setCellFactory(tc -> new TableCell<>() {
                 private final Button editBtn = new Button("Modifier");
-                private final Button delBtn = new Button("Supprimer");
+                private final Button delBtn = new Button();
                 private final HBox box = new HBox(8, editBtn, delBtn);
                 private final StackPane centered = new StackPane(box);
 
@@ -374,7 +375,7 @@ public class AdminController {
                     delBtn.setOnAction(e -> {
                         ProductRow row = getTableRow() != null ? (ProductRow) getTableRow().getItem() : null;
                         if (row == null) return;
-                        confirmAndDeleteProduct(row);
+                        confirmAndToggleProduct(row);
                     });
                 }
 
@@ -385,6 +386,8 @@ public class AdminController {
                         setGraphic(null);
                         return;
                     }
+                    ProductRow row = (ProductRow) getTableRow().getItem();
+                    delBtn.setText(row.available.get() ? "Désactiver" : "Activer");
                     setGraphic(centered);
                 }
             });
@@ -418,24 +421,25 @@ public class AdminController {
         showProductModal();
     }
 
-    private void confirmAndDeleteProduct(ProductRow row) {
+    private void confirmAndToggleProduct(ProductRow row) {
         if (row == null) return;
         setMessage(null, false);
+        boolean activating = !row.available.get();
 
         Alert a = new Alert(Alert.AlertType.CONFIRMATION);
         a.setTitle("Confirmation");
-        a.setHeaderText("Supprimer ce produit ?");
+        a.setHeaderText(activating ? "Activer ce produit ?" : "Désactiver ce produit ?");
         String nm = row.name.get() == null ? "" : row.name.get();
         a.setContentText(nm.isBlank() ? ("Produit #" + row.productId.get()) : nm);
         a.getButtonTypes().setAll(ButtonType.CANCEL, ButtonType.OK);
         a.showAndWait().ifPresent(bt -> {
             if (bt == ButtonType.OK) {
-                deleteProductById(row.productId.get());
+                toggleProductById(row.productId.get(), activating);
             }
         });
     }
 
-    private void deleteProductById(int productId) {
+    private void toggleProductById(int productId, boolean activating) {
         if (productId <= 0) return;
         Task<Response> t = new Task<>() {
             @Override protected Response call() throws Exception {
@@ -451,14 +455,14 @@ public class AdminController {
             if (!r.isSuccess()) {
                 String msg = r.getMessage() == null ? "" : r.getMessage();
                 if (handleSessionExpiredIfNeeded(msg)) return;
-                ErrorHandler.showWarningDialog("Erreur", msg.isBlank() ? "Suppression impossible." : msg);
+                ErrorHandler.showWarningDialog("Erreur", msg.isBlank() ? "Changement d'état impossible." : msg);
                 setMessage(null, false);
                 return;
             }
-            setMessage("Produit supprimé.", false);
+            setMessage(activating ? "Produit activé." : "Produit désactivé.", false);
             refreshProducts();
         });
-        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> deleteProductById(productId)));
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> toggleProductById(productId, activating)));
         runTask(t);
     }
 
@@ -751,10 +755,11 @@ public class AdminController {
         setMessage(null, false);
         ProductRow row = productsTable.getSelectionModel().getSelectedItem();
         if (row == null) {
-            setMessage("Sélectionne un produit à supprimer.", true);
+            setMessage("Sélectionne un produit à activer ou désactiver.", true);
             return;
         }
         int productId = row.productId.get();
+        boolean activating = !row.available.get();
         Task<Response> t = new Task<>() {
             @Override protected Response call() throws Exception {
                 Client client = Client.getInstance();
@@ -769,11 +774,11 @@ public class AdminController {
             if (!r.isSuccess()) {
                 String msg = r.getMessage() == null ? "" : r.getMessage();
                 if (handleSessionExpiredIfNeeded(msg)) return;
-                ErrorHandler.showWarningDialog("Erreur", msg.isBlank() ? "Suppression impossible." : msg);
+                ErrorHandler.showWarningDialog("Erreur", msg.isBlank() ? "Changement d'état impossible." : msg);
                 setMessage(null, false);
                 return;
             }
-            setMessage("Produit supprimé.", false);
+            setMessage(activating ? "Produit activé." : "Produit désactivé.", false);
             if (productModalOpen) {
                 hideProductModal();
             }
@@ -823,6 +828,7 @@ public class AdminController {
             row.description.set(p.optString("description", ""));
             row.price.set(p.optDouble("price", 0.0));
             row.stock.set(p.optInt("stock", 0));
+            row.available.set(p.optBoolean("available", p.optBoolean("is_available", false)));
             row.imageUrl.set(p.optString("imageUrl", p.optString("image_url", "")));
             row.imageUrls.clear();
             JSONArray images = p.optJSONArray("imageUrls");
@@ -1683,4 +1689,3 @@ public class AdminController {
         try { return Double.parseDouble(s.trim()); } catch (Exception e) { return fallback; }
     }
 }
-

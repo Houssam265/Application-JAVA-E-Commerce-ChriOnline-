@@ -72,8 +72,6 @@ public class CheckoutController {
     @FXML private MenuItem accountOrdersItem;
     @FXML private MenuItem accountAdminItem;
     @FXML private MenuItem accountLogoutItem;
-    @FXML private Button adminButton;
-
     // Navbar buttons
     @FXML private Button navHomeBtn;
     @FXML private Button navCatalogueBtn;
@@ -95,10 +93,6 @@ public class CheckoutController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
         configureAccountMenu(session);
 
         orderId = ClientSession.getInstance().getCurrentOrderId();

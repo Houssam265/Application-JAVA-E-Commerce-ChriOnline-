@@ -36,6 +36,7 @@ public class ProductManagerController {
         final DoubleProperty price = new SimpleDoubleProperty();
         final IntegerProperty stock = new SimpleIntegerProperty();
         final StringProperty description = new SimpleStringProperty();
+        final BooleanProperty available = new SimpleBooleanProperty();
     }
 
     public static final class CategoryRow {
@@ -130,6 +131,7 @@ public class ProductManagerController {
     private void initSelectionBindings() {
         if (productsTable != null) {
             productsTable.getSelectionModel().selectedItemProperty().addListener((obs, ov, row) -> {
+                updateProductToggleButton(row);
                 if (row == null) return;
                 editingProductId = row.productId.get();
                 Platform.runLater(() -> {
@@ -255,6 +257,7 @@ public class ProductManagerController {
             row.description.set(p.optString("description", ""));
             row.price.set(p.optDouble("price", 0.0));
             row.stock.set(p.optInt("stock", 0));
+            row.available.set(p.optBoolean("available", p.optBoolean("is_available", false)));
             list.add(row);
         }
         return list;
@@ -266,7 +269,7 @@ public class ProductManagerController {
         return new JSONArray(String.valueOf(payload));
     }
 
-    // ── Product actions (ADD/UPDATE/DELETE_PRODUCT) ──────────────────────────
+    // ── Product actions (ADD/UPDATE/ACTIVATE-DEACTIVATE_PRODUCT) ────────────
     @FXML
     private void handleAddProduct() {
         setStatus(null, false);
@@ -344,10 +347,11 @@ public class ProductManagerController {
         setStatus(null, false);
         ProductRow row = productsTable != null ? productsTable.getSelectionModel().getSelectedItem() : null;
         if (row == null) {
-            setStatus("Select a product to delete.", true);
+            setStatus("Select a product to activate or deactivate.", true);
             return;
         }
         int productId = row.productId.get();
+        boolean activating = !row.available.get();
 
         Task<Response> t = new Task<>() {
             @Override protected Response call() throws Exception {
@@ -364,16 +368,16 @@ public class ProductManagerController {
             setBusy(false);
             Response r = t.getValue();
             if (r == null || !r.isSuccess()) {
-                setStatus(r != null ? r.getMessage() : "Delete product failed.", true);
+                setStatus(r != null ? r.getMessage() : "Product status update failed.", true);
                 return;
             }
-            setStatus("Product deleted.", false);
+            setStatus(activating ? "Product activated." : "Product deactivated.", false);
             handleClearProductSelection();
             loadProducts();
         });
         t.setOnFailed(e -> {
             setBusy(false);
-            setStatus("Network error while deleting product.", true);
+            setStatus("Network error while updating product status.", true);
         });
         runTask(t);
     }
@@ -387,6 +391,7 @@ public class ProductManagerController {
         if (stock != null) stock.clear();
         if (description != null) description.clear();
         if (category != null) category.getSelectionModel().clearSelection();
+        updateProductToggleButton(null);
     }
 
     private Map<String, Object> parseProductForm() {
@@ -592,6 +597,17 @@ public class ProductManagerController {
             if (updateCategoryButton != null) updateCategoryButton.setDisable(busy);
             if (deleteCategoryButton != null) deleteCategoryButton.setDisable(busy);
             if (clearCategoryButton != null) clearCategoryButton.setDisable(busy);
+        });
+    }
+
+    private void updateProductToggleButton(ProductRow row) {
+        Platform.runLater(() -> {
+            if (deleteProductButton == null) return;
+            if (row == null) {
+                deleteProductButton.setText("Disable");
+                return;
+            }
+            deleteProductButton.setText(row.available.get() ? "Disable" : "Enable");
         });
     }
 
