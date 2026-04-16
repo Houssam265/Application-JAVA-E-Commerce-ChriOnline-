@@ -1,5 +1,6 @@
 package com.chrionline.ui.notifications;
 
+import com.chrionline.security.UdpFloodProtector;
 import org.json.JSONObject;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -21,6 +22,8 @@ public final class UdpNotificationClient {
 
     /** Port the CLIENT listens on. Must differ from the server's bind port (9090). */
     public static final int CLIENT_PORT = 9091;
+
+    private static final UdpFloodProtector FLOOD_PROTECTOR = new UdpFloodProtector(50, 1_000L);
 
     private static volatile Thread thread;
     private static volatile boolean running;
@@ -58,6 +61,10 @@ public final class UdpNotificationClient {
                     socket.receive(packet);
                     if (packet.getLength() <= 0) {
                         continue; // ignore empty packets
+                    }
+                    if (!FLOOD_PROTECTOR.shouldAccept(packet.getAddress())) {
+                        LOG.warn("UDP packet dropped from {}", packet.getAddress().getHostAddress());
+                        continue;
                     }
                     String raw = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8).trim();
                     if (!raw.isBlank()) {
