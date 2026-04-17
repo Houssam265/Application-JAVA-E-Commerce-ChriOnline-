@@ -2,6 +2,7 @@ package com.chrionline.server;
 
 import com.chrionline.dao.UserDAO;
 import com.chrionline.database.DatabaseConnection;
+import com.chrionline.model.Admin;
 import com.chrionline.model.Session;
 import com.chrionline.model.User;
 import org.apache.logging.log4j.LogManager;
@@ -82,7 +83,7 @@ public class SessionManager {
         LocalDateTime now       = LocalDateTime.now();
         LocalDateTime expiresAt = now.plusMinutes(SESSION_DURATION_MINUTES);
 
-        Session session = new Session(sessionId, user.getUserId(), user.getRole(), token, now, expiresAt, true);
+        Session session = new Session(sessionId, user.getUserId(), null, Session.Role.CLIENT, token, now, expiresAt, true);
 
         // 1. Persist to DB (source of truth)
         insertSessionToDb(session);
@@ -91,6 +92,24 @@ public class SessionManager {
         activeSessions.put(token, session);
 
         LOG.info("[SESSION] Created for userId={} -> token={}", user.getUserId(), token);
+        return session;
+    }
+
+    public synchronized Session createAdminSession(Admin admin) {
+        String        sessionId = UUID.randomUUID().toString();
+        String        token     = UUID.randomUUID().toString();
+        LocalDateTime now       = LocalDateTime.now();
+        LocalDateTime expiresAt = now.plusMinutes(SESSION_DURATION_MINUTES);
+
+        Session session = new Session(sessionId, null, admin.getAdminId(), Session.Role.ADMIN, token, now, expiresAt, true);
+
+        // 1. Persist to DB (source of truth)
+        insertSessionToDb(session);
+
+        // 2. Put in runtime cache
+        activeSessions.put(token, session);
+
+        LOG.info("[SESSION] Created for adminId={} -> token={}", admin.getAdminId(), token);
         return session;
     }
 
@@ -230,6 +249,7 @@ public class SessionManager {
      */
     public synchronized Optional<User> getUserFromToken(String token) {
         return getSession(token)
+                .filter(s -> s.getUserId() != null)
                 .flatMap(session -> userDAO.findById(session.getUserId()));
     }
 
@@ -306,20 +326,30 @@ public class SessionManager {
     /** Inserts a new session row into the {@code sessions} table. */
     private void insertSessionToDb(Session session) {
         final String sql =
-                "INSERT INTO sessions (session_id, user_id, token, created_at, expires_at, is_active) " +
-                        "VALUES (?, ?, ?, ?, ?, ?)";
+                "INSERT INTO sessions (session_id, user_id, admin_id, role, token, created_at, expires_at, is_active) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             ps.setString   (1, session.getSessionId());
-            ps.setInt      (2, session.getUserId());
-            ps.setString   (3, session.getToken());
-            ps.setTimestamp(4, Timestamp.valueOf(session.getCreatedAt()));
-            ps.setTimestamp(5, Timestamp.valueOf(session.getExpiresAt()));
-            ps.setBoolean  (6, session.isActive());
+            if (session.getUserId() != null) {
+                ps.setInt(2, session.getUserId());
+            } else {
+                ps.setNull(2, Types.INTEGER);
+            }
+            if (session.getAdminId() != null) {
+                ps.setInt(3, session.getAdminId());
+            } else {
+                ps.setNull(3, Types.INTEGER);
+            }
+            ps.setString   (4, session.getRole().name());
+            ps.setString   (5, session.getToken());
+            ps.setTimestamp(6, Timestamp.valueOf(session.getCreatedAt()));
+            ps.setTimestamp(7, Timestamp.valueOf(session.getExpiresAt()));
+            ps.setBoolean  (8, session.isActive());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(
-                    "[SESSION] insertSessionToDb failed for userId=" + session.getUserId()
+                    "[SESSION] insertSessionToDb failed for sessionId=" + session.getSessionId()
                             + ": " + e.getMessage(), e);
         }
     }
@@ -330,7 +360,7 @@ public class SessionManager {
      */
     private Optional<Session> findSessionInDb(String token) {
         final String sql =
-                "SELECT session_id, user_id, token, created_at, expires_at, is_active " +
+                "SELECT session_id, user_id, admin_id, role, token, created_at, expires_at, is_active " +
                         "FROM sessions WHERE token = ? LIMIT 1";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
@@ -341,7 +371,18 @@ public class SessionManager {
                 }
                 Session s = new Session();
                 s.setSessionId(rs.getString  ("session_id"));
-                s.setUserId   (rs.getInt     ("user_id"));
+                
+                int userId = rs.getInt("user_id");
+                if (!rs.wasNull()) s.setUserId(userId);
+
+                int adminId = rs.getInt("admin_id");
+                if (!rs.wasNull()) s.setAdminId(adminId);
+
+                String roleStr = rs.getString("role");
+                if (roleStr != null) {
+                    s.setRole(Session.Role.valueOf(roleStr));
+                }
+
                 s.setToken    (rs.getString  ("token"));
 
                 Timestamp createdAt = rs.getTimestamp("created_at");
@@ -351,7 +392,6 @@ public class SessionManager {
                 s.setExpiresAt(expiresAt != null ? expiresAt.toLocalDateTime() : null);
 
                 s.setActive(rs.getBoolean("is_active"));
-                userDAO.findById(s.getUserId()).ifPresent(user -> s.setRole(user.getRole()));
                 return Optional.of(s);
             }
         } catch (SQLException e) {

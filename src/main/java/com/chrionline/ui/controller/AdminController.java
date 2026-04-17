@@ -48,14 +48,7 @@ import org.kordamp.ikonli.javafx.FontIcon;
  */
 public class AdminController {
 
-    // ── Header ──────────────────────────────────────────────────────────────
-    @FXML private TextField headerSearchField;
-    @FXML private MenuButton accountMenuButton;
-    @FXML private MenuItem accountProfileItem;
-    @FXML private MenuItem accountOrdersItem;
-    @FXML private MenuItem accountAdminItem;
-    @FXML private MenuItem accountLogoutItem;
-
+    // ── Header (Removed to simplify admin workspace) ──────────
     // ── View models ──────────────────────────────────────────────────────────
     public static final class ProductRow {
         final IntegerProperty productId = new SimpleIntegerProperty();
@@ -223,7 +216,7 @@ public class AdminController {
             return;
         }
 
-        configureAccountMenu();
+        // Header options removed
 
         // Restrict text inputs
         prodStockField.setTextFormatter(new TextFormatter<>(change -> change.getControlNewText().matches("\\d*") ? change : null));
@@ -258,68 +251,10 @@ public class AdminController {
         }
     }
 
-    @FXML
-    private void handleBackToHome() {
-        SceneManager.showHome();
-    }
 
-    @FXML
-    private void handleOpenHome() {
-        SceneManager.showHome();
-    }
 
-    @FXML
-    private void handleOpenCatalogue() {
-        SceneManager.showCatalogue();
-    }
 
-    @FXML
-    private void handleOpenCart() {
-        SceneManager.showCart();
-    }
 
-    @FXML
-    private void handleOpenProfile() {
-        SceneManager.showProfile();
-    }
-
-    @FXML
-    private void handleOpenOrders() {
-        SceneManager.showOrderHistory();
-    }
-
-    @FXML
-    private void handleHeaderSearch() {
-        if (headerSearchField == null) return;
-        String query = headerSearchField.getText() == null ? "" : headerSearchField.getText().trim();
-        SceneManager.showCatalogue(query);
-    }
-
-    private void configureAccountMenu() {
-        if (accountMenuButton == null) return;
-        ClientSession session = ClientSession.getInstance();
-        String username = session.getUsername() == null || session.getUsername().isBlank()
-                ? "Utilisateur"
-                : session.getUsername();
-        accountMenuButton.setText("Bonjour, " + username);
-
-        if (accountProfileItem != null) {
-            accountProfileItem.setGraphic(new FontIcon("fas-user"));
-            accountProfileItem.setOnAction(e -> handleOpenProfile());
-        }
-        if (accountOrdersItem != null) {
-            accountOrdersItem.setGraphic(new FontIcon("fas-box-open"));
-            accountOrdersItem.setOnAction(e -> handleOpenOrders());
-        }
-        if (accountAdminItem != null) {
-            accountAdminItem.setGraphic(new FontIcon("fas-user-shield"));
-            accountAdminItem.setDisable(false);
-        }
-        if (accountLogoutItem != null) {
-            accountLogoutItem.setGraphic(new FontIcon("fas-sign-out-alt"));
-            accountLogoutItem.setOnAction(e -> handleLogout());
-        }
-    }
 
     @FXML
     private void handleLogout() {
@@ -1333,7 +1268,7 @@ public class AdminController {
             row.userId.set(u.optInt("userId", u.optInt("user_id", 0)));
             row.username.set(u.optString("username", ""));
             row.email.set(u.optString("email", ""));
-            row.role.set(u.optString("role", User.Role.CLIENT.name()));
+            row.role.set(u.optString("role", com.chrionline.model.Session.Role.CLIENT.name()));
             row.suspended.set(u.optBoolean("suspended", u.optBoolean("is_suspended", false)));
             list.add(row);
         }

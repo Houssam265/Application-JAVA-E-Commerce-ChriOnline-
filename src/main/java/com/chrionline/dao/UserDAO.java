@@ -114,32 +114,31 @@ public class UserDAO {
     public User save(User user) {
         final String sql = """
             INSERT INTO users (
-                username, email, password_hash, role, is_suspended,
+                username, email, password_hash, is_suspended,
                 is_email_verified, email_verification_code,
                 email_verification_expires_at, email_verification_sent_at,
                 trusted_login_ip, login_ip_verification_code,
                 login_ip_verification_expires_at, login_ip_verification_sent_at,
                 login_ip_verification_pending_ip, password_reset_token, password_reset_expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
         try (PreparedStatement ps = conn().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, user.getUsername());
             ps.setString(2, user.getEmail());
             ps.setString(3, user.getPasswordHash());
-            ps.setString(4, user.getRole().name());
-            ps.setBoolean(5, user.isSuspended());
-            ps.setBoolean(6, user.isEmailVerified());
-            ps.setString(7, user.getEmailVerificationCode());
-            setTimestamp(ps, 8, user.getEmailVerificationExpiresAt());
-            setTimestamp(ps, 9, user.getEmailVerificationSentAt());
-            ps.setString(10, user.getTrustedLoginIp());
-            ps.setString(11, user.getLoginIpVerificationCode());
-            setTimestamp(ps, 12, user.getLoginIpVerificationExpiresAt());
-            setTimestamp(ps, 13, user.getLoginIpVerificationSentAt());
-            ps.setString(14, user.getLoginIpVerificationPendingIp());
-            ps.setString(15, user.getPasswordResetToken());
-            setTimestamp(ps, 16, user.getPasswordResetExpiresAt());
+            ps.setBoolean(4, user.isSuspended());
+            ps.setBoolean(5, user.isEmailVerified());
+            ps.setString(6, user.getEmailVerificationCode());
+            setTimestamp(ps, 7, user.getEmailVerificationExpiresAt());
+            setTimestamp(ps, 8, user.getEmailVerificationSentAt());
+            ps.setString(9, user.getTrustedLoginIp());
+            ps.setString(10, user.getLoginIpVerificationCode());
+            setTimestamp(ps, 11, user.getLoginIpVerificationExpiresAt());
+            setTimestamp(ps, 12, user.getLoginIpVerificationSentAt());
+            ps.setString(13, user.getLoginIpVerificationPendingIp());
+            ps.setString(14, user.getPasswordResetToken());
+            setTimestamp(ps, 15, user.getPasswordResetExpiresAt());
             ps.executeUpdate();
 
             try (ResultSet generated = ps.getGeneratedKeys()) {
@@ -355,22 +354,7 @@ public class UserDAO {
         }
     }
 
-    public List<User> findByRole(User.Role role) {
-        final String sql = "SELECT * FROM users WHERE role = ? ORDER BY user_id ASC";
-        List<User> result = new ArrayList<>();
 
-        try (PreparedStatement ps = conn().prepareStatement(sql)) {
-            ps.setString(1, role.name());
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    result.add(mapRow(rs));
-                }
-            }
-            return result;
-        } catch (SQLException e) {
-            throw new RuntimeException("UserDAO.findByRole failed for role=" + role + ": " + e.getMessage(), e);
-        }
-    }
 
     public void setSuspended(int userId, boolean suspended) {
         final String sql = "UPDATE users SET is_suspended = ? WHERE user_id = ?";
@@ -606,7 +590,6 @@ public class UserDAO {
         u.setUsername(rs.getString("username"));
         u.setEmail(rs.getString("email"));
         u.setPasswordHash(rs.getString("password_hash"));
-        u.setRole(User.Role.valueOf(rs.getString("role")));
         u.setSuspended(getBooleanOrDefault(rs, "is_suspended", false));
         u.setEmailVerified(getBooleanOrDefault(rs, "is_email_verified", true));
         u.setEmailVerificationCode(getStringOrNull(rs, "email_verification_code"));

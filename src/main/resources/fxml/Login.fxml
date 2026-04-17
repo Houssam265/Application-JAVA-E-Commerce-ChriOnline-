@@ -92,6 +92,11 @@
                     <Label text="Don't have an account?" styleClass="link-text"/>
                     <Hyperlink text="Create one" styleClass="link-action" onAction="#goToRegister"/>
                 </HBox>
+                
+                <HBox alignment="CENTER" spacing="6" maxWidth="440" prefWidth="440" minWidth="440" style="-fx-padding: 10px 0 0 0;">
+                    <FontIcon iconLiteral="fas-shield-alt" iconSize="12" styleClass="ikonli-muted"/>
+                    <Hyperlink text="Admin Access (RSA)" styleClass="link-action-small" onAction="#goToAdminLogin"/>
+                </HBox>
 
             </VBox>
         </VBox>

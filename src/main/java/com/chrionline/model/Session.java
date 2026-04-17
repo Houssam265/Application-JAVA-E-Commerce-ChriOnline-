@@ -14,10 +14,16 @@ import java.time.LocalDateTime;
  */
 public class Session {
 
+    public enum Role {
+        CLIENT,
+        ADMIN
+    }
+
     // ── Fields ─────────────────────────────────────────────────────────────
     private String        sessionId;
-    private int           userId;
-    private User.Role     role;
+    private Integer       userId;
+    private Integer       adminId;
+    private Role          role;
     private String        token;
     private LocalDateTime createdAt;
     private LocalDateTime expiresAt;
@@ -25,20 +31,13 @@ public class Session {
 
     // ── Constructors ────────────────────────────────────────────────────────
 
-    /** No-arg constructor required by DAO row mapping. */
     public Session() {}
 
-    /** Full constructor (legacy, no role). */
-    public Session(String sessionId, int userId, String token,
-                   LocalDateTime createdAt, LocalDateTime expiresAt, boolean isActive) {
-        this(sessionId, userId, null, token, createdAt, expiresAt, isActive);
-    }
-
-    /** Full constructor with role. */
-    public Session(String sessionId, int userId, User.Role role, String token,
+    public Session(String sessionId, Integer userId, Integer adminId, Role role, String token,
                    LocalDateTime createdAt, LocalDateTime expiresAt, boolean isActive) {
         this.sessionId = sessionId;
         this.userId    = userId;
+        this.adminId   = adminId;
         this.role      = role;
         this.token     = token;
         this.createdAt = createdAt;
@@ -51,11 +50,14 @@ public class Session {
     public String        getSessionId()               { return sessionId; }
     public void          setSessionId(String v)        { this.sessionId = v; }
 
-    public int           getUserId()                   { return userId; }
-    public void          setUserId(int v)              { this.userId = v; }
+    public Integer       getUserId()                   { return userId; }
+    public void          setUserId(Integer v)          { this.userId = v; }
 
-    public User.Role     getRole()                     { return role; }
-    public void          setRole(User.Role v)          { this.role = v; }
+    public Integer       getAdminId()                  { return adminId; }
+    public void          setAdminId(Integer v)         { this.adminId = v; }
+
+    public Role          getRole()                     { return role; }
+    public void          setRole(Role v)               { this.role = v; }
 
     public String        getToken()                    { return token; }
     public void          setToken(String v)            { this.token = v; }
@@ -71,10 +73,6 @@ public class Session {
 
     // ── Convenience ─────────────────────────────────────────────────────────
 
-    /**
-     * Returns {@code true} if the session is still usable right now:
-     * is_active == true AND expiresAt is in the future.
-     */
     public boolean isValid() {
         return isActive && expiresAt != null && LocalDateTime.now().isBefore(expiresAt);
     }
@@ -86,6 +84,7 @@ public class Session {
         return "Session{" +
                 "sessionId='" + sessionId + '\'' +
                 ", userId="   + userId    +
+                ", adminId="  + adminId   +
                 ", role="     + role      +
                 ", isActive=" + isActive  +
                 ", expiresAt=" + expiresAt +

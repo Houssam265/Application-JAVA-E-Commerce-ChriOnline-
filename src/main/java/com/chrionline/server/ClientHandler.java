@@ -7,6 +7,7 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.service.AuthService;
+import com.chrionline.service.AdminAuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
 import com.chrionline.service.LoginCaptchaService;
@@ -109,6 +110,7 @@ public class ClientHandler implements Runnable {
     private final OrderService   orderService;
     private final PaymentService paymentService;
     private final AdminService   adminService;
+    private final AdminAuthService adminAuthService;
     private final UDPNotificationService udpNotificationService;
     private final LoginCaptchaService loginCaptchaService = LoginCaptchaService.getInstance();
 
@@ -145,7 +147,8 @@ public class ClientHandler implements Runnable {
                          OrderService orderService,
                          PaymentService paymentService,
                          AdminService adminService,
-                         UDPNotificationService udpNotificationService) {
+                         UDPNotificationService udpNotificationService,
+                         AdminAuthService adminAuthService) {
         this.socket         = socket;
         this.clientAddress  = socket.getInetAddress();
         this.userDAO        = userDAO;
@@ -157,6 +160,7 @@ public class ClientHandler implements Runnable {
         this.paymentService = paymentService;
         this.adminService   = adminService;
         this.udpNotificationService = udpNotificationService;
+        this.adminAuthService = adminAuthService;
     }
 
     // ── Runnable ──────────────────────────────────────────────────────────────
@@ -265,6 +269,12 @@ public class ClientHandler implements Runnable {
                 return handleGetLoginCaptcha();
             case MessageProtocol.ACTION_GET_LOGIN_SECURITY_STATE:
                 return handleGetLoginSecurityState(req);
+
+            // ── Admin Auth (Challenge Response) ───────────────────────────
+            case MessageProtocol.ACTION_ADMIN_CHALLENGE_REQUEST:
+                return handleAdminChallengeRequest(req);
+            case MessageProtocol.ACTION_ADMIN_CHALLENGE_VERIFY:
+                return handleAdminChallengeVerify(req);
 
             // ── Auth (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_LOGOUT:
@@ -612,20 +622,14 @@ public class ClientHandler implements Runnable {
 
             User user = loginResult.getUser();
 
-            // Restriction IP pour les comptes admin: seuls les reseaux internes/prives
-            // sont autorises. Une connexion admin depuis une IP externe est refusee.
             String clientIp = getClientIpAddress();
-            if (user.getRole() == User.Role.ADMIN && !IpUtils.isPrivateIp(clientIp)) {
-                SecurityAuditLogger.logAdminExternalIpBlocked(user.getUsername(), clientIp);
-                return Response.error("Acces admin refuse depuis une adresse IP externe.");
-            }
             Session session = sessionManager.createSession(user);
 
             Map<String, Object> payload = new HashMap<>();
             payload.put("userId",   user.getUserId());
             payload.put("username", user.getUsername());
             payload.put("email",    user.getEmail());
-            payload.put("role",     user.getRole().name());
+            payload.put("role",     "CLIENT");
             payload.put("emailVerified", user.isEmailVerified());
 
             // token is sent as the top-level Response.token field
@@ -714,7 +718,7 @@ public class ClientHandler implements Runnable {
             payload.put("userId", user.getUserId());
             payload.put("username", user.getUsername());
             payload.put("email", user.getEmail());
-            payload.put("role", user.getRole().name());
+            payload.put("role", Session.Role.CLIENT.name());
             payload.put("emailVerified", false);
 
             Response r = Response.ok("REGISTER_SUCCESS", payload);
@@ -775,7 +779,7 @@ public class ClientHandler implements Runnable {
             payload.put("userId", user.getUserId());
             payload.put("username", user.getUsername());
             payload.put("email", user.getEmail());
-            payload.put("role", user.getRole().name());
+            payload.put("role", session.getRole().name());
             payload.put("emailVerified", user.isEmailVerified());
 
             connectionToken = session.getToken();
@@ -867,6 +871,67 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    // ── Admin Auth (Challenge Response) handlers ──────────────────────────────
+    
+    private Response handleAdminChallengeRequest(Request req) {
+        String username = getPayloadString(req, "username");
+        if (username == null || username.isBlank()) {
+            return Response.error("Le username admin est requis.");
+        }
+
+        try {
+            String challenge = adminAuthService.generateChallenge(username);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("challenge", challenge);
+            return Response.ok("CHALLENGE_GENERATED", payload);
+        } catch (IllegalArgumentException e) {
+            SecurityAuditLogger.logAdminAccessFailure(username, getClientIpAddress(), "UNKNOWN_ADMIN_USERNAME");
+            return Response.error(e.getMessage());
+        } catch (Exception e) {
+            LOG.warn("[ADMIN_AUTH] Erreur generation defi: ", e);
+            return Response.error("Erreur serveur lors de la generation du defi");
+        }
+    }
+
+    private Response handleAdminChallengeVerify(Request req) {
+        String username = getPayloadString(req, "username");
+        String signature = getPayloadString(req, "signature");
+
+        if (username == null || username.isBlank() || signature == null || signature.isBlank()) {
+            return Response.error("username et signature sont requis.");
+        }
+
+        try {
+            // Optionnel : Blocage IP pour Admin
+            String clientIp = getClientIpAddress();
+            if (!IpUtils.isPrivateIp(clientIp)) {
+                SecurityAuditLogger.logAdminExternalIpBlocked("AdminUser " + username, clientIp);
+                return Response.error("Acces admin refuse depuis une adresse IP externe.");
+            }
+
+            com.chrionline.model.Admin admin = adminAuthService.verifyChallenge(username, signature);
+            Session session = sessionManager.createAdminSession(admin);
+            
+            SecurityAuditLogger.logAdminAccessSuccess(username, clientIp);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("adminId", admin.getAdminId());
+            payload.put("role", session.getRole().name());
+
+            connectionToken = session.getToken();
+            sessionManager.bindSessionIpIfAbsent(connectionToken, clientIp);
+            
+            return new Response(true, "ADMIN_LOGIN_SUCCESS", payload, session.getToken());
+        } catch (IllegalArgumentException e) {
+            SecurityAuditLogger.logAdminAccessFailure(username, getClientIpAddress(), "INVALID_RSA_SIGNATURE");
+            LOG.warn("[ADMIN_AUTH] Failed verify: " + e.getMessage());
+            return Response.error(e.getMessage());
+        } catch (Exception e) {
+            LOG.warn("[ADMIN_AUTH] Erreur verification defi: ", e);
+            return Response.error("Erreur (serveur) " + e.getMessage());
+        }
+    }
+
     /**
      * LOGOUT — token from {@code request.getToken()}.
      *
@@ -887,12 +952,12 @@ public class ClientHandler implements Runnable {
      */
     private Response handleGetProducts(Request req) {
         Integer categoryId = req.getPayloadInt("category_id");
-        User user = sessionManager.getUserFromToken(req.getToken()).orElse(null);
-        boolean adminCatalog = user != null && authService.isAdmin(user);
+        Session session = sessionManager.getSession(req.getToken()).orElse(null);
+        boolean adminCatalog = session != null && session.getRole() == Session.Role.ADMIN;
         List<?> products = productService.getProducts(categoryId, adminCatalog);
         Response r = Response.ok(products);
-        if (user != null) {
-            logActionSuccess("GET_PRODUCTS", user.getUserId());
+        if (session != null && session.getUserId() != null) {
+            logActionSuccess("GET_PRODUCTS", session.getUserId());
         }
         return r;
     }
@@ -906,8 +971,8 @@ public class ClientHandler implements Runnable {
         if (productId == null) {
             return Response.error("Missing product_id in payload");
         }
-        User user = sessionManager.getUserFromToken(req.getToken()).orElse(null);
-        boolean admin = user != null && authService.isAdmin(user);
+        Session session = req.getToken() != null ? sessionManager.getSession(req.getToken()).orElse(null) : null;
+        boolean admin = session != null && session.getRole() == Session.Role.ADMIN;
         return productService.getProductDetails(productId, admin)
                 .map(Response::ok)
                 .orElse(Response.error("Product not found: " + productId));
@@ -1202,9 +1267,9 @@ public class ClientHandler implements Runnable {
 
     private Response handleUpdateOrderStatus(Request req) {
         try {
-            User admin = sessionManager.getUserFromToken(req.getToken())
+            Session session = sessionManager.getSession(req.getToken())
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-            if (!authService.isAdmin(admin)) {
+            if (session.getRole() != Session.Role.ADMIN) {
                 return Response.error("Accès refusé (ADMIN uniquement).");
             }
             Integer orderId = req.getPayloadInt("order_id");
@@ -1229,7 +1294,7 @@ public class ClientHandler implements Runnable {
             });
 
             Response r = Response.ok("STATUS_UPDATED", null);
-            logActionSuccess("UPDATE_ORDER_STATUS", admin.getUserId(), "new status: " + status);
+            logActionSuccess("UPDATE_ORDER_STATUS", session.getAdminId() != null ? session.getAdminId() : 0, "new status: " + status);
             return r;
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -1318,9 +1383,9 @@ public class ClientHandler implements Runnable {
 
     private Response handleAdmin(Request req) {
         try {
-            User admin = sessionManager.getUserFromToken(req.getToken())
+            Session session = sessionManager.getSession(req.getToken())
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-            if (!authService.isAdmin(admin)) {
+            if (session.getRole() != Session.Role.ADMIN) {
                 return Response.error("Accès refusé (ADMIN uniquement).");
             }
 
@@ -1379,7 +1444,7 @@ public class ClientHandler implements Runnable {
                     Object suspended = req.getPayload() != null ? req.getPayload().get("suspended") : null;
                     boolean isSuspended = suspended instanceof Boolean ? (Boolean) suspended : Boolean.parseBoolean(String.valueOf(suspended));
                     if (userId == null) return Response.error("Missing user_id");
-                    if (userId == admin.getUserId()) return Response.error("Impossible de suspendre votre propre compte.");
+                    if (userId.equals(session.getAdminId())) return Response.error("Impossible de suspendre votre propre compte.");
                     adminService.setUserSuspended(userId, isSuspended);
                     return Response.ok("USER_UPDATED", null);
                 }
@@ -1543,7 +1608,10 @@ public class ClientHandler implements Runnable {
                 break;
             case MessageProtocol.ACTION_ADMIN_LIST_USERS:
             case MessageProtocol.ACTION_ADMIN_LIST_ORDERS:
-                // No payload required.
+            case MessageProtocol.ACTION_ADMIN_CHALLENGE_REQUEST:
+            case MessageProtocol.ACTION_ADMIN_CHALLENGE_VERIFY:
+            case MessageProtocol.ACTION_LOGOUT:
+                // No payload validation required at this level.
                 break;
             default:
                 throw new ValidationException("Unsupported action: " + action);

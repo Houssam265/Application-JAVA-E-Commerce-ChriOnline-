@@ -1,6 +1,7 @@
 package com.chrionline.ui;
 
 import com.chrionline.model.User;
+import com.chrionline.model.Session;
 
 /**
  * Client-side session cache for the JavaFX app.
@@ -24,7 +25,7 @@ public final class ClientSession {
     private Integer userId;
     private String username;
     private String email;
-    private User.Role role;
+    private Session.Role role;
     /** Last order created from cart (used by Checkout screen). */
     private String currentOrderId;
 
@@ -43,7 +44,7 @@ public final class ClientSession {
     }
 
     public boolean isAdmin() {
-        return role == User.Role.ADMIN;
+        return role == Session.Role.ADMIN;
     }
 
     public Integer getUserId() {
@@ -70,11 +71,11 @@ public final class ClientSession {
         this.email = email;
     }
 
-    public User.Role getRole() {
+    public Session.Role getRole() {
         return role;
     }
 
-    public void setRole(User.Role role) {
+    public void setRole(Session.Role role) {
         this.role = role;
     }
 

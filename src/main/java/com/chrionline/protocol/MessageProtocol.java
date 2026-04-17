@@ -13,6 +13,9 @@ public final class MessageProtocol {
     public static final String ACTION_LOGIN = "LOGIN";
     public static final String ACTION_REGISTER = "REGISTER";
     public static final String ACTION_LOGOUT = "LOGOUT";
+    public static final String ACTION_ADMIN_CHALLENGE_REQUEST = "ADMIN_CHALLENGE_REQUEST";
+    public static final String ACTION_ADMIN_CHALLENGE_VERIFY  = "ADMIN_CHALLENGE_VERIFY";
+    
     public static final String ACTION_VERIFY_EMAIL = "VERIFY_EMAIL";
     public static final String ACTION_RESEND_VERIFICATION_EMAIL = "RESEND_VERIFICATION_EMAIL";
     public static final String ACTION_VERIFY_LOGIN_IP = "VERIFY_LOGIN_IP";

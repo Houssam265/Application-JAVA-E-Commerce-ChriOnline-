@@ -204,7 +204,7 @@ public class LoginController {
                     session.setUserId(payload.has("userId") ? payload.getInt("userId") : null);
                     session.setUsername(payload.optString("username", ""));
                     session.setEmail(payload.optString("email", ""));
-                    session.setRole(com.chrionline.model.User.Role.valueOf(payload.optString("role", "CLIENT")));
+                    session.setRole(com.chrionline.model.Session.Role.valueOf(payload.optString("role", "CLIENT")));
                 } catch (Exception ignored) {
                 }
                 resetSecurityCounters();
@@ -280,6 +280,11 @@ public class LoginController {
     @FXML
     private void goToRegister() {
         SceneManager.showRegister();
+    }
+
+    @FXML
+    private void goToAdminLogin() {
+        SceneManager.showAdminLogin();
     }
 
     @FXML

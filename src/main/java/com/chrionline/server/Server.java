@@ -1,11 +1,13 @@
 package com.chrionline.server;
 
+import com.chrionline.dao.AdminDAO;
 import com.chrionline.dao.UserDAO;
 import com.chrionline.security.TlsSupport;
 import com.chrionline.security.SecurityMonitor;
 import com.chrionline.security.IpSpoofingDetector;
 import com.chrionline.service.AuthService;
 import com.chrionline.service.AdminService;
+import com.chrionline.service.AdminAuthService;
 import com.chrionline.service.CartService;
 import com.chrionline.service.EnvFileLoader;
 import com.chrionline.service.OrderService;
@@ -69,11 +71,10 @@ public class Server {
         OrderService   orderService   = new OrderService();
         PaymentService paymentService = new PaymentService();
         AdminService   adminService   = new AdminService(userDAO);
+        AdminDAO       adminDAO       = new AdminDAO();
+        AdminAuthService adminAuthService = new AdminAuthService(adminDAO);
 
         // ── Startup tasks ─────────────────────────────────────────────────────
-        LOG.info("[SERVER] Seeding default admin account if not present...");
-        authService.seedAdminIfNotExists();
-
         LOG.info("[SERVER] Cleaning expired sessions...");
         sessionManager.cleanExpiredSessions();
 
@@ -111,7 +112,7 @@ public class Server {
                     }
                     // Keep idle client connections alive longer to avoid frequent read timeouts.
                     clientSocket.setSoTimeout(300_000);
-                    pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService));
+                    pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService, adminAuthService));
                 } catch (SocketException e) {
                     if (serverSocket.isClosed()) break;
                     LOG.info("SocketException pendant accept(): {}", e.getMessage(), e);
