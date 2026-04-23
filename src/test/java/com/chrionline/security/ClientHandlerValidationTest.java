@@ -5,6 +5,7 @@ import com.chrionline.protocol.Response;
 import com.chrionline.server.ClientHandler;
 import com.chrionline.server.SessionManager;
 import com.chrionline.server.UDPNotificationService;
+import com.chrionline.service.AdminAuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.AuthService;
 import com.chrionline.service.CartService;
@@ -49,7 +50,8 @@ class ClientHandlerValidationTest {
                 mock(OrderService.class),
                 mock(PaymentService.class),
                 mock(AdminService.class),
-                mock(UDPNotificationService.class)
+                mock(UDPNotificationService.class),
+                mock(AdminAuthService.class)
         );
 
         processRequestMethod = ClientHandler.class.getDeclaredMethod("processRequest", String.class);

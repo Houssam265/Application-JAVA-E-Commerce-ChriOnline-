@@ -205,6 +205,7 @@ public class LoginController {
                     session.setUsername(payload.optString("username", ""));
                     session.setEmail(payload.optString("email", ""));
                     session.setRole(com.chrionline.model.Session.Role.valueOf(payload.optString("role", "CLIENT")));
+                    session.setAdminAccessGranted(false);
                 } catch (Exception ignored) {
                 }
                 resetSecurityCounters();

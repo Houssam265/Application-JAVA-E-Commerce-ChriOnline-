@@ -110,6 +110,7 @@ public class AdminController {
         final StringProperty email = new SimpleStringProperty();
         final StringProperty role = new SimpleStringProperty();
         final BooleanProperty suspended = new SimpleBooleanProperty();
+        final BooleanProperty hasPublicKey = new SimpleBooleanProperty();
     }
 
     // ── Category row view-model (KAN-18) ─────────────────────────────────────
@@ -1116,7 +1117,6 @@ public class AdminController {
         colRole.setCellValueFactory(cd -> cd.getValue().role);
         colSuspended.setCellValueFactory(cd -> cd.getValue().suspended);
 
-        // Role badge
         colRole.setCellFactory(tc -> new TableCell<>() {
             @Override protected void updateItem(String role, boolean empty) {
                 super.updateItem(role, empty);
@@ -1127,9 +1127,7 @@ public class AdminController {
                 }
 
                 Label badge = new Label(role);
-                String cls = "role-pill-client";
-                if ("ADMIN".equalsIgnoreCase(role)) cls = "role-pill-admin";
-                badge.getStyleClass().add(cls);
+                badge.getStyleClass().add(resolveRoleBadgeClass(role));
                 setGraphic(badge);
                 setText(null);
             }
@@ -1154,17 +1152,59 @@ public class AdminController {
 
         colUserAction.setCellFactory(tc -> new TableCell<>() {
             private final Button toggle = new Button("Suspendre");
-            private final HBox box = new HBox(toggle);
-            private final StackPane centered = new StackPane(box);
+            private final Button roleBtn = new Button("Changer rôle");
+            private final ComboBox<String> roleCombo = new ComboBox<>(FXCollections.observableArrayList("Admin", "Client"));
+            private final HBox box = new HBox(8, toggle);
+            private final StackPane actionContainer = new StackPane();
+
             {
                 toggle.getStyleClass().add("btn-outline");
+                roleBtn.getStyleClass().add("btn-secondary");
+                roleCombo.getStyleClass().add("combo-box-premium");
+                roleCombo.setPromptText("Rôle");
+                roleCombo.setPrefWidth(130);
+
+                actionContainer.getChildren().setAll(roleBtn);
+                box.getChildren().add(actionContainer);
                 box.setAlignment(Pos.CENTER);
-                centered.setAlignment(Pos.CENTER);
+
+                boolean isSuperAdminSession = ClientSession.getInstance().isSuperAdmin();
+
                 toggle.setOnAction(e -> {
                     UserRow row = getTableRow() != null ? (UserRow) getTableRow().getItem() : null;
                     if (row == null) return;
-                    boolean target = !row.suspended.get();
-                    setUserSuspended(row, target);
+                    setUserSuspended(row, !row.suspended.get());
+                });
+
+                roleBtn.setOnAction(e -> {
+                    UserRow row = getTableRow() != null ? (UserRow) getTableRow().getItem() : null;
+                    if (row == null) return;
+                    
+                    String current = "CLIENT".equalsIgnoreCase(row.role.get()) ? "Client" : "Admin";
+                    roleCombo.getSelectionModel().select(current);
+                    actionContainer.getChildren().setAll(roleCombo);
+                    roleCombo.show();
+                });
+
+                roleCombo.valueProperty().addListener((obs, oldV, newV) -> {
+                    if (newV == null || !roleCombo.isShowing()) return;
+                    UserRow row = getTableRow() != null ? (UserRow) getTableRow().getItem() : null;
+                    if (row == null) return;
+
+                    String current = "CLIENT".equalsIgnoreCase(row.role.get()) ? "Client" : "Admin";
+                    if (newV.equals(current)) {
+                        actionContainer.getChildren().setAll(roleBtn);
+                        return;
+                    }
+
+                    String apiRole = "Admin".equals(newV) ? "ADMIN_PENDING" : "CLIENT";
+                    changeUserRole(row, apiRole, null);
+                    actionContainer.getChildren().setAll(roleBtn);
+                });
+
+                // Masquer le combo si on clique ailleurs ou si le focus est perdu
+                roleCombo.focusedProperty().addListener((obs, oldV, n) -> {
+                    if (!n) actionContainer.getChildren().setAll(roleBtn);
                 });
             }
 
@@ -1176,27 +1216,35 @@ public class AdminController {
                 }
                 UserRow row = (UserRow) getTableRow().getItem();
                 toggle.setText(row.suspended.get() ? "Réactiver" : "Suspendre");
-                setGraphic(centered);
+                
+                boolean isMeSuperAdmin = ClientSession.getInstance().isSuperAdmin();
+                boolean isTargetAdmin = "ADMIN".equalsIgnoreCase(row.role.get()) || "ADMIN_PENDING".equalsIgnoreCase(row.role.get());
+                boolean isTargetSuperAdmin = "SUPER_ADMIN".equalsIgnoreCase(row.role.get());
+
+                // Un Admin ne peut suspendre qu'un Client. SuperAdmin peut suspendre tout sauf SuperAdmin.
+                boolean canSuspend = isMeSuperAdmin ? !isTargetSuperAdmin : (!isTargetAdmin && !isTargetSuperAdmin);
+                
+                toggle.setVisible(canSuspend);
+                toggle.setManaged(canSuspend);
+                
+                boolean canManageRole = isMeSuperAdmin && !isTargetSuperAdmin;
+                actionContainer.setVisible(canManageRole);
+                actionContainer.setManaged(canManageRole);
+                
+                // S'assurer de réinitialiser l'état visuel (bouton par défaut)
+                if (!actionContainer.getChildren().contains(roleBtn)) {
+                    actionContainer.getChildren().setAll(roleBtn);
+                }
+                
+                setGraphic(box);
             }
         });
     }
 
     private void initUsersFilters() {
-        if (usersSearchField == null || usersRoleFilter == null || usersSuspendedFilter == null) return;
-
-        usersRoleFilter.getItems().add("TOUS");
-        usersRoleFilter.getItems().add("CLIENT");
-        usersRoleFilter.getItems().add("ADMIN");
-        usersRoleFilter.getSelectionModel().select("TOUS");
-
-        usersSuspendedFilter.getItems().add("TOUS");
-        usersSuspendedFilter.getItems().add("SUSPENDED");
-        usersSuspendedFilter.getItems().add("ACTIVE");
-        usersSuspendedFilter.getSelectionModel().select("TOUS");
+        if (usersSearchField == null) return;
 
         usersSearchField.textProperty().addListener((obs, oldV, n) -> applyUsersFiltering());
-        usersRoleFilter.getSelectionModel().selectedItemProperty().addListener((obs, oldV, n) -> applyUsersFiltering());
-        usersSuspendedFilter.getSelectionModel().selectedItemProperty().addListener((obs, oldV, n) -> applyUsersFiltering());
 
         applyUsersFiltering();
     }
@@ -1205,18 +1253,7 @@ public class AdminController {
         if (filteredUsers == null) return;
 
         String search = usersSearchField != null ? usersSearchField.getText() : null;
-        String roleSel = usersRoleFilter != null ? usersRoleFilter.getSelectionModel().getSelectedItem() : null;
-        String suspSel = usersSuspendedFilter != null ? usersSuspendedFilter.getSelectionModel().getSelectedItem() : null;
-
-        String roleFilter = (roleSel == null || "TOUS".equalsIgnoreCase(roleSel)) ? null : roleSel;
-        Boolean suspendedFilter = null;
-        if (suspSel != null && !"TOUS".equalsIgnoreCase(suspSel)) {
-            suspendedFilter = "SUSPENDED".equalsIgnoreCase(suspSel);
-        }
-
         String searchNorm = search == null ? "" : search.trim().toLowerCase(Locale.US);
-        final String roleFilterFinal = roleFilter;
-        final Boolean suspendedFilterFinal = suspendedFilter;
 
         filteredUsers.setPredicate(row -> {
             boolean matchesSearch = searchNorm.isEmpty()
@@ -1224,9 +1261,7 @@ public class AdminController {
                     || (row.email.get() != null && row.email.get().toLowerCase(Locale.US).contains(searchNorm))
                     || String.valueOf(row.userId.get()).contains(searchNorm);
 
-            boolean matchesRole = roleFilterFinal == null || (row.role.get() != null && row.role.get().equalsIgnoreCase(roleFilterFinal));
-            boolean matchesSusp = suspendedFilterFinal == null || row.suspended.get() == suspendedFilterFinal;
-            return matchesSearch && matchesRole && matchesSusp;
+            return matchesSearch;
         });
     }
 
@@ -1270,6 +1305,7 @@ public class AdminController {
             row.email.set(u.optString("email", ""));
             row.role.set(u.optString("role", com.chrionline.model.Session.Role.CLIENT.name()));
             row.suspended.set(u.optBoolean("suspended", u.optBoolean("is_suspended", false)));
+            row.hasPublicKey.set(u.optBoolean("hasPublicKey", false));
             list.add(row);
         }
         return list;
@@ -1277,6 +1313,10 @@ public class AdminController {
 
     private void setUserSuspended(UserRow rowRef, boolean suspended) {
         if (rowRef == null) return;
+        if ("SUPER_ADMIN".equalsIgnoreCase(rowRef.role.get())) {
+            ErrorHandler.showWarningDialog("Action impossible", "Le compte SUPER_ADMIN unique ne peut pas etre suspendu.");
+            return;
+        }
         int userId = rowRef.userId.get();
         Task<Response> t = new Task<>() {
             @Override protected Response call() throws Exception {
@@ -1305,8 +1345,50 @@ public class AdminController {
         t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible — Nouvelle tentative dans 10s...", () -> setUserSuspended(rowRef, suspended)));
         runTask(t);
     }
-
     // ── Categories tab (KAN-18) ───────────────────────────────────────────────
+
+    private void changeUserRole(UserRow rowRef, String role, String publicKey) {
+        if (rowRef == null || role == null || role.isBlank()) return;
+        int userId = rowRef.userId.get();
+
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                JSONObject payload = new JSONObject();
+                payload.put("user_id", userId);
+                payload.put("role", role);
+                if (publicKey != null && !publicKey.isBlank()) {
+                    payload.put("public_key", publicKey);
+                }
+                return client.send(new Request(MessageProtocol.ACTION_ADMIN_UPDATE_USER_ROLE, payload, client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> {
+            Response r = t.getValue();
+            if (!r.isSuccess()) {
+                String msg = r.getMessage() == null ? "" : r.getMessage();
+                if (handleSessionExpiredIfNeeded(msg)) return;
+                ErrorHandler.showWarningDialog("Changement de role impossible", msg.isBlank() ? "Action impossible." : msg);
+                setMessage(null, false);
+                return;
+            }
+
+            JSONObject payload = r.getPayloadAsJsonObject();
+            rowRef.role.set(payload.optString("role", role));
+            rowRef.hasPublicKey.set(payload.optBoolean("hasPublicKey", publicKey != null && !publicKey.isBlank()));
+            String newRole = rowRef.role.get();
+            if (newRole.contains("ADMIN")) {
+                setMessage("L'utilisateur " + rowRef.username.get() + " a été promu administrateur. Notification envoyée.", false);
+            } else {
+                setMessage("Rôle mis à jour vers " + newRole + ".", false);
+            }
+            applyUsersFiltering();
+            usersTable.refresh();
+        });
+        t.setOnFailed(e -> handleTcpFailure(((Task<?>) e.getSource()).getException(), "Serveur indisponible â€” Nouvelle tentative dans 10s...", () -> changeUserRole(rowRef, role, publicKey)));
+        runTask(t);
+    }
 
     private void initCategoriesTable() {
         categoriesTable.setItems(categoryRows);
@@ -1614,6 +1696,19 @@ public class AdminController {
         Thread th = new Thread(t);
         th.setDaemon(true);
         th.start();
+    }
+
+    private String resolveRoleBadgeClass(String role) {
+        if ("SUPER_ADMIN".equalsIgnoreCase(role)) {
+            return "role-pill-super-admin";
+        }
+        if ("ADMIN_PENDING".equalsIgnoreCase(role)) {
+            return "role-pill-admin-pending";
+        }
+        if ("ADMIN".equalsIgnoreCase(role)) {
+            return "role-pill-admin";
+        }
+        return "role-pill-client";
     }
 
     private int parseInt(String s, int fallback) {

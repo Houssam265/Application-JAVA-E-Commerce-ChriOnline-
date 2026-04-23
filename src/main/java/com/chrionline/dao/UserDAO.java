@@ -88,6 +88,22 @@ public class UserDAO {
                 "ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME NULL");
     }
 
+    public void ensureRoleAndPublicKeySchema() {
+        boolean roleAdded = ensureColumn("role",
+                "ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'CLIENT'");
+        ensureColumn("public_key",
+                "ALTER TABLE users ADD COLUMN public_key TEXT NULL");
+
+        if (roleAdded) {
+            try (PreparedStatement ps = conn().prepareStatement(
+                    "UPDATE users SET role = 'CLIENT' WHERE role IS NULL OR role = ''")) {
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                throw new RuntimeException("UserDAO.ensureRoleAndPublicKeySchema backfill failed: " + e.getMessage(), e);
+            }
+        }
+    }
+
     public void ensureLoginSecuritySchema() {
         final String sql = """
             CREATE TABLE IF NOT EXISTS login_security (
@@ -114,31 +130,33 @@ public class UserDAO {
     public User save(User user) {
         final String sql = """
             INSERT INTO users (
-                username, email, password_hash, is_suspended,
+                username, email, password_hash, role, public_key, is_suspended,
                 is_email_verified, email_verification_code,
                 email_verification_expires_at, email_verification_sent_at,
                 trusted_login_ip, login_ip_verification_code,
                 login_ip_verification_expires_at, login_ip_verification_sent_at,
                 login_ip_verification_pending_ip, password_reset_token, password_reset_expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
         try (PreparedStatement ps = conn().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, user.getUsername());
             ps.setString(2, user.getEmail());
             ps.setString(3, user.getPasswordHash());
-            ps.setBoolean(4, user.isSuspended());
-            ps.setBoolean(5, user.isEmailVerified());
-            ps.setString(6, user.getEmailVerificationCode());
-            setTimestamp(ps, 7, user.getEmailVerificationExpiresAt());
-            setTimestamp(ps, 8, user.getEmailVerificationSentAt());
-            ps.setString(9, user.getTrustedLoginIp());
-            ps.setString(10, user.getLoginIpVerificationCode());
-            setTimestamp(ps, 11, user.getLoginIpVerificationExpiresAt());
-            setTimestamp(ps, 12, user.getLoginIpVerificationSentAt());
-            ps.setString(13, user.getLoginIpVerificationPendingIp());
-            ps.setString(14, user.getPasswordResetToken());
-            setTimestamp(ps, 15, user.getPasswordResetExpiresAt());
+            ps.setString(4, user.getRole().name());
+            ps.setString(5, user.getPublicKey());
+            ps.setBoolean(6, user.isSuspended());
+            ps.setBoolean(7, user.isEmailVerified());
+            ps.setString(8, user.getEmailVerificationCode());
+            setTimestamp(ps, 9, user.getEmailVerificationExpiresAt());
+            setTimestamp(ps, 10, user.getEmailVerificationSentAt());
+            ps.setString(11, user.getTrustedLoginIp());
+            ps.setString(12, user.getLoginIpVerificationCode());
+            setTimestamp(ps, 13, user.getLoginIpVerificationExpiresAt());
+            setTimestamp(ps, 14, user.getLoginIpVerificationSentAt());
+            ps.setString(15, user.getLoginIpVerificationPendingIp());
+            ps.setString(16, user.getPasswordResetToken());
+            setTimestamp(ps, 17, user.getPasswordResetExpiresAt());
             ps.executeUpdate();
 
             try (ResultSet generated = ps.getGeneratedKeys()) {
@@ -211,6 +229,8 @@ public class UserDAO {
             UPDATE users
                SET username = ?,
                    email = ?,
+                   role = ?,
+                   public_key = ?,
                    is_email_verified = ?,
                    email_verification_code = ?,
                    email_verification_expires_at = ?,
@@ -228,21 +248,47 @@ public class UserDAO {
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             ps.setString(1, user.getUsername());
             ps.setString(2, user.getEmail());
-            ps.setBoolean(3, user.isEmailVerified());
-            ps.setString(4, user.getEmailVerificationCode());
-            setTimestamp(ps, 5, user.getEmailVerificationExpiresAt());
-            setTimestamp(ps, 6, user.getEmailVerificationSentAt());
-            ps.setString(7, user.getTrustedLoginIp());
-            ps.setString(8, user.getLoginIpVerificationCode());
-            setTimestamp(ps, 9, user.getLoginIpVerificationExpiresAt());
-            setTimestamp(ps, 10, user.getLoginIpVerificationSentAt());
-            ps.setString(11, user.getLoginIpVerificationPendingIp());
-            ps.setString(12, user.getPasswordResetToken());
-            setTimestamp(ps, 13, user.getPasswordResetExpiresAt());
-            ps.setInt(14, user.getUserId());
+            ps.setString(3, user.getRole().name());
+            ps.setString(4, user.getPublicKey());
+            ps.setBoolean(5, user.isEmailVerified());
+            ps.setString(6, user.getEmailVerificationCode());
+            setTimestamp(ps, 7, user.getEmailVerificationExpiresAt());
+            setTimestamp(ps, 8, user.getEmailVerificationSentAt());
+            ps.setString(9, user.getTrustedLoginIp());
+            ps.setString(10, user.getLoginIpVerificationCode());
+            setTimestamp(ps, 11, user.getLoginIpVerificationExpiresAt());
+            setTimestamp(ps, 12, user.getLoginIpVerificationSentAt());
+            ps.setString(13, user.getLoginIpVerificationPendingIp());
+            ps.setString(14, user.getPasswordResetToken());
+            setTimestamp(ps, 15, user.getPasswordResetExpiresAt());
+            ps.setInt(16, user.getUserId());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("UserDAO.update failed for userId=" + user.getUserId() + ": " + e.getMessage(), e);
+        }
+    }
+
+    public void updateRoleAndPublicKey(int userId, User.Role role, String publicKey) {
+        final String sql = "UPDATE users SET role = ?, public_key = ? WHERE user_id = ?";
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, role.name());
+            ps.setString(2, publicKey);
+            ps.setInt(3, userId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.updateRoleAndPublicKey failed for userId=" + userId + ": " + e.getMessage(), e);
+        }
+    }
+
+    public int countByRole(User.Role role) {
+        final String sql = "SELECT COUNT(*) FROM users WHERE role = ?";
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setString(1, role.name());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("UserDAO.countByRole failed for role=" + role + ": " + e.getMessage(), e);
         }
     }
 
@@ -590,6 +636,8 @@ public class UserDAO {
         u.setUsername(rs.getString("username"));
         u.setEmail(rs.getString("email"));
         u.setPasswordHash(rs.getString("password_hash"));
+        u.setRole(User.Role.fromDbValue(getStringOrNull(rs, "role")));
+        u.setPublicKey(getStringOrNull(rs, "public_key"));
         u.setSuspended(getBooleanOrDefault(rs, "is_suspended", false));
         u.setEmailVerified(getBooleanOrDefault(rs, "is_email_verified", true));
         u.setEmailVerificationCode(getStringOrNull(rs, "email_verification_code"));

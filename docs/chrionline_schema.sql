@@ -29,6 +29,8 @@ CREATE TABLE users (
     username      VARCHAR(50)   NOT NULL UNIQUE,
     email         VARCHAR(150)  NOT NULL UNIQUE,
     password_hash VARCHAR(255)  NOT NULL,
+    role          ENUM('CLIENT','ADMIN_PENDING','ADMIN','SUPER_ADMIN') NOT NULL DEFAULT 'CLIENT',
+    public_key    TEXT NULL,
     is_suspended  BOOLEAN       NOT NULL DEFAULT FALSE,
     is_email_verified BOOLEAN   NOT NULL DEFAULT FALSE,
     email_verification_code VARCHAR(16),
@@ -55,6 +57,7 @@ CREATE TABLE users (
 CREATE TABLE sessions (
     session_id  VARCHAR(36)   NOT NULL,           -- plain UUID (java.util.UUID)
     user_id     INT           NOT NULL,
+    role        ENUM('CLIENT','ADMIN_PENDING','ADMIN','SUPER_ADMIN') NOT NULL DEFAULT 'CLIENT',
     token       VARCHAR(255)  NOT NULL UNIQUE,
     created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at  DATETIME      NOT NULL,
@@ -69,6 +72,7 @@ CREATE TABLE sessions (
 -- Fast token lookup — called on every single TCP request via isTokenValid()
 CREATE INDEX idx_session_token  ON sessions(token);
 CREATE INDEX idx_session_user   ON sessions(user_id);
+CREATE INDEX idx_session_role   ON sessions(role);
 
 -- ─────────────────────────────────────────
 --  4. PRODUCTS

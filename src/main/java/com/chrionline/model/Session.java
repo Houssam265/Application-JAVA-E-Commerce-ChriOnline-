@@ -16,13 +16,18 @@ public class Session {
 
     public enum Role {
         CLIENT,
-        ADMIN
+        ADMIN_PENDING,
+        ADMIN,
+        SUPER_ADMIN;
+
+        public boolean isPrivileged() {
+            return this == ADMIN || this == SUPER_ADMIN;
+        }
     }
 
     // ── Fields ─────────────────────────────────────────────────────────────
     private String        sessionId;
     private Integer       userId;
-    private Integer       adminId;
     private Role          role;
     private String        token;
     private LocalDateTime createdAt;
@@ -33,11 +38,10 @@ public class Session {
 
     public Session() {}
 
-    public Session(String sessionId, Integer userId, Integer adminId, Role role, String token,
+    public Session(String sessionId, Integer userId, Role role, String token,
                    LocalDateTime createdAt, LocalDateTime expiresAt, boolean isActive) {
         this.sessionId = sessionId;
         this.userId    = userId;
-        this.adminId   = adminId;
         this.role      = role;
         this.token     = token;
         this.createdAt = createdAt;
@@ -52,9 +56,6 @@ public class Session {
 
     public Integer       getUserId()                   { return userId; }
     public void          setUserId(Integer v)          { this.userId = v; }
-
-    public Integer       getAdminId()                  { return adminId; }
-    public void          setAdminId(Integer v)         { this.adminId = v; }
 
     public Role          getRole()                     { return role; }
     public void          setRole(Role v)               { this.role = v; }
@@ -84,7 +85,6 @@ public class Session {
         return "Session{" +
                 "sessionId='" + sessionId + '\'' +
                 ", userId="   + userId    +
-                ", adminId="  + adminId   +
                 ", role="     + role      +
                 ", isActive=" + isActive  +
                 ", expiresAt=" + expiresAt +

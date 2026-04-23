@@ -19,8 +19,11 @@ USE chrionline;
 -- ============================================================================
 
 -- Colonnes ajoutees dynamiquement par le serveur dans certaines executions
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'CLIENT';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS public_key TEXT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(64) NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires_at DATETIME NULL;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'CLIENT';
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -64,7 +67,7 @@ INSERT INTO categories (category_id, name, description) VALUES
 -- 2. Users
 -- ============================================================================
 INSERT INTO users (
-    user_id, username, email, password_hash, role, is_suspended,
+    user_id, username, email, password_hash, role, public_key, is_suspended,
     is_email_verified, email_verification_code, email_verification_expires_at,
     email_verification_sent_at, trusted_login_ip, login_ip_verification_code,
     login_ip_verification_expires_at, login_ip_verification_sent_at,
@@ -73,39 +76,34 @@ INSERT INTO users (
     (
         1, 'admin', 'admin.master@chrionline.ma',
         '$2a$12$9LQ1K9Bo4msZkIKUSLaFTed.kkIWZnaE1Vegk7bPvk0RdtcU0UKqu',
-        'ADMIN', FALSE, TRUE, NULL, NULL, NULL,
+        'SUPER_ADMIN', 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz+hvYtPcAwUZ7Lwddiz8QBEqPDPAqdM25nidSJQT+o3p17yGRWO7r5RHWwsusXRlBuld8rtdKntRQ3na7sIirgyOkUh81rceLZV/i539ocmtKThqMWDAlCKr6KQaqzHeQcQYqV8h3tv21SOW7sCxFxJa84rJwSUJYFmqVilrfjzHw7VaMS+9V2U0/PM7+Tiu9l/pjHq7y/RpbQATYHZPFxtq9UJfRm9bUtERmfJfV5vXw5sNDlYihp2lXeK+Rt8/F32H0zYLlsOj7ruHywae1uZhgVbonCsFkdbdjzJkzs29oS/KAbmiQ7qFYU15/8grkeuZQ/GETh1Ve29p1IPWCwIDAQAB', FALSE, TRUE, NULL, NULL, NULL,
         '127.0.0.1', NULL, NULL, NULL, NULL, NULL, NULL, '2026-01-05 09:00:00'
     ),
     (
         2, 'akram.client', 'akram.client@chrionline.ma',
         '$2a$12$NZQ7Uuc6CN1XCF05Wcz/4.KFGznp.AJKg4Hz7FxIHBSXkqZcxjJW2',
-        'CLIENT', FALSE, TRUE, NULL, NULL, NULL,
+        'CLIENT', NULL, FALSE, TRUE, NULL, NULL, NULL,
         '127.0.0.1', NULL, NULL, NULL, NULL, NULL, NULL, '2026-01-12 14:20:00'
     ),
     (
         3, 'sara.tech', 'sara.client@chrionline.ma',
         '$2a$12$sWXvdmfRTPltcIpIRHVQBee.PDyTQdj7lXa.JS4nud128TgQSgVu6',
-        'CLIENT', FALSE, TRUE, NULL, NULL, NULL,
-        '192.168.1.20', NULL, NULL, NULL, NULL, NULL, NULL, '2026-02-02 11:15:00'
+        'CLIENT', NULL, FALSE, TRUE, NULL, NULL, NULL,
+        '127.0.0.1', NULL, NULL, NULL, NULL, NULL, NULL, '2026-02-02 11:15:00'
     ),
     (
         4, 'youssef.pro', 'youssef.client@chrionline.ma',
         '$2a$12$Imu6w8rdn0qOjdVfXH1dL.HEJGbdUWlLoIRxxu2i1pFgG9kLVVGkS',
-        'CLIENT', FALSE, TRUE, NULL, NULL, NULL,
-        '10.0.0.24', NULL, NULL, NULL, NULL, NULL, NULL, '2026-02-10 18:05:00'
+        'CLIENT', NULL, FALSE, TRUE, NULL, NULL, NULL,
+        '127.0.0.1', NULL, NULL, NULL, NULL, NULL, NULL, '2026-02-10 18:05:00'
     ),
     (
         5, 'nadia.shop', 'nadia.client@chrionline.ma',
         '$2a$12$xoxTjzzQppK8pklmhg/P4eamyVxCYmRl6GY2YfjSc0997ITr4iFrS',
-        'CLIENT', TRUE, TRUE, NULL, NULL, NULL,
-        '172.16.0.13', NULL, NULL, NULL, NULL, NULL, NULL, '2026-03-03 10:30:00'
+        'CLIENT', NULL, TRUE, TRUE, NULL, NULL, NULL,
+        '127.0.0.1', NULL, NULL, NULL, NULL, NULL, NULL, '2026-03-03 10:30:00'
     ),
-    (
-        6, 'pending.verify', 'pending.verify@chrionline.ma',
-        '$2a$12$NZQ7Uuc6CN1XCF05Wcz/4.KFGznp.AJKg4Hz7FxIHBSXkqZcxjJW2',
-        'CLIENT', FALSE, FALSE, '482913', '2026-12-31 23:59:59', '2026-04-16 09:00:00',
-        NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-04-16 08:58:00'
-    );
+    ;
 
 -- ============================================================================
 -- 3. Products
@@ -208,9 +206,9 @@ INSERT INTO notifications (notification_id, user_id, message, sent_at, is_read) 
 -- ============================================================================
 -- 9. Sessions
 -- ============================================================================
-INSERT INTO sessions (session_id, user_id, token, created_at, expires_at, is_active) VALUES
-    ('11111111-1111-1111-1111-111111111111', 1, 'seed-admin-session-token',  '2026-04-16 08:50:00', '2026-04-16 09:00:00', FALSE),
-    ('22222222-2222-2222-2222-222222222222', 2, 'seed-client-session-token', '2026-04-16 09:00:00', '2026-04-16 09:20:00', TRUE);
+INSERT INTO sessions (session_id, user_id, role, token, created_at, expires_at, is_active) VALUES
+    ('11111111-1111-1111-1111-111111111111', 1, 'SUPER_ADMIN', 'seed-admin-session-token',  '2026-04-16 08:50:00', '2026-04-16 09:00:00', FALSE),
+    ('22222222-2222-2222-2222-222222222222', 2, 'CLIENT', 'seed-client-session-token', '2026-04-16 09:00:00', '2026-04-16 09:20:00', TRUE);
 
 -- ============================================================================
 -- 10. Login security state

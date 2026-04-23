@@ -94,8 +94,10 @@ public class AuthService {
 
         String normalizedIp = normalizeIp(clientIp);
 
-        // Une verification email est requise a chaque connexion valide
-        // avant la creation effective d'une session.
+        if (!requiresLoginIpVerification(user, normalizedIp)) {
+            return new LoginResult(LoginStatus.SUCCESS, user);
+        }
+
         ensureEmailServiceAvailable();
         issueAndSendLoginIpVerificationCode(user, normalizedIp, false);
         return new LoginResult(LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED, user);

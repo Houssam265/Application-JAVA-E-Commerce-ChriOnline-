@@ -152,17 +152,15 @@
                             <Label text="Liste des utilisateurs" styleClass="field-label" style="-fx-font-size: 15px;"/>
                             <Region HBox.hgrow="ALWAYS"/>
                             <TextField fx:id="usersSearchField" promptText="Rechercher (username/email)" styleClass="search-bar" prefWidth="320"/>
-                            <ComboBox fx:id="usersRoleFilter" prefWidth="170" styleClass="combo-box-premium"/>
-                            <ComboBox fx:id="usersSuspendedFilter" prefWidth="160" styleClass="combo-box-premium"/>
                         </HBox>
                         <TableView fx:id="usersTable" styleClass="table-premium" prefHeight="360">
                             <columns>
                                 <TableColumn fx:id="colUserId" text="ID" prefWidth="70"/>
                                 <TableColumn fx:id="colUsername" text="Username" prefWidth="170"/>
                                 <TableColumn fx:id="colEmail" text="Email" prefWidth="220"/>
-                                <TableColumn fx:id="colRole" text="Role" prefWidth="90"/>
+                                <TableColumn fx:id="colRole" text="Role" prefWidth="150"/>
                                 <TableColumn fx:id="colSuspended" text="Suspendu" prefWidth="100"/>
-                                <TableColumn fx:id="colUserAction" text="Actions" prefWidth="160" style="-fx-alignment: CENTER;"/>
+                                <TableColumn fx:id="colUserAction" text="Actions" prefWidth="260" style="-fx-alignment: CENTER;"/>
                             </columns>
                         </TableView>
                     </VBox>

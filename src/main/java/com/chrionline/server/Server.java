@@ -1,13 +1,12 @@
 package com.chrionline.server;
 
-import com.chrionline.dao.AdminDAO;
 import com.chrionline.dao.UserDAO;
 import com.chrionline.security.TlsSupport;
 import com.chrionline.security.SecurityMonitor;
 import com.chrionline.security.IpSpoofingDetector;
 import com.chrionline.service.AuthService;
-import com.chrionline.service.AdminService;
 import com.chrionline.service.AdminAuthService;
+import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
 import com.chrionline.service.EnvFileLoader;
 import com.chrionline.service.OrderService;
@@ -64,6 +63,7 @@ public class Server {
         userDAO.ensureLoginIpVerificationSchema();
         userDAO.ensurePasswordResetSchema();
         userDAO.ensureLoginSecuritySchema();
+        userDAO.ensureRoleAndPublicKeySchema();
         SessionManager sessionManager = new SessionManager(userDAO);
         AuthService    authService    = new AuthService(userDAO);
         ProductService productService = new ProductService();
@@ -71,8 +71,7 @@ public class Server {
         OrderService   orderService   = new OrderService();
         PaymentService paymentService = new PaymentService();
         AdminService   adminService   = new AdminService(userDAO);
-        AdminDAO       adminDAO       = new AdminDAO();
-        AdminAuthService adminAuthService = new AdminAuthService(adminDAO);
+        AdminAuthService adminAuthService = new AdminAuthService(userDAO);
 
         // ── Startup tasks ─────────────────────────────────────────────────────
         LOG.info("[SERVER] Cleaning expired sessions...");

@@ -65,7 +65,7 @@ public class AdminKeyGenerator {
             System.out.println("\n--------------------------------------------------------------------------------------------------");
             System.out.println("Étape 2: Demandez au responsable de la base de données d'exécuter cette requête SQL :");
             System.out.println("--------------------------------------------------------------------------------------------------");
-            String query = "INSERT INTO admin (username, public_key, is_active) VALUES ('" + username + "', '" + publicKeyBase64 + "', TRUE);";
+            String query = "UPDATE users SET role = 'ADMIN', public_key = '" + publicKeyBase64 + "' WHERE username = '" + username + "';";
             System.out.println(query);
             
             Path targetSqlFile = keysDir.resolve(username + "_query.sql");

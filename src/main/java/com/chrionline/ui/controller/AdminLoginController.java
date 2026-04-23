@@ -125,9 +125,11 @@ public class AdminLoginController {
             if (response.isSuccess()) {
                 JSONObject payload = response.getPayloadAsJsonObject();
                 ClientSession session = ClientSession.getInstance();
-                session.setUserId(payload.getInt("adminId"));
+                session.setUserId(payload.getInt("userId"));
                 session.setRole(com.chrionline.model.Session.Role.valueOf(payload.getString("role")));
-                session.setUsername(adminUsername); 
+                session.setAdminAccessGranted(true);
+                session.setUsername(payload.optString("username", adminUsername));
+                session.setEmail(payload.optString("email", null));
                 
                 Platform.runLater(SceneManager::showAdmin);
             } else {

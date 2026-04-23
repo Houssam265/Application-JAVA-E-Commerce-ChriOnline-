@@ -52,6 +52,7 @@ public final class MessageProtocol {
     // Profile
     public static final String ACTION_UPDATE_PROFILE  = "UPDATE_PROFILE";
     public static final String ACTION_CHANGE_PASSWORD = "CHANGE_PASSWORD";
+    public static final String ACTION_ACTIVATE_ADMIN_ACCESS = "ACTIVATE_ADMIN_ACCESS";
 
     // Notifications
     public static final String ACTION_GET_NOTIFICATIONS       = "GET_NOTIFICATIONS";

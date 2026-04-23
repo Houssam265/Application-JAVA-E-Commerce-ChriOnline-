@@ -345,12 +345,16 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_CHANGE_PASSWORD:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleChangePassword(req);
+            case MessageProtocol.ACTION_ACTIVATE_ADMIN_ACCESS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleActivateAdminAccess(req);
 
             // ── Admin (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_ADMIN_CREATE_PRODUCT:
             case MessageProtocol.ACTION_ADMIN_UPDATE_PRODUCT:
             case MessageProtocol.ACTION_ADMIN_DELETE_PRODUCT:
             case MessageProtocol.ACTION_ADMIN_LIST_USERS:
+            case MessageProtocol.ACTION_ADMIN_UPDATE_USER_ROLE:
             case MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED:
             case MessageProtocol.ACTION_ADMIN_ADD_CATEGORY:
             case MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY:
@@ -629,7 +633,7 @@ public class ClientHandler implements Runnable {
             payload.put("userId",   user.getUserId());
             payload.put("username", user.getUsername());
             payload.put("email",    user.getEmail());
-            payload.put("role",     "CLIENT");
+            payload.put("role",     user.getRole().name());
             payload.put("emailVerified", user.isEmailVerified());
 
             // token is sent as the top-level Response.token field
@@ -748,6 +752,7 @@ public class ClientHandler implements Runnable {
             User user = authService.verifyEmail(email, code);
             Map<String, Object> payload = new HashMap<>();
             payload.put("userId", user.getUserId());
+            payload.put("role", user.getRole().name());
             payload.put("email", user.getEmail());
             payload.put("emailVerified", true);
             logActionSuccess("VERIFY_EMAIL", user.getUserId());
@@ -909,16 +914,19 @@ public class ClientHandler implements Runnable {
                 return Response.error("Acces admin refuse depuis une adresse IP externe.");
             }
 
-            com.chrionline.model.Admin admin = adminAuthService.verifyChallenge(username, signature);
-            Session session = sessionManager.createAdminSession(admin);
+            User admin = adminAuthService.verifyChallenge(username, signature);
+            Session session = sessionManager.createPrivilegedSession(admin);
             
             SecurityAuditLogger.logAdminAccessSuccess(username, clientIp);
 
             Map<String, Object> payload = new HashMap<>();
-            payload.put("adminId", admin.getAdminId());
+            payload.put("userId", admin.getUserId());
+            payload.put("username", admin.getUsername());
+            payload.put("email", admin.getEmail());
             payload.put("role", session.getRole().name());
 
             connectionToken = session.getToken();
+            connectedUserId = admin.getUserId();
             sessionManager.bindSessionIpIfAbsent(connectionToken, clientIp);
             
             return new Response(true, "ADMIN_LOGIN_SUCCESS", payload, session.getToken());
@@ -953,7 +961,7 @@ public class ClientHandler implements Runnable {
     private Response handleGetProducts(Request req) {
         Integer categoryId = req.getPayloadInt("category_id");
         Session session = sessionManager.getSession(req.getToken()).orElse(null);
-        boolean adminCatalog = session != null && session.getRole() == Session.Role.ADMIN;
+        boolean adminCatalog = session != null && isPrivilegedRole(session.getRole());
         List<?> products = productService.getProducts(categoryId, adminCatalog);
         Response r = Response.ok(products);
         if (session != null && session.getUserId() != null) {
@@ -972,7 +980,7 @@ public class ClientHandler implements Runnable {
             return Response.error("Missing product_id in payload");
         }
         Session session = req.getToken() != null ? sessionManager.getSession(req.getToken()).orElse(null) : null;
-        boolean admin = session != null && session.getRole() == Session.Role.ADMIN;
+        boolean admin = session != null && isPrivilegedRole(session.getRole());
         return productService.getProductDetails(productId, admin)
                 .map(Response::ok)
                 .orElse(Response.error("Product not found: " + productId));
@@ -1269,7 +1277,7 @@ public class ClientHandler implements Runnable {
         try {
             Session session = sessionManager.getSession(req.getToken())
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-            if (session.getRole() != Session.Role.ADMIN) {
+            if (!isPrivilegedRole(session.getRole())) {
                 return Response.error("Accès refusé (ADMIN uniquement).");
             }
             Integer orderId = req.getPayloadInt("order_id");
@@ -1294,7 +1302,7 @@ public class ClientHandler implements Runnable {
             });
 
             Response r = Response.ok("STATUS_UPDATED", null);
-            logActionSuccess("UPDATE_ORDER_STATUS", session.getAdminId() != null ? session.getAdminId() : 0, "new status: " + status);
+            logActionSuccess("UPDATE_ORDER_STATUS", session.getUserId() != null ? session.getUserId() : 0, "new status: " + status);
             return r;
         } catch (IllegalArgumentException e) {
             return Response.error(e.getMessage());
@@ -1381,11 +1389,34 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private Response handleActivateAdminAccess(Request req) {
+        try {
+            User user = sessionManager.getUserFromToken(req.getToken())
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            if (user.getRole() != User.Role.ADMIN_PENDING) {
+                return Response.error("Votre compte n'est pas en attente d'activation admin.");
+            }
+
+            String publicKey = getPayloadString(req, "public_key");
+            if (publicKey == null || publicKey.isBlank()) {
+                return Response.error("La cle publique RSA est requise.");
+            }
+
+            Map<String, Object> updated = adminService.changeUserRole(user.getUserId(), user.getUserId(), User.Role.ADMIN, publicKey);
+            return Response.ok("ADMIN_ACCESS_ACTIVATED", updated);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.warn("[ADMIN_ACTIVATION] Unexpected error: {}", e.getMessage(), e);
+            return Response.error("Erreur serveur lors de l'activation admin.");
+        }
+    }
+
     private Response handleAdmin(Request req) {
         try {
             Session session = sessionManager.getSession(req.getToken())
                     .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
-            if (session.getRole() != Session.Role.ADMIN) {
+            if (!isPrivilegedRole(session.getRole())) {
                 return Response.error("Accès refusé (ADMIN uniquement).");
             }
 
@@ -1439,13 +1470,37 @@ public class ClientHandler implements Runnable {
                 case MessageProtocol.ACTION_ADMIN_LIST_USERS: {
                     return Response.ok(adminService.listUsers());
                 }
+                case MessageProtocol.ACTION_ADMIN_UPDATE_USER_ROLE: {
+                    if (!isSuperAdminRole(session.getRole())) {
+                        return Response.error("AccÃ¨s refusÃ© (SUPER_ADMIN uniquement).");
+                    }
+                    Integer userId = req.getPayloadInt("user_id");
+                    String roleValue = getPayloadString(req, "role");
+                    String publicKey = getPayloadString(req, "public_key");
+                    if (userId == null || roleValue == null || roleValue.isBlank()) {
+                        return Response.error("Missing user_id or role");
+                    }
+
+                    User.Role targetRole = User.Role.fromDbValue(roleValue);
+                    Map<String, Object> updated = adminService.changeUserRole(session.getUserId(), userId, targetRole, publicKey);
+                    sessionManager.invalidateSessionsForUser(userId);
+                    return Response.ok("USER_ROLE_UPDATED", updated);
+                }
                 case MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED: {
                     Integer userId = req.getPayloadInt("user_id");
                     Object suspended = req.getPayload() != null ? req.getPayload().get("suspended") : null;
                     boolean isSuspended = suspended instanceof Boolean ? (Boolean) suspended : Boolean.parseBoolean(String.valueOf(suspended));
                     if (userId == null) return Response.error("Missing user_id");
-                    if (userId.equals(session.getAdminId())) return Response.error("Impossible de suspendre votre propre compte.");
+                    if (userId.equals(session.getUserId())) return Response.error("Impossible de suspendre votre propre compte.");
+                    User targetUser = userDAO.findById(userId)
+                            .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+                    if (targetUser.getRole() == User.Role.SUPER_ADMIN && !isSuperAdminRole(session.getRole())) {
+                        return Response.error("Seul un super admin peut suspendre un super admin.");
+                    }
                     adminService.setUserSuspended(userId, isSuspended);
+                    if (isSuspended) {
+                        sessionManager.invalidateSessionsForUser(userId);
+                    }
                     return Response.ok("USER_UPDATED", null);
                 }
                 case MessageProtocol.ACTION_ADMIN_LIST_ORDERS: {
@@ -1606,6 +1661,13 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED:
                 InputValidator.validatePositiveInt(req.getPayloadInt("user_id"), "user_id", 1, 1_000_000_000);
                 break;
+            case MessageProtocol.ACTION_ADMIN_UPDATE_USER_ROLE:
+                InputValidator.validatePositiveInt(req.getPayloadInt("user_id"), "user_id", 1, 1_000_000_000);
+                sanitizeOptionalPayloadString(req, "public_key");
+                break;
+            case MessageProtocol.ACTION_ACTIVATE_ADMIN_ACCESS:
+                sanitizeOptionalPayloadString(req, "public_key");
+                break;
             case MessageProtocol.ACTION_ADMIN_LIST_USERS:
             case MessageProtocol.ACTION_ADMIN_LIST_ORDERS:
             case MessageProtocol.ACTION_ADMIN_CHALLENGE_REQUEST:
@@ -1630,6 +1692,14 @@ public class ClientHandler implements Runnable {
         if (value != null && !value.isBlank()) {
             InputValidator.validateUsername(value);
         }
+    }
+
+    private boolean isPrivilegedRole(Session.Role role) {
+        return role != null && role.isPrivileged();
+    }
+
+    private boolean isSuperAdminRole(Session.Role role) {
+        return role == Session.Role.SUPER_ADMIN;
     }
 
     private void sanitizeOptionalPayloadString(Request req, String key) {
