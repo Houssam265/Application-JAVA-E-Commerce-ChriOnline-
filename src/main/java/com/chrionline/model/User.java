@@ -7,11 +7,30 @@ import java.time.LocalDateTime;
  */
 public class User {
 
+    public enum Role {
+        CLIENT,
+        ADMIN_PENDING,
+        ADMIN,
+        SUPER_ADMIN;
+
+        public boolean isPrivileged() {
+            return this == ADMIN || this == SUPER_ADMIN;
+        }
+
+        public static Role fromDbValue(String value) {
+            if (value == null || value.isBlank()) {
+                return CLIENT;
+            }
+            return Role.valueOf(value.trim().toUpperCase());
+        }
+    }
+
     private int userId;
     private String username;
     private String email;
     private String passwordHash;
-    private Role role;
+    private Role role = Role.CLIENT;
+    private String publicKey;
     private boolean suspended;
     private boolean emailVerified;
     private String emailVerificationCode;
@@ -26,20 +45,16 @@ public class User {
     private String passwordResetToken;
     private LocalDateTime passwordResetExpiresAt;
 
-    public enum Role {
-        CLIENT,
-        ADMIN
-    }
+
 
     public User() {}
 
     public User(int userId, String username, String email,
-                String passwordHash, Role role, LocalDateTime createdAt) {
+                String passwordHash, LocalDateTime createdAt) {
         this.userId = userId;
         this.username = username;
         this.email = email;
         this.passwordHash = passwordHash;
-        this.role = role;
         this.createdAt = createdAt;
     }
 
@@ -56,7 +71,10 @@ public class User {
     public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
 
     public Role getRole() { return role; }
-    public void setRole(Role role) { this.role = role; }
+    public void setRole(Role role) { this.role = role != null ? role : Role.CLIENT; }
+
+    public String getPublicKey() { return publicKey; }
+    public void setPublicKey(String publicKey) { this.publicKey = publicKey; }
 
     public boolean isSuspended() { return suspended; }
     public void setSuspended(boolean suspended) { this.suspended = suspended; }

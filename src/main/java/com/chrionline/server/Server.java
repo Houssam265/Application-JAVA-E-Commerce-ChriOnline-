@@ -1,8 +1,12 @@
 package com.chrionline.server;
 
 import com.chrionline.dao.UserDAO;
+import com.chrionline.security.RSAUtil;
 import com.chrionline.security.TlsSupport;
+import com.chrionline.security.SecurityMonitor;
+import com.chrionline.security.IpSpoofingDetector;
 import com.chrionline.service.AuthService;
+import com.chrionline.service.AdminAuthService;
 import com.chrionline.service.AdminService;
 import com.chrionline.service.CartService;
 import com.chrionline.service.EnvFileLoader;
@@ -14,6 +18,7 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.security.KeyPair;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
@@ -60,6 +65,7 @@ public class Server {
         userDAO.ensureLoginIpVerificationSchema();
         userDAO.ensurePasswordResetSchema();
         userDAO.ensureLoginSecuritySchema();
+        userDAO.ensureRoleAndPublicKeySchema();
         SessionManager sessionManager = new SessionManager(userDAO);
         AuthService    authService    = new AuthService(userDAO);
         ProductService productService = new ProductService();
@@ -67,15 +73,25 @@ public class Server {
         OrderService   orderService   = new OrderService();
         PaymentService paymentService = new PaymentService();
         AdminService   adminService   = new AdminService(userDAO);
+        AdminAuthService adminAuthService = new AdminAuthService(userDAO);
 
         // ── Startup tasks ─────────────────────────────────────────────────────
-        LOG.info("[SERVER] Seeding default admin account if not present...");
-        authService.seedAdminIfNotExists();
-
         LOG.info("[SERVER] Cleaning expired sessions...");
         sessionManager.cleanExpiredSessions();
 
         UDPNotificationService udpNotificationService = new UDPNotificationService(UDPNotificationService.DEFAULT_PORT);
+        SecurityMonitor securityMonitor = new SecurityMonitor();
+
+        // ── Cle RSA serveur (Task 2 : RSA->AES) ───────────────────────────────
+        // Generee au demarrage et envoyee au client via HELLO juste apres le handshake TLS.
+        KeyPair sessionRsaKeyPair;
+        try {
+            sessionRsaKeyPair = RSAUtil.generateKeyPair();
+            LOG.info("[CRYPTO] Cle RSA serveur (2048 bits) generee pour les sessions hybrides RSA->AES");
+        } catch (Exception e) {
+            LOG.error("[CRYPTO] Impossible de generer la cle RSA serveur", e);
+            return;
+        }
 
         // ── Thread pool ───────────────────────────────────────────────────────
         int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
@@ -90,8 +106,25 @@ public class Server {
             while (!serverSocket.isClosed()) {
                 try {
                     Socket clientSocket = serverSocket.accept();
-                    // Pass the SAME shared instances — no new service created per thread
-                    pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService));
+                    // Protection SYN Flood / DoS simple
+                    if (!securityMonitor.isSafeToAccept(clientSocket)) {
+                        try {
+                            clientSocket.close();
+                        } catch (IOException ignored) {
+                        }
+                        continue;
+                    }
+                    // Verification basique de l'adresse IP source (IP spoofing / cas anormaux)
+                    if (IpSpoofingDetector.isSuspicious(clientSocket)) {
+                        try {
+                            clientSocket.close();
+                        } catch (IOException ignored) {
+                        }
+                        continue;
+                    }
+                    // Keep idle client connections alive longer to avoid frequent read timeouts.
+                    clientSocket.setSoTimeout(300_000);
+                    pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService, adminAuthService, sessionRsaKeyPair));
                 } catch (SocketException e) {
                     if (serverSocket.isClosed()) break;
                     LOG.info("SocketException pendant accept(): {}", e.getMessage(), e);

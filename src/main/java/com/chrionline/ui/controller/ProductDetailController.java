@@ -65,7 +65,6 @@ public class ProductDetailController {
     @FXML private Button prevImageButton;
     @FXML private Button nextImageButton;
 
-    @FXML private Button adminButton;
     @FXML private Button navHomeBtn;
     @FXML private Button navCatalogueBtn;
     @FXML private TextField headerSearchField;
@@ -88,10 +87,6 @@ public class ProductDetailController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
         configureAccountMenu(session);
         if (quantitySpinner != null) {
             quantitySpinner.getStyleClass().add("premium-spinner");

@@ -4,6 +4,9 @@
         <Property name="LOG_DIR">logs</Property>
         <Property name="LOG_FILE">${LOG_DIR}/chrionline.log</Property>
         <Property name="LOG_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %c{1.} - %msg%n%throwable</Property>
+        <!-- Pattern simplifie pour l'audit de securite : timestamp | niveau | message -->
+        <Property name="SECURITY_AUDIT_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} | %-5level | %msg%n</Property>
+        <Property name="SECURITY_AUDIT_FILE">${LOG_DIR}/security-audit.log</Property>
     </Properties>
 
     <Appenders>
@@ -21,9 +24,26 @@
             </Policies>
             <DefaultRolloverStrategy max="14"/>
         </RollingFile>
+
+        <!-- Appender dedie pour l'audit de securite -->
+        <RollingFile name="SecurityAuditFile"
+                     fileName="${SECURITY_AUDIT_FILE}"
+                     filePattern="${LOG_DIR}/archive/security-audit-%d{yyyy-MM-dd}.log.gz">
+            <PatternLayout pattern="${SECURITY_AUDIT_PATTERN}"/>
+            <Policies>
+                <!-- Rotation quotidienne -->
+                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+            </Policies>
+            <DefaultRolloverStrategy max="30"/>
+        </RollingFile>
     </Appenders>
 
     <Loggers>
+        <!-- Logger d'audit de securite: utilise par SecurityAuditLogger -->
+        <Logger name="SECURITY_AUDIT" level="info" additivity="false">
+            <AppenderRef ref="SecurityAuditFile"/>
+        </Logger>
+
         <Root level="info">
             <AppenderRef ref="ServerConsole"/>
             <AppenderRef ref="AppFile"/>

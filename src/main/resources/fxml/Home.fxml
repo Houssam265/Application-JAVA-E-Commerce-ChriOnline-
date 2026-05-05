@@ -96,14 +96,6 @@
                                     </HBox>
                                 </graphic>
                             </Button>
-                            <Button fx:id="adminButton" onAction="#handleOpenAdmin" styleClass="btn-outline" visible="false" managed="false">
-                                <graphic>
-                                    <HBox alignment="CENTER" spacing="6">
-                                        <FontIcon iconLiteral="fas-user-shield" iconSize="14" styleClass="ikonli-muted"/>
-                                        <Label text="Admin" style="-fx-text-fill: #64748b; -fx-font-weight: 600;"/>
-                                    </HBox>
-                                </graphic>
-                            </Button>
                         </HBox>
                     </HBox>
                 </HBox>

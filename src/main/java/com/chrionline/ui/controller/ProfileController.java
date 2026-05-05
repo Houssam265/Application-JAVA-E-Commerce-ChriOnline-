@@ -4,6 +4,7 @@ import com.chrionline.client.Client;
 import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
+import com.chrionline.security.RSAUtil;
 import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.ErrorHandler;
 import com.chrionline.ui.SceneManager;
@@ -19,8 +20,12 @@ import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.security.KeyPair;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -43,10 +48,13 @@ public class ProfileController {
     @FXML private Label oldPasswordError;
     @FXML private Label newPasswordError;
     @FXML private Label confirmPasswordError;
+    @FXML private VBox adminActivationCard;
+    @FXML private Label adminActivationInfoLabel;
+    @FXML private Label adminActivationMessage;
+    @FXML private Button activateAdminButton;
     @FXML private Node strengthBar;
     @FXML private Label strengthLabel;
     @FXML private Label globalMessage;
-    @FXML private Button adminButton;
     @FXML private TextField headerSearchField;
     @FXML private MenuButton accountMenuButton;
     @FXML private MenuItem accountProfileItem;
@@ -71,10 +79,6 @@ public class ProfileController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
         configureAccountMenu(session);
         hydrateFromSession();
         bindNotifications();
@@ -112,6 +116,7 @@ public class ProfileController {
 
         avatarInitials.setText(initials(username.isBlank() ? "U" : username));
         registeredAtLabel.setText("Registered: " + DateTimeFormatter.ofPattern("dd/MM/yyyy").format(LocalDateTime.now()));
+        refreshAdminActivationUi();
     }
 
     private String initials(String v) {
@@ -410,6 +415,113 @@ public class ProfileController {
         boolean hasLetter = pwd.chars().anyMatch(Character::isLetter);
         boolean hasDigit = pwd.chars().anyMatch(Character::isDigit);
         return hasLetter && hasDigit;
+    }
+
+    private void refreshAdminActivationUi() {
+        boolean pending = ClientSession.getInstance().isAdminPending();
+        if (adminActivationCard != null) {
+            adminActivationCard.setVisible(pending);
+            adminActivationCard.setManaged(pending);
+        }
+        if (adminActivationInfoLabel != null) {
+            adminActivationInfoLabel.setText(pending
+                    ? "Votre compte est en attente d'activation admin. Generez votre paire RSA ici, sauvegardez la cle privee localement, puis l'application enverra uniquement votre cle publique au serveur."
+                    : "");
+        }
+        if (!pending && adminActivationMessage != null) {
+            adminActivationMessage.setVisible(false);
+            adminActivationMessage.setManaged(false);
+            adminActivationMessage.setText("");
+        }
+    }
+
+    @FXML
+    private void handleActivateAdminAccess() {
+        if (!ClientSession.getInstance().isAdminPending()) {
+            showAdminActivationMessage("Votre compte n'est pas en attente d'activation admin.", true);
+            return;
+        }
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Enregistrer la cle privee admin");
+        String username = ClientSession.getInstance().getUsername() == null ? "admin" : ClientSession.getInstance().getUsername();
+        fileChooser.setInitialFileName(username + "_private_key.pem");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PEM files", "*.pem"));
+        File targetFile = fileChooser.showSaveDialog(activateAdminButton.getScene().getWindow());
+        if (targetFile == null) {
+            showAdminActivationMessage("Activation annulee: aucun emplacement de sauvegarde n'a ete choisi.", true);
+            return;
+        }
+
+        showAdminActivationMessage(null, false);
+        activateAdminButton.setDisable(true);
+
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                KeyPair keyPair = RSAUtil.generateKeyPair();
+                String privatePem = toPrivatePem(RSAUtil.encodePrivateKey(keyPair.getPrivate()));
+                Files.writeString(targetFile.toPath(), privatePem);
+
+                Client client = Client.getInstance();
+                client.connect();
+                JSONObject payload = new JSONObject();
+                payload.put("public_key", RSAUtil.encodePublicKey(keyPair.getPublic()));
+                return client.send(new Request(MessageProtocol.ACTION_ACTIVATE_ADMIN_ACCESS, payload, client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> {
+            activateAdminButton.setDisable(false);
+            Response response = t.getValue();
+            if (!response.isSuccess()) {
+                String msg = response.getMessage() == null ? "" : response.getMessage();
+                if (ErrorHandler.isSessionExpiredMessage(msg)) {
+                    ErrorHandler.handleSessionExpired();
+                    return;
+                }
+                showAdminActivationMessage(msg.isBlank() ? "Activation admin impossible." : msg, true);
+                return;
+            }
+
+            JSONObject payload = response.getPayloadAsJsonObject();
+            ClientSession session = ClientSession.getInstance();
+            session.setRole(com.chrionline.model.Session.Role.valueOf(payload.optString("role", "ADMIN")));
+            session.setAdminAccessGranted(false);
+            refreshAdminActivationUi();
+            configureAccountMenu(session);
+            showAdminActivationMessage("Acces admin active. Utilisez maintenant l'ecran 'Admin Access (RSA)' avec la cle privee sauvegardee.", false);
+        });
+        t.setOnFailed(e -> {
+            activateAdminButton.setDisable(false);
+            Throwable cause = t.getException();
+            showAdminActivationMessage(cause != null ? cause.getMessage() : "Erreur lors de l'activation admin.", true);
+        });
+        runTask(t);
+    }
+
+    private void showAdminActivationMessage(String msg, boolean error) {
+        if (adminActivationMessage == null) return;
+        if (msg == null || msg.isBlank()) {
+            adminActivationMessage.setVisible(false);
+            adminActivationMessage.setManaged(false);
+            adminActivationMessage.setText("");
+            return;
+        }
+        adminActivationMessage.getStyleClass().setAll(error ? "global-error" : "success-label");
+        adminActivationMessage.setText(msg);
+        adminActivationMessage.setVisible(true);
+        adminActivationMessage.setManaged(true);
+    }
+
+    private String toPrivatePem(String base64PrivateKey) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("-----BEGIN PRIVATE KEY-----\n");
+        int index = 0;
+        while (index < base64PrivateKey.length()) {
+            builder.append(base64PrivateKey, index, Math.min(index + 64, base64PrivateKey.length())).append('\n');
+            index += 64;
+        }
+        builder.append("-----END PRIVATE KEY-----\n");
+        return builder.toString();
     }
 
     private void setGlobalMessage(String msg, boolean error) {

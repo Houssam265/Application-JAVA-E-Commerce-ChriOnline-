@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.scene.layout.*?>
-<?import javafx.scene.control.*?>
-<?import javafx.scene.text.*?>
 <?import javafx.geometry.*?>
+<?import javafx.scene.control.*?>
 <?import javafx.scene.image.*?>
+<?import javafx.scene.layout.*?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
 
 <HBox xmlns="http://javafx.com/javafx/17"
@@ -12,105 +11,100 @@
       fx:controller="com.chrionline.ui.controller.LoginController"
       styleClass="split-pane-root">
 
-    <!-- LEFT SIDE: Form -->
-    <VBox HBox.hgrow="ALWAYS" alignment="CENTER" styleClass="left-pane" maxWidth="640" minWidth="560">
-        <VBox spacing="22" maxWidth="400" prefWidth="400" minWidth="400" alignment="CENTER">
+    <VBox HBox.hgrow="ALWAYS" alignment="CENTER" styleClass="left-pane" maxWidth="700" minWidth="580">
+        <VBox styleClass="auth-shell" alignment="CENTER_LEFT" maxWidth="472" prefWidth="472" minWidth="472">
+            <VBox spacing="26" styleClass="auth-card auth-card-body" alignment="CENTER_LEFT" maxWidth="472" prefWidth="472" minWidth="472">
 
-            <!-- Logo area -->
-            <HBox alignment="CENTER_LEFT" spacing="12" maxWidth="400">
-                <ImageView fitWidth="52" fitHeight="52" preserveRatio="true" styleClass="app-logo-image">
-                    <image>
-                        <Image url="@/images/ChriOnline_logo.png"/>
-                    </image>
-                </ImageView>
-                <Label text="ChriOnline" styleClass="brand-title-small"/>
-            </HBox>
-
-            <Region prefHeight="20" />
-
-            <!-- Heading -->
-            <VBox spacing="8" maxWidth="400" prefWidth="400" minWidth="400">
-                <Label text="Welcome back" styleClass="page-title"/>
-                <Label text="Sign in to your account to continue shopping" styleClass="brand-subtitle"/>
-            </VBox>
-
-            <Region prefHeight="10" />
-
-            <!-- EMAIL -->
-            <VBox spacing="8" maxWidth="400" prefWidth="400" minWidth="400">
-                <HBox alignment="CENTER_LEFT" spacing="6">
-                    <FontIcon iconLiteral="fas-envelope" iconSize="14" styleClass="ikonli-muted"/>
-                    <Label text="Email address" styleClass="field-label"/>
+                <HBox alignment="CENTER_LEFT" spacing="14" maxWidth="440">
+                    <ImageView fitWidth="52" fitHeight="52" preserveRatio="true" styleClass="app-logo-image">
+                        <image>
+                            <Image url="@/images/ChriOnline_logo.png"/>
+                        </image>
+                    </ImageView>
+                    <Label text="ChriOnline" styleClass="brand-title-small"/>
                 </HBox>
-                <TextField fx:id="emailField" promptText="you@example.com" styleClass="auth-field" maxWidth="400" prefWidth="400" minWidth="400"/>
-                <Label fx:id="emailError" styleClass="error-label" visible="false" managed="false"/>
-            </VBox>
 
-            <!-- PASSWORD -->
-            <VBox spacing="8" maxWidth="400" prefWidth="400" minWidth="400">
-                <HBox alignment="CENTER_LEFT" spacing="6">
-                    <FontIcon iconLiteral="fas-lock" iconSize="14" styleClass="ikonli-muted"/>
-                    <Label text="Password" styleClass="field-label"/>
-                </HBox>
-                <StackPane alignment="CENTER_RIGHT" maxWidth="400" prefWidth="400" minWidth="400">
-                    <PasswordField fx:id="passwordField" promptText="••••••••" styleClass="auth-field" maxWidth="400" prefWidth="400" minWidth="400"/>
-                    <TextField fx:id="passwordTextField" promptText="••••••••" styleClass="auth-field" visible="false" maxWidth="400" prefWidth="400" minWidth="400"/>
-                    <Button fx:id="togglePasswordButton" styleClass="eye-button" onAction="#togglePasswordVisibility" focusTraversable="false">
-                        <graphic>
-                            <FontIcon fx:id="togglePasswordIcon" iconLiteral="fas-eye-slash" iconSize="14" styleClass="ikonli-muted"/>
-                        </graphic>
-                    </Button>
-                </StackPane>
-                <Label fx:id="passwordError" styleClass="error-label" visible="false" managed="false"/>
-            </VBox>
-
-            <!-- ERROR -->
-            <Label fx:id="globalError" styleClass="global-error" wrapText="true" visible="false" managed="false" maxWidth="400" prefWidth="400" minWidth="400" alignment="CENTER"/>
-
-            <VBox fx:id="captchaBox" spacing="6" visible="false" managed="false" maxWidth="400" prefWidth="400" minWidth="400">
-                <HBox alignment="CENTER_LEFT" spacing="10" maxWidth="400" prefWidth="400" minWidth="400">
-                    <FontIcon iconLiteral="fas-shield-alt" iconSize="14" styleClass="ikonli-muted"/>
-                    <Label text="Security check" styleClass="field-label"/>
-                    <Region HBox.hgrow="ALWAYS"/>
-                    <Button fx:id="captchaToggleButton" text="Open check" onAction="#toggleCaptchaPanel" styleClass="btn-outline captcha-toggle" focusTraversable="false"/>
-                </HBox>
-                <VBox fx:id="captchaPanel" spacing="10" visible="false" managed="false" maxWidth="400" prefWidth="400" minWidth="400" styleClass="captcha-card">
-                    <StackPane fx:id="captchaContainer" styleClass="captcha-panel" maxWidth="Infinity"/>
-                    <HBox spacing="10" alignment="CENTER_LEFT" maxWidth="Infinity" fillHeight="true">
-                        <TextField fx:id="captchaAnswerField" promptText="Saisissez le texte" styleClass="auth-field captcha-input" HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
-                        <Button fx:id="captchaRefreshButton" text="↻" onAction="#refreshCaptcha" styleClass="captcha-refresh" focusTraversable="false"/>
-                    </HBox>
-                    <Label fx:id="captchaHintLabel" styleClass="info-box-text captcha-help" visible="false" managed="false" alignment="CENTER_LEFT" maxWidth="Infinity"/>
+                <VBox spacing="10" maxWidth="440" prefWidth="440" minWidth="440" styleClass="auth-header-block">
+                    <Label text="Welcome back" styleClass="page-title"/>
+                    <Label text="Sign in to your account to continue shopping" styleClass="brand-subtitle"/>
                 </VBox>
-            </VBox>
 
-            <!-- ACTION BUTTONS -->
-            <VBox spacing="14" maxWidth="400" prefWidth="400" minWidth="400">
-                <HBox alignment="CENTER_RIGHT">
-                    <Hyperlink text="Forgot password?" styleClass="link-action-small" onAction="#handleForgotPassword"/>
+                <VBox spacing="18" maxWidth="440" prefWidth="440" minWidth="440" styleClass="auth-section">
+                    <VBox spacing="8" maxWidth="440" prefWidth="440" minWidth="440">
+                        <HBox alignment="CENTER_LEFT" spacing="6">
+                            <FontIcon iconLiteral="fas-envelope" iconSize="14" styleClass="ikonli-muted"/>
+                            <Label text="Email address" styleClass="field-label"/>
+                        </HBox>
+                        <TextField fx:id="emailField" promptText="you@example.com" styleClass="auth-field" maxWidth="440" prefWidth="440" minWidth="440"/>
+                        <Label fx:id="emailError" styleClass="error-label" visible="false" managed="false"/>
+                    </VBox>
+
+                    <VBox spacing="8" maxWidth="440" prefWidth="440" minWidth="440">
+                        <HBox alignment="CENTER_LEFT" spacing="6">
+                            <FontIcon iconLiteral="fas-lock" iconSize="14" styleClass="ikonli-muted"/>
+                            <Label text="Password" styleClass="field-label"/>
+                        </HBox>
+                        <StackPane alignment="CENTER_RIGHT" maxWidth="440" prefWidth="440" minWidth="440">
+                            <PasswordField fx:id="passwordField" promptText="••••••••" styleClass="auth-field" maxWidth="440" prefWidth="440" minWidth="440"/>
+                            <TextField fx:id="passwordTextField" promptText="••••••••" styleClass="auth-field" visible="false" maxWidth="440" prefWidth="440" minWidth="440"/>
+                            <Button fx:id="togglePasswordButton" styleClass="eye-button" onAction="#togglePasswordVisibility" focusTraversable="false">
+                                <graphic>
+                                    <FontIcon fx:id="togglePasswordIcon" iconLiteral="fas-eye-slash" iconSize="14" styleClass="ikonli-muted"/>
+                                </graphic>
+                            </Button>
+                        </StackPane>
+                        <Label fx:id="passwordError" styleClass="error-label" visible="false" managed="false"/>
+                    </VBox>
+                </VBox>
+
+                <Label fx:id="globalError" styleClass="global-error" wrapText="true" visible="false" managed="false" maxWidth="440" prefWidth="440" minWidth="440" alignment="CENTER"/>
+
+                <VBox fx:id="captchaBox" spacing="10" visible="false" managed="false" maxWidth="440" prefWidth="440" minWidth="440" styleClass="auth-section">
+                    <HBox alignment="CENTER_LEFT" spacing="10" maxWidth="440" prefWidth="440" minWidth="440">
+                        <FontIcon iconLiteral="fas-shield-alt" iconSize="14" styleClass="ikonli-muted"/>
+                        <Label text="Security check" styleClass="field-label"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Button fx:id="captchaToggleButton" text="Open check" onAction="#toggleCaptchaPanel" styleClass="btn-outline captcha-toggle" focusTraversable="false"/>
+                    </HBox>
+                    <VBox fx:id="captchaPanel" spacing="14" visible="false" managed="false" maxWidth="440" prefWidth="440" minWidth="440" styleClass="captcha-card">
+                        <StackPane fx:id="captchaContainer" styleClass="captcha-panel" maxWidth="Infinity"/>
+                        <HBox spacing="10" alignment="CENTER_LEFT" maxWidth="Infinity" fillHeight="true">
+                            <TextField fx:id="captchaAnswerField" promptText="Saisissez le texte" styleClass="auth-field captcha-input" HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
+                            <Button fx:id="captchaRefreshButton" text="↻" onAction="#refreshCaptcha" styleClass="captcha-refresh" focusTraversable="false"/>
+                        </HBox>
+                        <Label fx:id="captchaHintLabel" styleClass="info-box-text captcha-help" visible="false" managed="false" alignment="CENTER_LEFT" maxWidth="Infinity"/>
+                    </VBox>
+                </VBox>
+
+                <VBox spacing="16" maxWidth="440" prefWidth="440" minWidth="440" styleClass="login-actions">
+                    <HBox alignment="CENTER_RIGHT" styleClass="auth-footer-row">
+                        <Hyperlink text="Forgot password?" styleClass="link-action-small" onAction="#handleForgotPassword"/>
+                    </HBox>
+
+                    <Button fx:id="loginButton" text="Sign In  →" styleClass="btn-primary" maxWidth="440" prefWidth="440" minWidth="440" onAction="#handleLogin"/>
+
+                    <HBox alignment="CENTER">
+                        <ProgressIndicator fx:id="loadingIndicator" visible="false" managed="false" styleClass="loading-spinner" prefWidth="38" prefHeight="38"/>
+                    </HBox>
+                </VBox>
+
+                <HBox alignment="CENTER" spacing="6" maxWidth="440" prefWidth="440" minWidth="440">
+                    <Label text="Don't have an account?" styleClass="link-text"/>
+                    <Hyperlink text="Create one" styleClass="link-action" onAction="#goToRegister"/>
+                </HBox>
+                
+                <HBox alignment="CENTER" spacing="6" maxWidth="440" prefWidth="440" minWidth="440" style="-fx-padding: 10px 0 0 0;">
+                    <FontIcon iconLiteral="fas-shield-alt" iconSize="12" styleClass="ikonli-muted"/>
+                    <Hyperlink text="Admin Access (RSA)" styleClass="link-action-small" onAction="#goToAdminLogin"/>
                 </HBox>
 
-                <Button fx:id="loginButton" text="Sign In  →" styleClass="btn-primary" maxWidth="400" prefWidth="400" minWidth="400" onAction="#handleLogin"/>
-
-                <HBox alignment="CENTER">
-                    <ProgressIndicator fx:id="loadingIndicator" visible="false" managed="false" styleClass="loading-spinner" prefWidth="38" prefHeight="38"/>
-                </HBox>
             </VBox>
-
-            <!-- CREATE ACCOUNT -->
-            <HBox alignment="CENTER" spacing="6">
-                <Label text="Don't have an account?" styleClass="link-text"/>
-                <Hyperlink text="Create one" styleClass="link-action" onAction="#goToRegister"/>
-            </HBox>
-
         </VBox>
     </VBox>
 
-    <!-- RIGHT SIDE: Hero Panel -->
     <VBox HBox.hgrow="ALWAYS" alignment="CENTER" styleClass="right-pane" minWidth="420">
         <VBox alignment="CENTER" spacing="28" style="-fx-padding: 60px 50px;">
 
-            <!-- Feature icons row -->
             <HBox alignment="CENTER" spacing="32">
                 <VBox alignment="CENTER" spacing="8">
                     <StackPane style="-fx-background-color: rgba(244,106,61,0.2); -fx-background-radius: 50%; -fx-padding: 18px;">
@@ -136,7 +130,6 @@
 
             <Label text="Discover curated products from the world's&#10;best brands, all in one place." styleClass="hero-subtitle" textAlignment="CENTER"/>
 
-            <!-- Stats row -->
             <HBox alignment="CENTER" spacing="40" style="-fx-padding: 10px 0 0 0;">
                 <VBox alignment="CENTER" spacing="4">
                     <Label text="50K+" style="-fx-font-size: 24px; -fx-font-weight: 900; -fx-text-fill: #fb923c;"/>

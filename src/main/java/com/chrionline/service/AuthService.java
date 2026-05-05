@@ -60,7 +60,7 @@ public class AuthService {
         validateRegistrationInput(username, email, plainPassword);
         ensureEmailServiceAvailable();
 
-        User user = buildAndSave(username, email, plainPassword, User.Role.CLIENT, false);
+        User user = buildAndSave(username, email, plainPassword, false);
         user.setTrustedLoginIp(normalizeIp(clientIp));
         userDAO.update(user);
         try {
@@ -72,23 +72,7 @@ public class AuthService {
         }
     }
 
-    public boolean isAdmin(User user) {
-        return user.getRole() == User.Role.ADMIN;
-    }
 
-    public User createAdminUser(String username, String email, String plainPassword) {
-        validateRegistrationInput(username, email, plainPassword);
-        return buildAndSave(username, email, plainPassword, User.Role.ADMIN, true);
-    }
-
-    public void seedAdminIfNotExists() {
-        if (!userDAO.existsByUsername("admin")) {
-            createAdminUser("admin", "admin@chrionline.ma", "admin1234");
-            LOG.info("[AUTH] Default admin account created");
-        } else {
-            LOG.info("[AUTH] Admin account already exists - skipping seed");
-        }
-    }
 
     public LoginResult login(String email, String plainPassword, String clientIp) {
         validateEmail(email);
@@ -109,6 +93,11 @@ public class AuthService {
         }
 
         String normalizedIp = normalizeIp(clientIp);
+
+        if (!requiresLoginIpVerification(user, normalizedIp)) {
+            return new LoginResult(LoginStatus.SUCCESS, user);
+        }
+
         ensureEmailServiceAvailable();
         issueAndSendLoginIpVerificationCode(user, normalizedIp, false);
         return new LoginResult(LoginStatus.LOGIN_IP_VERIFICATION_REQUIRED, user);
@@ -329,12 +318,11 @@ public class AuthService {
         }
     }
 
-    private User buildAndSave(String username, String email, String plainPassword, User.Role role, boolean emailVerified) {
+    private User buildAndSave(String username, String email, String plainPassword, boolean emailVerified) {
         User user = new User();
         user.setUsername(username);
         user.setEmail(email);
         user.setPasswordHash(PasswordUtils.hash(plainPassword));
-        user.setRole(role);
         user.setCreatedAt(LocalDateTime.now());
         user.setEmailVerified(emailVerified);
         return userDAO.save(user);

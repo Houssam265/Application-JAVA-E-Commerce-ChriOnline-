@@ -56,7 +56,6 @@ public class HomeController {
     @FXML private MenuItem accountOrdersItem;
     @FXML private MenuItem accountAdminItem;
     @FXML private MenuItem accountLogoutItem;
-    @FXML private Button adminButton;
     @FXML private Button bellButton;
     @FXML private Button navHomeBtn;
     @FXML private Button navCatalogueBtn;
@@ -77,11 +76,6 @@ public class HomeController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
-
         allProducts = new ArrayList<>();
 
         searchField.textProperty().addListener((observable, oldValue, newValue) -> filterProducts());

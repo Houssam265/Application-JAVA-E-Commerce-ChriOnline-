@@ -9,10 +9,23 @@ public final class MessageProtocol {
     public static final String KEY_TOKEN   = "token";
     public static final String KEY_OPERATION_NONCE = "operationNonce";
 
+    // Hybrid encryption (Task 2 : RSA -> AES)
+    /** Server -> client : envoi de la cle publique RSA juste apres le handshake TLS. */
+    public static final String MESSAGE_HELLO = "HELLO";
+    /** Client -> server : cle AES chiffree avec la cle publique RSA (Base64). */
+    public static final String KEY_ENCRYPTED_AES_KEY = "encryptedAesKey";
+    /** Client -> server : IV utilise par le client pour chiffrer son payload (optionnel). */
+    public static final String KEY_AES_IV            = "aesIv";
+    /** Server -> client : payload chiffre (Base64). */
+    public static final String KEY_ENCRYPTED_PAYLOAD = "encryptedPayload";
+
     // Auth
     public static final String ACTION_LOGIN = "LOGIN";
     public static final String ACTION_REGISTER = "REGISTER";
     public static final String ACTION_LOGOUT = "LOGOUT";
+    public static final String ACTION_ADMIN_CHALLENGE_REQUEST = "ADMIN_CHALLENGE_REQUEST";
+    public static final String ACTION_ADMIN_CHALLENGE_VERIFY  = "ADMIN_CHALLENGE_VERIFY";
+    
     public static final String ACTION_VERIFY_EMAIL = "VERIFY_EMAIL";
     public static final String ACTION_RESEND_VERIFICATION_EMAIL = "RESEND_VERIFICATION_EMAIL";
     public static final String ACTION_VERIFY_LOGIN_IP = "VERIFY_LOGIN_IP";
@@ -49,6 +62,7 @@ public final class MessageProtocol {
     // Profile
     public static final String ACTION_UPDATE_PROFILE  = "UPDATE_PROFILE";
     public static final String ACTION_CHANGE_PASSWORD = "CHANGE_PASSWORD";
+    public static final String ACTION_ACTIVATE_ADMIN_ACCESS = "ACTIVATE_ADMIN_ACCESS";
 
     // Notifications
     public static final String ACTION_GET_NOTIFICATIONS       = "GET_NOTIFICATIONS";

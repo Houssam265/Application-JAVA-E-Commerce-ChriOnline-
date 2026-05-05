@@ -21,68 +21,11 @@
                         <Image url="@/images/ChriOnline_logo.png"/>
                     </image>
                 </ImageView>
-                <Label text="ChriOnline" styleClass="brand-title-small"/>
+                <Label text="ChriOnline — Espace Administrateur" styleClass="brand-title-small"/>
             </HBox>
-
             <Region HBox.hgrow="ALWAYS"/>
-
-            <HBox alignment="CENTER" spacing="18">
-                <Button fx:id="navHomeBtn" onAction="#handleOpenHome" styleClass="nav-pill">
-                    <graphic>
-                        <HBox alignment="CENTER" spacing="8">
-                            <FontIcon iconLiteral="fas-home" iconSize="14" styleClass="ikonli-muted"/>
-                            <Label text="Accueil" styleClass="nav-pill-text"/>
-                        </HBox>
-                    </graphic>
-                </Button>
-                <Button fx:id="navCatalogueBtn" onAction="#handleOpenCatalogue" styleClass="nav-pill">
-                    <graphic>
-                        <HBox alignment="CENTER" spacing="8">
-                            <FontIcon iconLiteral="fas-th-large" iconSize="14" styleClass="ikonli-muted"/>
-                            <Label text="Catalogue" styleClass="nav-pill-text"/>
-                        </HBox>
-                    </graphic>
-                </Button>
-            </HBox>
-
-            <Region minWidth="16"/>
-
-            <HBox alignment="CENTER_LEFT" spacing="10" HBox.hgrow="ALWAYS">
-                <TextField fx:id="headerSearchField"
-                           promptText="Cherchez un produit, une marque ou une categorie"
-                           onAction="#handleHeaderSearch"
-                           styleClass="search-bar header-search-field"
-                           HBox.hgrow="ALWAYS"/>
-                <Button onAction="#handleHeaderSearch" styleClass="header-search-button">
-                    <graphic>
-                        <HBox alignment="CENTER" spacing="8">
-                            <FontIcon iconLiteral="fas-search" iconSize="14" styleClass="ikonli-on-primary"/>
-                            <Label text="Rechercher" styleClass="header-search-button-text"/>
-                        </HBox>
-                    </graphic>
-                </Button>
-            </HBox>
-
             <HBox alignment="CENTER_RIGHT" spacing="12" styleClass="nav-actions">
-                <MenuButton fx:id="accountMenuButton" text="Bonjour, Utilisateur" styleClass="nav-pill account-menu">
-                    <graphic>
-                        <FontIcon iconLiteral="fas-user-circle" iconSize="16" styleClass="ikonli-muted"/>
-                    </graphic>
-                    <items>
-                        <MenuItem fx:id="accountProfileItem" text="Votre compte"/>
-                        <MenuItem fx:id="accountOrdersItem" text="Vos commandes"/>
-                        <MenuItem fx:id="accountAdminItem" text="Admin"/>
-                        <MenuItem fx:id="accountLogoutItem" text="Deconnexion"/>
-                    </items>
-                </MenuButton>
-                <Button onAction="#handleOpenCart" styleClass="nav-pill">
-                    <graphic>
-                        <HBox alignment="CENTER" spacing="8">
-                            <FontIcon iconLiteral="fas-shopping-cart" iconSize="14" styleClass="ikonli-muted"/>
-                            <Label text="Panier" style="-fx-text-fill: #334155; -fx-font-weight: 700;"/>
-                        </HBox>
-                    </graphic>
-                </Button>
+                <Label text="Mode Sécurisé" styleClass="ikonli-muted" style="-fx-font-weight: bold;"/>
             </HBox>
         </HBox>
     </HBox>
@@ -95,7 +38,6 @@
     <HBox alignment="CENTER_LEFT" spacing="12">
         <Label text="Administration" styleClass="brand-title page-title"/>
         <Region HBox.hgrow="ALWAYS"/>
-        <Button text="&#8592; Retour catalogue" onAction="#handleBackToHome" styleClass="btn-outline"/>
         <Button onAction="#handleLogout" styleClass="btn-outline">
             <graphic>
                 <HBox alignment="CENTER" spacing="6">
@@ -210,17 +152,15 @@
                             <Label text="Liste des utilisateurs" styleClass="field-label" style="-fx-font-size: 15px;"/>
                             <Region HBox.hgrow="ALWAYS"/>
                             <TextField fx:id="usersSearchField" promptText="Rechercher (username/email)" styleClass="search-bar" prefWidth="320"/>
-                            <ComboBox fx:id="usersRoleFilter" prefWidth="170" styleClass="combo-box-premium"/>
-                            <ComboBox fx:id="usersSuspendedFilter" prefWidth="160" styleClass="combo-box-premium"/>
                         </HBox>
                         <TableView fx:id="usersTable" styleClass="table-premium" prefHeight="360">
                             <columns>
                                 <TableColumn fx:id="colUserId" text="ID" prefWidth="70"/>
                                 <TableColumn fx:id="colUsername" text="Username" prefWidth="170"/>
                                 <TableColumn fx:id="colEmail" text="Email" prefWidth="220"/>
-                                <TableColumn fx:id="colRole" text="Role" prefWidth="90"/>
+                                <TableColumn fx:id="colRole" text="Role" prefWidth="150"/>
                                 <TableColumn fx:id="colSuspended" text="Suspendu" prefWidth="100"/>
-                                <TableColumn fx:id="colUserAction" text="Actions" prefWidth="160" style="-fx-alignment: CENTER;"/>
+                                <TableColumn fx:id="colUserAction" text="Actions" prefWidth="260" style="-fx-alignment: CENTER;"/>
                             </columns>
                         </TableView>
                     </VBox>
