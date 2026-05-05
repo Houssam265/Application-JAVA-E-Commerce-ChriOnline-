@@ -9,6 +9,16 @@ public final class MessageProtocol {
     public static final String KEY_TOKEN   = "token";
     public static final String KEY_OPERATION_NONCE = "operationNonce";
 
+    // Hybrid encryption (Task 2 : RSA -> AES)
+    /** Server -> client : envoi de la cle publique RSA juste apres le handshake TLS. */
+    public static final String MESSAGE_HELLO = "HELLO";
+    /** Client -> server : cle AES chiffree avec la cle publique RSA (Base64). */
+    public static final String KEY_ENCRYPTED_AES_KEY = "encryptedAesKey";
+    /** Client -> server : IV utilise par le client pour chiffrer son payload (optionnel). */
+    public static final String KEY_AES_IV            = "aesIv";
+    /** Server -> client : payload chiffre (Base64). */
+    public static final String KEY_ENCRYPTED_PAYLOAD = "encryptedPayload";
+
     // Auth
     public static final String ACTION_LOGIN = "LOGIN";
     public static final String ACTION_REGISTER = "REGISTER";

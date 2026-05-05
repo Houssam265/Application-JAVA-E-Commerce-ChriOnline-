@@ -506,7 +506,7 @@ public class CheckoutController {
                 }
                 Request request = new Request(MessageProtocol.ACTION_PAYMENT, payload, client.getSessionToken());
                 request.setOperationNonce(operationNonce);
-                return client.send(request);
+                return client.sendHybrid(request);
             }
         };
 
@@ -514,7 +514,19 @@ public class CheckoutController {
             payButton.setDisable(false);
             Response r = t.getValue();
             if (r.isSuccess()) {
-                showResultOverlay(true, "Paiement accepté", "Merci ! Votre paiement a été validé et la commande a été mise à jour.");
+                String txId = "";
+                String amount = "";
+                try {
+                    JSONObject confirmation = r.getPayloadAsJsonObject();
+                    txId = confirmation.optString("transactionId", "");
+                    if (confirmation.has("amount")) {
+                        amount = String.format(Locale.US, "%.2f Dhs", confirmation.optDouble("amount", 0.0));
+                    }
+                } catch (Exception ignored) {}
+                StringBuilder body = new StringBuilder("Confirmation chiffrée déchiffrée avec succès via AES-GCM.");
+                if (!txId.isBlank()) body.append("\nTransaction : ").append(txId);
+                if (!amount.isBlank()) body.append("\nMontant débité : ").append(amount);
+                showResultOverlay(true, "Paiement accepté", body.toString());
             } else {
                 String msg = r.getMessage() == null ? "" : r.getMessage();
                 if (msg.toLowerCase().contains("stock insuffisant")) {

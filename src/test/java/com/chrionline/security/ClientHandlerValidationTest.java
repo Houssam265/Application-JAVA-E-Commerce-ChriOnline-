@@ -51,7 +51,8 @@ class ClientHandlerValidationTest {
                 mock(PaymentService.class),
                 mock(AdminService.class),
                 mock(UDPNotificationService.class),
-                mock(AdminAuthService.class)
+                mock(AdminAuthService.class),
+                com.chrionline.security.RSAUtil.generateKeyPair()
         );
 
         processRequestMethod = ClientHandler.class.getDeclaredMethod("processRequest", String.class);

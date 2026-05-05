@@ -185,6 +185,12 @@
                         </graphic>
                     </Button>
 
+                    <HBox alignment="CENTER" spacing="6" style="-fx-padding: 4 0 0 0;">
+                        <FontIcon iconLiteral="fas-shield-alt" iconSize="11" iconColor="#16a34a"/>
+                        <Label text="TLS + RSA 2048 → AES-GCM 256 (handshake hybride)"
+                               style="-fx-text-fill: #16a34a; -fx-font-size: 10.5px; -fx-font-weight: 600;"/>
+                    </HBox>
+
                     <Label fx:id="globalMessage" text="" visible="false" managed="false" wrapText="true"/>
                 </VBox>
             </HBox>

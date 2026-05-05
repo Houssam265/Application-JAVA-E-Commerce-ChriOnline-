@@ -3,6 +3,9 @@ package com.chrionline.client;
 import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
+import com.chrionline.security.AESUtil;
+import com.chrionline.security.HybridCryptoUtil;
+import com.chrionline.security.RSAUtil;
 import com.chrionline.security.TlsSupport;
 import org.json.JSONObject;
 import org.apache.logging.log4j.LogManager;
@@ -17,6 +20,8 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.PublicKey;
+import javax.crypto.SecretKey;
 
 /**
  * Couche réseau TCP du client ChriOnline.
@@ -65,6 +70,9 @@ public class Client {
     /** Token de session récupéré après LOGIN — null si non connecté. */
     private String sessionToken;
 
+    /** Cle publique RSA du serveur recue lors du handshake HELLO (Task 2). */
+    private PublicKey serverRsaPublicKey;
+
     private Client() {}
 
     // ── Connexion ─────────────────────────────────────────────────────────────
@@ -84,6 +92,7 @@ public class Client {
      */
     public void disconnect() {
         sessionToken = null;
+        serverRsaPublicKey = null;
         if (udpListener != null) {
             udpListener.close();
             udpListener = null;
@@ -113,7 +122,39 @@ public class Client {
         writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
         reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
         LOG.info("Connexion client etablie vers {}:{} avec {}", HOST, PORT, TlsSupport.describeClientConfiguration());
+
+        readHelloFrame();
+
         startUdpListener();
+    }
+
+    /**
+     * Lit la premiere ligne envoyee par le serveur juste apres le handshake TLS.
+     * Cette ligne est un message {@code HELLO} contenant la cle publique RSA du serveur,
+     * utilisee plus tard pour le handshake hybride RSA -> AES.
+     */
+    private void readHelloFrame() throws IOException {
+        String helloLine = reader.readLine();
+        if (helloLine == null || helloLine.isBlank()) {
+            throw new IOException("Le serveur n'a pas envoye de message HELLO.");
+        }
+        try {
+            Response hello = Response.fromJson(helloLine);
+            if (!hello.isSuccess() || !MessageProtocol.MESSAGE_HELLO.equals(hello.getMessage())) {
+                throw new IOException("Message HELLO invalide: " + hello.getMessage());
+            }
+            JSONObject payload = hello.getPayloadAsJsonObject();
+            String publicKeyB64 = payload.optString("serverPublicKey", null);
+            if (publicKeyB64 == null || publicKeyB64.isBlank()) {
+                throw new IOException("Cle publique RSA absente du HELLO.");
+            }
+            this.serverRsaPublicKey = RSAUtil.decodePublicKey(publicKeyB64);
+            LOG.info("[HELLO] Cle publique RSA serveur recue ({} bits)", payload.optInt("keySize", 2048));
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Impossible de decoder le HELLO du serveur: " + e.getMessage(), e);
+        }
     }
 
     private void connectWithRetry() throws IOException {
@@ -205,6 +246,65 @@ public class Client {
             this.sessionToken = response.getToken();
         }
         return response;
+    }
+
+    // ── Hybride RSA -> AES (Task 2) ───────────────────────────────────────────
+
+    /** @return la cle publique RSA recue lors du HELLO, ou {@code null} si non connecte. */
+    public PublicKey getServerRsaPublicKey() {
+        return serverRsaPublicKey;
+    }
+
+    /**
+     * Envoi hybride RSA -> AES :
+     * <ol>
+     *   <li>Genere une cle AES-256 fraiche (module AES "Achraf").</li>
+     *   <li>Chiffre cette cle avec la cle publique RSA du serveur (recue via HELLO).</li>
+     *   <li>Ajoute {@code encryptedAesKey} au payload, puis envoie la requete via SSLSocket.</li>
+     *   <li>Si le serveur repond avec {@code encryptedPayload + aesIv}, dechiffre le payload
+     *       en AES-GCM et retourne une nouvelle {@link Response} avec le payload en clair.</li>
+     * </ol>
+     *
+     * <p>Sans cle RSA disponible, retombe automatiquement sur {@link #send(Request)}.
+     */
+    public Response sendHybrid(Request request) throws IOException {
+        if (serverRsaPublicKey == null) {
+            LOG.warn("[HYBRID] Cle publique RSA serveur indisponible - bascule sur envoi clair.");
+            return send(request);
+        }
+        try {
+            SecretKey aesKey = AESUtil.generateKey();
+            String wrappedAesKey = HybridCryptoUtil.wrapAesKey(aesKey, serverRsaPublicKey);
+            if (request.getPayload() != null) {
+                request.getPayload().put(MessageProtocol.KEY_ENCRYPTED_AES_KEY, wrappedAesKey);
+            }
+            Response response = send(request);
+            if (response == null || !response.isSuccess()) return response;
+
+            JSONObject payload = response.getPayloadAsJsonObject();
+            String encrypted = payload.optString(MessageProtocol.KEY_ENCRYPTED_PAYLOAD, null);
+            String iv        = payload.optString(MessageProtocol.KEY_AES_IV, null);
+            if (encrypted == null || encrypted.isBlank() || iv == null || iv.isBlank()) {
+                return response;
+            }
+
+            String plainJson = AESUtil.decrypt(aesKey, encrypted, iv);
+            Object decryptedPayload;
+            String trimmed = plainJson.trim();
+            if (trimmed.startsWith("{")) {
+                decryptedPayload = new JSONObject(trimmed);
+            } else if (trimmed.startsWith("[")) {
+                decryptedPayload = new org.json.JSONArray(trimmed);
+            } else {
+                decryptedPayload = trimmed;
+            }
+            LOG.info("[HYBRID] Payload AES-GCM dechiffre avec succes ({} octets clair)", plainJson.length());
+            return new Response(true, response.getMessage(), decryptedPayload, response.getToken());
+        } catch (IOException ioe) {
+            throw ioe;
+        } catch (Exception e) {
+            throw new IOException("Echec du chiffrement hybride RSA->AES: " + e.getMessage(), e);
+        }
     }
 
     /**

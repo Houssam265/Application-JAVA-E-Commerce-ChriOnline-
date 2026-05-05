@@ -14,7 +14,10 @@ import com.chrionline.service.LoginCaptchaService;
 import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
+import com.chrionline.security.AESUtil;
+import com.chrionline.security.HybridCryptoUtil;
 import com.chrionline.security.InputValidator;
+import com.chrionline.security.RSAUtil;
 import com.chrionline.security.ValidationException;
 import com.chrionline.security.IpUtils;
 import com.chrionline.security.SecurityAuditLogger;
@@ -36,6 +39,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.KeyPair;
+import javax.crypto.SecretKey;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -114,6 +119,9 @@ public class ClientHandler implements Runnable {
     private final UDPNotificationService udpNotificationService;
     private final LoginCaptchaService loginCaptchaService = LoginCaptchaService.getInstance();
 
+    /** Cle RSA serveur (partagee entre tous les threads) - utilisee pour le handshake hybride RSA -> AES. */
+    private final KeyPair sessionRsaKeyPair;
+
     // ── Per-connection state ──────────────────────────────────────────────────
     private final Socket socket;
     private final InetAddress clientAddress;
@@ -148,7 +156,8 @@ public class ClientHandler implements Runnable {
                          PaymentService paymentService,
                          AdminService adminService,
                          UDPNotificationService udpNotificationService,
-                         AdminAuthService adminAuthService) {
+                         AdminAuthService adminAuthService,
+                         KeyPair sessionRsaKeyPair) {
         this.socket         = socket;
         this.clientAddress  = socket.getInetAddress();
         this.userDAO        = userDAO;
@@ -161,6 +170,7 @@ public class ClientHandler implements Runnable {
         this.adminService   = adminService;
         this.udpNotificationService = udpNotificationService;
         this.adminAuthService = adminAuthService;
+        this.sessionRsaKeyPair = sessionRsaKeyPair;
     }
 
     // ── Runnable ──────────────────────────────────────────────────────────────
@@ -177,6 +187,8 @@ public class ClientHandler implements Runnable {
                      new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8), true)) {
 
             this.out = writer;
+
+            sendHelloFrame();
 
             String line;
             while ((line = in.readLine()) != null) {
@@ -324,7 +336,7 @@ public class ClientHandler implements Runnable {
                 return handlePlaceOrder(req);
             case MessageProtocol.ACTION_PAYMENT:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
-                return handlePayment(req);
+                return wrapHybridResponseIfRequested(req, handlePayment(req));
             case MessageProtocol.ACTION_GET_ORDERS:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetOrders(req);
@@ -404,6 +416,69 @@ public class ClientHandler implements Runnable {
         });
 
         return true;
+    }
+
+    // ── Handshake hybride RSA -> AES ──────────────────────────────────────────
+
+    /**
+     * Envoie un message HELLO contenant la cle publique RSA du serveur.
+     *
+     * <p>Format JSON (newline-delimited) :
+     * <pre>
+     *   {"success":true,"message":"HELLO","payload":{"serverPublicKey":"&lt;base64-x509&gt;","algorithm":"RSA","keySize":2048}}
+     * </pre>
+     *
+     * <p>Le client lit cette premiere ligne juste apres le handshake TLS, decode la cle
+     * et l'utilise plus tard pour chiffrer une cle AES (cf. {@code HybridCryptoUtil}).
+     */
+    private void sendHelloFrame() {
+        if (out == null || sessionRsaKeyPair == null) return;
+        try {
+            String publicKeyBase64 = RSAUtil.encodePublicKey(sessionRsaKeyPair.getPublic());
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("serverPublicKey", publicKeyBase64);
+            payload.put("algorithm", "RSA");
+            payload.put("keySize", 2048);
+            payload.put("transformation", HybridCryptoUtil.RSA_TRANSFORMATION);
+            payload.put("aesTransformation", AESUtil.TRANSFORMATION);
+            Response hello = Response.ok(MessageProtocol.MESSAGE_HELLO, payload);
+            String json = GSON.toJson(hello);
+            out.println(json);
+            LOG.info("[HELLO] cle publique RSA envoyee au client {}", socket.getRemoteSocketAddress());
+        } catch (Exception e) {
+            LOG.warn("[HELLO] Impossible d'envoyer la cle publique RSA: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Si la requete contient une cle AES chiffree, dechiffre cette cle et chiffre
+     * le payload de la reponse en AES-GCM. Le client recoit alors :
+     * <pre>
+     *   payload = { "encryptedPayload": "...", "aesIv": "..." }
+     * </pre>
+     */
+    private Response wrapHybridResponseIfRequested(Request req, Response response) {
+        if (req == null || req.getPayload() == null) return response;
+        Object encryptedAesKeyObj = req.getPayload().get(MessageProtocol.KEY_ENCRYPTED_AES_KEY);
+        if (!(encryptedAesKeyObj instanceof String) || ((String) encryptedAesKeyObj).isBlank()) {
+            return response;
+        }
+        if (!response.isSuccess() || sessionRsaKeyPair == null) {
+            return response;
+        }
+        try {
+            SecretKey aesKey = HybridCryptoUtil.unwrapAesKey((String) encryptedAesKeyObj, sessionRsaKeyPair.getPrivate());
+            String plainPayloadJson = GSON.toJson(response.getPayload());
+            AESUtil.Sealed sealed = AESUtil.encrypt(aesKey, plainPayloadJson);
+            Map<String, Object> hybridPayload = new HashMap<>();
+            hybridPayload.put(MessageProtocol.KEY_ENCRYPTED_PAYLOAD, sealed.cipherTextBase64());
+            hybridPayload.put(MessageProtocol.KEY_AES_IV, sealed.ivBase64());
+            hybridPayload.put("hybrid", true);
+            return new Response(true, response.getMessage(), hybridPayload, null);
+        } catch (Exception e) {
+            LOG.warn("[HYBRID] Impossible de chiffrer la reponse: {}", e.getMessage(), e);
+            return Response.error("Erreur de chiffrement de la reponse hybride.");
+        }
     }
 
     /** Best-effort UDP notification to the connected client (current connection). */
