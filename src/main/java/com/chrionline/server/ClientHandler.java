@@ -35,6 +35,11 @@ import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
+
+import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSession;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -177,8 +182,10 @@ public class ClientHandler implements Runnable {
 
     @Override
     public void run() {
+        String clientIp = getClientIpAddress();
         String clientId = socket.getRemoteSocketAddress().toString();
         LOG.info("Client connecte: {}", clientId);
+        String disconnectReason = "normal";
 
         try (Socket s = socket;
              BufferedReader in = new BufferedReader(
@@ -187,6 +194,17 @@ public class ClientHandler implements Runnable {
                      new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8), true)) {
 
             this.out = writer;
+
+            if (s instanceof SSLSocket sslSocket) {
+                SSLSession sess = sslSocket.getSession();
+                String proto = sess != null ? sess.getProtocol() : "?";
+                String cipher = sess != null ? sess.getCipherSuite() : "?";
+                LOG.info("[TLS] New client connected: {} via TLS {} {}", clientIp, proto, cipher);
+                SecurityAuditLogger.logTlsClientConnected(clientIp, proto, cipher);
+            } else {
+                LOG.info("[TLS] New client connected: {} via TLS (plain socket — unexpected)", clientIp);
+                SecurityAuditLogger.logTlsClientConnected(clientIp, "NONE", "NONE");
+            }
 
             sendHelloFrame();
 
@@ -199,6 +217,7 @@ public class ClientHandler implements Runnable {
                 Response response = processRequest(msg);
                 String   jsonOut  = GSON.toJson(response);
                 out.println(jsonOut);
+                LOG.info("[TLS] Response sent to {}: success={}", clientIp, response.isSuccess());
                 LOG.info("[{}] >> {}", clientId, jsonOut);
 
                 if (disconnectAfterResponse) {
@@ -206,9 +225,21 @@ public class ClientHandler implements Runnable {
                 }
             }
 
+        } catch (SSLHandshakeException e) {
+            disconnectReason = "ssl error";
+            LOG.warn("[TLS] SSLHandshakeException from {}: {}", clientIp, e.getMessage(), e);
+            SecurityAuditLogger.logTlsHandshakeFailure(clientIp, e.getMessage());
+            LOG.warn("Erreur handshake TLS avec {}: {}", clientId, e.getMessage(), e);
+        } catch (SocketTimeoutException e) {
+            disconnectReason = "timeout";
+            LOG.info("Connexion terminee avec {}: {}", clientId, e.getMessage());
+            LOG.info("[TLS] Client disconnected: {} — reason: {}", clientIp, disconnectReason);
+            SecurityAuditLogger.logTlsClientDisconnected(clientIp, disconnectReason);
         } catch (SocketException e) {
+            disconnectReason = "normal";
             LOG.info("Connexion terminee avec {}: {}", clientId, e.getMessage());
         } catch (IOException e) {
+            disconnectReason = "io error";
             LOG.warn("Erreur reseau avec {}: {}", clientId, e.getMessage(), e);
         } finally {
             this.out = null;
@@ -218,6 +249,10 @@ public class ClientHandler implements Runnable {
             if (connectedUserId > 0) {
                 ClientRegistry.getInstance().unregister(connectedUserId);
                 connectedUserId = 0;
+            }
+            if (!"timeout".equals(disconnectReason)) {
+                LOG.info("[TLS] Client disconnected: {} — reason: {}", clientIp, disconnectReason);
+                SecurityAuditLogger.logTlsClientDisconnected(clientIp, disconnectReason);
             }
             LOG.info("Client deconnecte: {}", clientId);
         }
@@ -235,10 +270,12 @@ public class ClientHandler implements Runnable {
             req = GSON.fromJson(jsonLine, Request.class);
         } catch (JsonSyntaxException e) {
             LOG.warn("Invalid JSON received: {}", e.getMessage());
+            LOG.info("[TLS] Request received from {}: action=<invalid_json>", getClientIpAddress());
             return Response.error("Invalid JSON");
         }
 
         if (req == null || req.getAction() == null || req.getAction().isBlank()) {
+            LOG.info("[TLS] Request received from {}: action=<missing>", getClientIpAddress());
             return Response.error("INVALID_INPUT: action is required.");
         }
 
@@ -246,8 +283,11 @@ public class ClientHandler implements Runnable {
         try {
             validateRequestInputForAction(action, req);
         } catch (ValidationException e) {
+            LOG.info("[TLS] Request received from {}: action={}", getClientIpAddress(), action);
             return invalidInput(e.getMessage());
         }
+
+        LOG.info("[TLS] Request received from {}: action={}", getClientIpAddress(), action);
 
         switch (action) {
 

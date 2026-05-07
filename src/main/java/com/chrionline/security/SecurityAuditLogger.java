@@ -95,6 +95,30 @@ public final class SecurityAuditLogger {
     }
 
     /**
+     * Connexion TLS acceptée et handshake réussi (côté serveur).
+     */
+    public static void logTlsClientConnected(String remoteIp, String protocol, String cipherSuite) {
+        AUDIT_LOG.info("[TLS_CLIENT_CONNECTED] ts={} ip={} protocol={} cipher={}",
+                Instant.now(), safe(remoteIp), safe(protocol), safe(cipherSuite));
+    }
+
+    /**
+     * Fin de connexion TLS / TCP (normale ou erreur).
+     */
+    public static void logTlsClientDisconnected(String remoteIp, String reason) {
+        AUDIT_LOG.info("[TLS_CLIENT_DISCONNECTED] ts={} ip={} reason={}",
+                Instant.now(), safe(remoteIp), safe(reason));
+    }
+
+    /**
+     * Échec de handshake TLS (événement sécurité).
+     */
+    public static void logTlsHandshakeFailure(String remoteIp, String message) {
+        AUDIT_LOG.warn("[TLS_HANDSHAKE_FAILURE] ts={} ip={} message={}",
+                Instant.now(), safe(remoteIp), safe(message));
+    }
+
+    /**
      * Normalise une valeur potentiellement nulle pour les logs.
      */
     private static String safe(String value) {

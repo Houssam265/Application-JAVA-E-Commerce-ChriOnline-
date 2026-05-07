@@ -102,7 +102,7 @@ INSERT INTO users (
         '$2a$12$xoxTjzzQppK8pklmhg/P4eamyVxCYmRl6GY2YfjSc0997ITr4iFrS',
         'CLIENT', NULL, TRUE, TRUE, NULL, NULL, NULL,
         '127.0.0.1', NULL, NULL, NULL, NULL, NULL, NULL, '2026-03-03 10:30:00'
-    ),
+    )
     ;
 
 -- ============================================================================
@@ -151,7 +151,7 @@ INSERT INTO carts (cart_id, user_id, created_at, updated_at) VALUES
     (2, 3, '2026-04-12 10:05:00', '2026-04-16 10:40:00'),
     (3, 4, '2026-04-10 16:45:00', '2026-04-16 11:25:00'),
     (4, 5, '2026-04-09 13:10:00', '2026-04-10 13:10:00'),
-    (5, 6, '2026-04-16 08:59:00', '2026-04-16 08:59:00');
+    (5, 1, '2026-04-16 08:59:00', '2026-04-16 08:59:00');
 
 INSERT INTO cart_items (cart_item_id, cart_id, product_id, quantity, unit_price) VALUES
     (1, 1, 7, 1, 4299.00),
@@ -200,9 +200,7 @@ INSERT INTO notifications (notification_id, user_id, message, sent_at, is_read) 
     (2, 2, 'Votre commande #4 a ete livree avec succes.',                  '2026-04-05 16:50:00', TRUE),
     (3, 3, 'Votre commande #2 a ete validee et est en preparation.',       '2026-04-10 14:45:00', FALSE),
     (4, 4, 'Votre commande #3 a ete expediee. Suivi disponible.',          '2026-04-09 08:35:00', FALSE),
-    (5, 5, 'Paiement refuse pour la commande #5. Veuillez reessayer.',     '2026-04-01 12:02:00', TRUE),
-    (6, 6, 'Votre code de verification email est pret a etre utilise.',    '2026-04-16 09:00:00', FALSE);
-
+    (5, 5, 'Paiement refuse pour la commande #5. Veuillez reessayer.',     '2026-04-01 12:02:00', TRUE);
 -- ============================================================================
 -- 9. Sessions
 -- ============================================================================

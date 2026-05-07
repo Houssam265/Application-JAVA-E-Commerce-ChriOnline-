@@ -19,6 +19,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * Centralizes TLS configuration for the TCP client/server channel.
@@ -33,15 +37,75 @@ public final class TlsSupport {
     public static final String DEFAULT_STORE_TYPE = "PKCS12";
     public static final String DEFAULT_STORE_PASSWORD = "changeit";
 
+    /**
+     * Liste des protocoles activés, séparés par des virgules (ex: {@code TLSv1.3} ou {@code TLSv1.3,TLSv1.2}).
+     * Si absent, comportement par défaut : TLSv1.3 + TLSv1.2 lorsque supportés par la JVM.
+     */
+    public static final String ENV_ENABLED_PROTOCOLS = "CHRIONLINE_TLS_ENABLED_PROTOCOLS";
+
     private TlsSupport() {}
 
     public static SSLServerSocket createServerSocket(int port) throws IOException, GeneralSecurityException {
         SSLContext context = buildServerContext();
         SSLServerSocketFactory factory = context.getServerSocketFactory();
         SSLServerSocket socket = (SSLServerSocket) factory.createServerSocket(port);
-        socket.setEnabledProtocols(selectProtocols(socket.getSupportedProtocols()));
+        String[] protocols = resolveEnabledProtocols(socket.getSupportedProtocols());
+        socket.setEnabledProtocols(protocols);
+        String[] cipherSuites = filterWeakCipherSuites(socket.getSupportedCipherSuites());
+        if (cipherSuites.length > 0) {
+            socket.setEnabledCipherSuites(cipherSuites);
+        } else {
+            LOG.warn("Aucune suite non faible trouvee parmi les suites supportees — conservation des suites par defaut SSLServerSocket.");
+        }
         socket.setNeedClientAuth(false);
         return socket;
+    }
+
+    /**
+     * Retire les suites explicitement faibles (RC4, DES, MD5, NULL, EXPORT, anonymes).
+     */
+    static String[] filterWeakCipherSuites(String[] supported) {
+        if (supported == null || supported.length == 0) {
+            return new String[0];
+        }
+        List<String> safe = new ArrayList<>();
+        for (String suite : supported) {
+            if (suite == null || suite.isBlank()) continue;
+            String u = suite.toUpperCase(Locale.ROOT);
+            if (u.contains("RC4")) continue;
+            if (u.contains("_DES_") || u.contains("DES40") || u.endsWith("_DES")) continue;
+            if (u.contains("MD5")) continue;
+            if (u.contains("NULL")) continue;
+            if (u.contains("EXPORT")) continue;
+            if (u.contains("_anon_") || u.contains("_ANON_")) continue;
+            safe.add(suite);
+        }
+        return safe.toArray(new String[0]);
+    }
+
+    /**
+     * Protocoles effectifs : env {@link #ENV_ENABLED_PROTOCOLS} si défini, sinon TLS 1.3 + 1.2 si disponibles.
+     */
+    static String[] resolveEnabledProtocols(String[] supportedProtocols) {
+        String explicit = readSetting(ENV_ENABLED_PROTOCOLS, "");
+        if (!explicit.isBlank()) {
+            List<String> wanted = Arrays.stream(explicit.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+            List<String> supported = supportedProtocols == null ? List.of() : Arrays.asList(supportedProtocols);
+            List<String> enabled = new ArrayList<>();
+            for (String w : wanted) {
+                if (supported.contains(w)) {
+                    enabled.add(w);
+                }
+            }
+            if (!enabled.isEmpty()) {
+                return enabled.toArray(new String[0]);
+            }
+            LOG.warn("{} invalide ou non supporte par la JVM — fallback sur selection par defaut.", ENV_ENABLED_PROTOCOLS);
+        }
+        return selectProtocols(supportedProtocols);
     }
 
     public static Socket createClientSocket(String host, int port, int timeoutMs) throws IOException, GeneralSecurityException {

@@ -3,6 +3,7 @@ package com.chrionline.server;
 import com.chrionline.dao.UserDAO;
 import com.chrionline.security.RSAUtil;
 import com.chrionline.security.TlsSupport;
+import com.chrionline.security.SecurityAuditLogger;
 import com.chrionline.security.SecurityMonitor;
 import com.chrionline.security.IpSpoofingDetector;
 import com.chrionline.service.AuthService;
@@ -19,9 +20,13 @@ import org.apache.logging.log4j.Logger;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
+import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.SSLSocket;
+
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -124,7 +129,27 @@ public class Server {
                     }
                     // Keep idle client connections alive longer to avoid frequent read timeouts.
                     clientSocket.setSoTimeout(300_000);
+
+                    // Handshake TLS immédiat : rejette les clients invalides avant le pool (T2 robustesse).
+                    if (clientSocket instanceof SSLSocket sslSocket) {
+                        try {
+                            sslSocket.startHandshake();
+                        } catch (SSLHandshakeException e) {
+                            String ip = safeRemoteIp(clientSocket);
+                            SecurityAuditLogger.logTlsHandshakeFailure(ip, e.getMessage());
+                            LOG.warn("[TLS] SSLHandshakeException from {}: {}", ip, e.getMessage(), e);
+                            try {
+                                clientSocket.close();
+                            } catch (IOException ignored) {
+                            }
+                            continue;
+                        }
+                    }
+
                     pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService, adminAuthService, sessionRsaKeyPair));
+                } catch (SocketTimeoutException e) {
+                    if (serverSocket.isClosed()) break;
+                    LOG.debug("accept() timeout (normal si SO_TIMEOUT configure): {}", e.getMessage());
                 } catch (SocketException e) {
                     if (serverSocket.isClosed()) break;
                     LOG.info("SocketException pendant accept(): {}", e.getMessage(), e);
@@ -160,5 +185,12 @@ public class Server {
             pool.shutdownNow();
             Thread.currentThread().interrupt();
         }
+    }
+
+    private static String safeRemoteIp(Socket socket) {
+        if (socket == null || socket.getInetAddress() == null) {
+            return "?";
+        }
+        return socket.getInetAddress().getHostAddress();
     }
 }
