@@ -294,7 +294,7 @@ public class ClientHandler implements Runnable {
             // ── Auth (no token required) ──────────────────────────────────
             case MessageProtocol.ACTION_LOGIN:
                 if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
-                return handleLogin(req);
+                return wrapHybridResponseIfRequested(req, handleLogin(req));
             case MessageProtocol.ACTION_REGISTER:
                 if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
                 return handleRegister(req);
@@ -326,7 +326,7 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_ADMIN_CHALLENGE_REQUEST:
                 return handleAdminChallengeRequest(req);
             case MessageProtocol.ACTION_ADMIN_CHALLENGE_VERIFY:
-                return handleAdminChallengeVerify(req);
+                return wrapHybridResponseIfRequested(req, handleAdminChallengeVerify(req));
 
             // ── Auth (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_LOGOUT:
@@ -480,6 +480,8 @@ public class ClientHandler implements Runnable {
             payload.put("algorithm", "RSA");
             payload.put("keySize", 2048);
             payload.put("transformation", HybridCryptoUtil.RSA_TRANSFORMATION);
+            payload.put("transformationPKCS1", HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1);
+            payload.put("transformationOAEP", HybridCryptoUtil.RSA_TRANSFORMATION_OAEP);
             payload.put("aesTransformation", AESUtil.TRANSFORMATION);
             Response hello = Response.ok(MessageProtocol.MESSAGE_HELLO, payload);
             String json = GSON.toJson(hello);
@@ -507,7 +509,7 @@ public class ClientHandler implements Runnable {
             return response;
         }
         try {
-            SecretKey aesKey = HybridCryptoUtil.unwrapAesKey((String) encryptedAesKeyObj, sessionRsaKeyPair.getPrivate());
+            SecretKey aesKey = HybridCryptoUtil.unwrapAesKey((String) encryptedAesKeyObj, sessionRsaKeyPair.getPrivate(), HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1);
             String plainPayloadJson = GSON.toJson(response.getPayload());
             AESUtil.Sealed sealed = AESUtil.encrypt(aesKey, plainPayloadJson);
             Map<String, Object> hybridPayload = new HashMap<>();

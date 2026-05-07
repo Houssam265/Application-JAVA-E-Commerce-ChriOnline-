@@ -189,7 +189,7 @@ public class LoginController {
                     payload.put("captchaId", captchaId);
                     payload.put("captchaAnswer", captchaAnswerField.getText().trim());
                 }
-                return client.send(new Request(MessageProtocol.ACTION_LOGIN, payload));
+                return client.sendHybrid(new Request(MessageProtocol.ACTION_LOGIN, payload));
             }
         };
 

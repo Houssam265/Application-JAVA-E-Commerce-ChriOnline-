@@ -52,11 +52,15 @@ public class Client {
     private static final int    RECONNECT_BACKOFF_MS = 300;
 
     // ── Singleton ─────────────────────────────────────────────────────────────
-    private static Client instance;
+    private static volatile Client instance;
 
     public static Client getInstance() {
         if (instance == null) {
-            instance = new Client();
+            synchronized (Client.class) {
+                if (instance == null) {
+                    instance = new Client();
+                }
+            }
         }
         return instance;
     }
@@ -274,10 +278,11 @@ public class Client {
         }
         try {
             SecretKey aesKey = AESUtil.generateKey();
-            String wrappedAesKey = HybridCryptoUtil.wrapAesKey(aesKey, serverRsaPublicKey);
-            if (request.getPayload() != null) {
-                request.getPayload().put(MessageProtocol.KEY_ENCRYPTED_AES_KEY, wrappedAesKey);
+            String wrappedAesKey = HybridCryptoUtil.wrapAesKey(aesKey, serverRsaPublicKey, HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1);
+            if (request.getPayload() == null) {
+                request.setPayload(new java.util.HashMap<>());
             }
+            request.getPayload().put(MessageProtocol.KEY_ENCRYPTED_AES_KEY, wrappedAesKey);
             Response response = send(request);
             if (response == null || !response.isSuccess()) return response;
 

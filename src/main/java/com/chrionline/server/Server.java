@@ -2,6 +2,7 @@ package com.chrionline.server;
 
 import com.chrionline.dao.UserDAO;
 import com.chrionline.security.RSAUtil;
+import com.chrionline.security.KeyStoreUtil;
 import com.chrionline.security.TlsSupport;
 import com.chrionline.security.SecurityAuditLogger;
 import com.chrionline.security.SecurityMonitor;
@@ -91,10 +92,10 @@ public class Server {
         // Generee au demarrage et envoyee au client via HELLO juste apres le handshake TLS.
         KeyPair sessionRsaKeyPair;
         try {
-            sessionRsaKeyPair = RSAUtil.generateKeyPair();
-            LOG.info("[CRYPTO] Cle RSA serveur (2048 bits) generee pour les sessions hybrides RSA->AES");
+            sessionRsaKeyPair = KeyStoreUtil.getOrGenerateKeyPair();
+            LOG.info("[CRYPTO] Cle RSA serveur (2048 bits) chargee depuis le KeyStore PKCS12 pour les sessions hybrides RSA->AES");
         } catch (Exception e) {
-            LOG.error("[CRYPTO] Impossible de generer la cle RSA serveur", e);
+            LOG.error("[CRYPTO] Impossible de charger/generer la cle RSA serveur depuis le KeyStore", e);
             return;
         }
 

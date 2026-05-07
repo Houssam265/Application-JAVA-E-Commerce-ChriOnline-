@@ -114,7 +114,7 @@ public class AdminLoginController {
                 JSONObject verifyObj = new JSONObject();
                 verifyObj.put("username", adminUsername);
                 verifyObj.put("signature", signature);
-                return client.send(new Request(MessageProtocol.ACTION_ADMIN_CHALLENGE_VERIFY, verifyObj));
+                return client.sendHybrid(new Request(MessageProtocol.ACTION_ADMIN_CHALLENGE_VERIFY, verifyObj));
             }
         };
 
