@@ -113,31 +113,31 @@ class ClientHandlerValidationTest {
     class KnownActionBadPayloadTests {
         @Test
         void placeOrder_withInjectedOrderId_returnsInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"PLACE_ORDER\",\"payload\":{\"order_id\":\"001; cat /etc/passwd\"},\"token\":\"t\"}");
+            Response r = invoke(encryptedRequestJson("PLACE_ORDER", new JSONObject().put("order_id", "001; cat /etc/passwd"), "t"));
             assertTrue(r.getMessage().contains("INVALID_INPUT"));
         }
 
         @Test
         void getProduct_withNonNumericProductId_returnsInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"GET_PRODUCT\",\"payload\":{\"product_id\":\"abc\"},\"token\":\"t\"}");
+            Response r = invoke(encryptedRequestJson("GET_PRODUCT", new JSONObject().put("product_id", "abc"), "t"));
             assertTrue(r.getMessage().contains("INVALID_INPUT"));
         }
 
         @Test
         void addToCart_withNegativeQuantity_returnsInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"ADD_TO_CART\",\"payload\":{\"product_id\":1,\"quantity\":-1},\"token\":\"t\"}");
+            Response r = invoke(encryptedRequestJson("ADD_TO_CART", new JSONObject().put("product_id", 1).put("quantity", -1), "t"));
             assertTrue(r.getMessage().contains("INVALID_INPUT"));
         }
 
         @Test
         void updateProfile_withShortUsername_returnsInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"UPDATE_PROFILE\",\"payload\":{\"username\":\"ab\",\"email\":\"user@example.com\"},\"token\":\"t\"}");
+            Response r = invoke(encryptedRequestJson("UPDATE_PROFILE", new JSONObject().put("username", "ab").put("email", "user@example.com"), "t"));
             assertTrue(r.getMessage().contains("INVALID_INPUT"));
         }
 
         @Test
         void updateProfile_withInvalidEmail_returnsInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"UPDATE_PROFILE\",\"payload\":{\"username\":\"alice\",\"email\":\"notanemail\"},\"token\":\"t\"}");
+            Response r = invoke(encryptedRequestJson("UPDATE_PROFILE", new JSONObject().put("username", "alice").put("email", "notanemail"), "t"));
             assertTrue(r.getMessage().contains("INVALID_INPUT"));
         }
 
@@ -172,37 +172,47 @@ class ClientHandlerValidationTest {
             assertTrue(r.getMessage().contains("INVALID_INPUT"));
             assertTrue(r.getMessage().contains("aesIv"));
         }
+
+        @Test
+        void replayedEncryptedApplicationRequest_returnsError() throws Exception {
+            String json = encryptedRequestJson("GET_LOGIN_CAPTCHA", new JSONObject(), null);
+            Response first = invoke(json);
+            Response replay = invoke(json);
+            assertFalse(first.getMessage().contains("dupliquee"));
+            assertFalse(replay.isSuccess());
+            assertTrue(replay.getMessage().contains("dupliquee"));
+        }
     }
 
     @Nested
     class KnownActionValidPayloadTests {
         @Test
         void placeOrder_withValidOrderId_doesNotReturnInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"PLACE_ORDER\",\"payload\":{\"order_id\":\"12345\"},\"token\":\"t\"}");
+            Response r = invoke(encryptedRequestJson("PLACE_ORDER", new JSONObject().put("order_id", "12345"), "t"));
             assertFalse(r.getMessage().contains("INVALID_INPUT"));
         }
 
         @Test
         void getProduct_withValidProductId_doesNotReturnInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"GET_PRODUCT\",\"payload\":{\"product_id\":1},\"token\":\"t\"}");
+            Response r = invoke(encryptedRequestJson("GET_PRODUCT", new JSONObject().put("product_id", 1), "t"));
             assertFalse(r.getMessage().contains("INVALID_INPUT"));
         }
 
         @Test
         void addToCart_withValidQuantity_doesNotReturnInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"ADD_TO_CART\",\"payload\":{\"product_id\":1,\"quantity\":2},\"token\":\"t\"}");
+            Response r = invoke(encryptedRequestJson("ADD_TO_CART", new JSONObject().put("product_id", 1).put("quantity", 2), "t"));
             assertFalse(r.getMessage().contains("INVALID_INPUT"));
         }
 
         @Test
         void getLoginCaptcha_doesNotReturnInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"GET_LOGIN_CAPTCHA\",\"payload\":{}}");
+            Response r = invoke(encryptedRequestJson("GET_LOGIN_CAPTCHA", new JSONObject(), null));
             assertFalse(r.getMessage().contains("INVALID_INPUT"));
         }
 
         @Test
         void updateOrderStatus_withPendingStatus_doesNotReturnInvalidInput() throws Exception {
-            Response r = invoke("{\"action\":\"UPDATE_ORDER_STATUS\",\"payload\":{\"order_id\":1,\"status\":\"PENDING\"},\"token\":\"t\"}");
+            Response r = invoke(encryptedRequestJson("UPDATE_ORDER_STATUS", new JSONObject().put("order_id", 1).put("status", "PENDING"), "t"));
             assertFalse(r.getMessage().contains("INVALID_INPUT"));
         }
     }

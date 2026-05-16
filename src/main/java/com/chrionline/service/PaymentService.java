@@ -1,13 +1,19 @@
 package com.chrionline.service;
 
 import com.chrionline.dao.OrderDAO;
+import com.chrionline.dao.PaymentCardDAO;
 import com.chrionline.dao.PaymentDAO;
 import com.chrionline.model.Order;
 import com.chrionline.model.Payment;
+import com.chrionline.model.PaymentCard;
+import com.chrionline.security.AESUtil;
+import com.chrionline.security.PaymentCardCrypto;
 import com.chrionline.service.payment.CardValidation;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,6 +22,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class PaymentService {
 
     private final PaymentDAO paymentDAO = new PaymentDAO();
+    private final PaymentCardDAO paymentCardDAO = new PaymentCardDAO();
     private final OrderDAO orderDAO = new OrderDAO();
 
     private static final double SIMULATION_SUCCESS_RATE = 0.90;
@@ -25,6 +32,15 @@ public class PaymentService {
                                                            String cardNumberRaw,
                                                            String expiryMmYy,
                                                            String cvv) {
+        return processSimulatedCardPayment(userId, orderId, cardNumberRaw, expiryMmYy, cvv, false);
+    }
+
+    public Map<String, Object> processSimulatedCardPayment(int userId,
+                                                           int orderId,
+                                                           String cardNumberRaw,
+                                                           String expiryMmYy,
+                                                           String cvv,
+                                                           boolean saveCard) {
         if (orderId <= 0) {
             throw new IllegalArgumentException("order_id requis.");
         }
@@ -106,7 +122,51 @@ public class PaymentService {
         ok.put("transactionId", txId);
         ok.put("amount", amount);
         ok.put("paidAt", now.toString());
+        if (saveCard) {
+            int cardId = saveCardForUser(userId, digits, expiry);
+            ok.put("savedCardId", cardId);
+            ok.put("savedCardLast4", PaymentCardCrypto.last4(digits));
+        }
         return ok;
+    }
+
+    public Map<String, Object> processPaymentWithSavedCard(int userId,
+                                                           int orderId,
+                                                           int cardId,
+                                                           String cvv) {
+        PaymentCard card = paymentCardDAO.findByIdForUser(cardId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("Carte enregistree introuvable."));
+        String cardNumber = PaymentCardCrypto.decryptCardNumber(card.getEncryptedCardNumber(), card.getCardIv());
+        return processSimulatedCardPayment(userId, orderId, cardNumber, card.getExpiry(), cvv, false);
+    }
+
+    public List<Map<String, Object>> listSavedCards(int userId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (PaymentCard card : paymentCardDAO.findByUserId(userId)) {
+            Map<String, Object> row = new HashMap<>();
+            row.put("cardId", card.getCardId());
+            row.put("brand", card.getBrand());
+            row.put("last4", card.getLast4());
+            row.put("expiry", card.getExpiry());
+            row.put("label", card.getBrand() + " **** " + card.getLast4() + " - " + card.getExpiry());
+            out.add(row);
+        }
+        return out;
+    }
+
+    public boolean deleteSavedCard(int userId, int cardId) {
+        return paymentCardDAO.deleteForUser(cardId, userId);
+    }
+
+    private int saveCardForUser(int userId, String digits, String expiry) {
+        AESUtil.Sealed sealed = PaymentCardCrypto.encryptCardNumber(digits);
+        return paymentCardDAO.save(
+                userId,
+                PaymentCardCrypto.detectBrand(digits),
+                PaymentCardCrypto.last4(digits),
+                PaymentCardCrypto.normalizedExpiry(expiry),
+                sealed.cipherTextBase64(),
+                sealed.ivBase64());
     }
 
     private static String buildValidationErrorMessage(boolean luhnOk, boolean expiryOk, boolean cvvOk) {

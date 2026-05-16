@@ -24,9 +24,26 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS public_key TEXT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(64) NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires_at DATETIME NULL;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'CLIENT';
+CREATE TABLE IF NOT EXISTS payment_cards (
+    card_id               INT          NOT NULL AUTO_INCREMENT,
+    user_id               INT          NOT NULL,
+    brand                 VARCHAR(30)  NOT NULL,
+    last4                 CHAR(4)      NOT NULL,
+    expiry                CHAR(5)      NOT NULL,
+    encrypted_card_number TEXT         NOT NULL,
+    card_iv               VARCHAR(64)  NOT NULL,
+    created_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (card_id),
+    UNIQUE KEY uq_payment_card_user_last4_expiry (user_id, last4, expiry),
+    INDEX idx_payment_cards_user (user_id),
+    CONSTRAINT fk_payment_card_user
+        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        ON DELETE CASCADE
+);
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+DELETE FROM payment_cards;
 DELETE FROM payments;
 DELETE FROM order_items;
 DELETE FROM orders;
@@ -50,6 +67,7 @@ ALTER TABLE carts AUTO_INCREMENT = 1;
 ALTER TABLE cart_items AUTO_INCREMENT = 1;
 ALTER TABLE orders AUTO_INCREMENT = 1;
 ALTER TABLE order_items AUTO_INCREMENT = 1;
+ALTER TABLE payment_cards AUTO_INCREMENT = 1;
 ALTER TABLE payments AUTO_INCREMENT = 1;
 ALTER TABLE notifications AUTO_INCREMENT = 1;
 

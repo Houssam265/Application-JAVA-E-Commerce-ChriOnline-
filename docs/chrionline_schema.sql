@@ -215,6 +215,24 @@ CREATE TABLE payments (
     -- NOTE: UNIQUE on order_id already acts as an index
 );
 
+CREATE TABLE payment_cards (
+    card_id               INT          NOT NULL AUTO_INCREMENT,
+    user_id               INT          NOT NULL,
+    brand                 VARCHAR(30)  NOT NULL,
+    last4                 CHAR(4)      NOT NULL,
+    expiry                CHAR(5)      NOT NULL,
+    encrypted_card_number TEXT         NOT NULL,
+    card_iv               VARCHAR(64)  NOT NULL,
+    created_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (card_id),
+    UNIQUE KEY uq_payment_card_user_last4_expiry (user_id, last4, expiry),
+    INDEX idx_payment_cards_user (user_id),
+    CONSTRAINT fk_payment_card_user
+        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        ON DELETE CASCADE
+);
+
 -- ─────────────────────────────────────────
 --  10. NOTIFICATIONS
 -- ─────────────────────────────────────────

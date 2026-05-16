@@ -150,6 +150,18 @@
                     </HBox>
 
                     <VBox spacing="8">
+                        <Label text="Saved cards" styleClass="field-label"/>
+                        <HBox spacing="8" alignment="CENTER_LEFT">
+                            <ComboBox fx:id="savedCardCombo" promptText="Nouvelle carte" maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                            <Button fx:id="deleteSavedCardButton" onAction="#handleDeleteSavedCard" prefWidth="44" prefHeight="38">
+                                <graphic>
+                                    <FontIcon iconLiteral="fas-trash" iconSize="13"/>
+                                </graphic>
+                            </Button>
+                        </HBox>
+                    </VBox>
+
+                    <VBox spacing="8">
                         <Label text="Card number" styleClass="field-label"/>
                         <StackPane alignment="CENTER_RIGHT">
                             <TextField fx:id="cardNumberField" promptText="1234 5678 9012 3456" styleClass="auth-field" onKeyReleased="#handleCardNumberKeyTyped" style="-fx-padding: 0 96px 0 16px;"/>
@@ -173,6 +185,8 @@
                             <Label fx:id="cvvError" text="" styleClass="error-label" visible="false" managed="false"/>
                         </VBox>
                     </HBox>
+
+                    <CheckBox fx:id="saveCardCheckBox" text="Enregistrer cette carte chiffrée pour mes prochains paiements"/>
 
                     <Region prefHeight="8"/>
 

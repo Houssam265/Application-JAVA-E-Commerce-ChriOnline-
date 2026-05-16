@@ -93,7 +93,9 @@ public class ClientHandler implements Runnable {
     private static final long LOGIN_LOCKOUT_MS   = 5 * 60_000L; // 5 minutes
     private static final long ORDER_REPLAY_WINDOW_MS = 2 * 60_000L;
     private static final long PAYMENT_REPLAY_WINDOW_MS = 2 * 60_000L;
+    private static final long APP_REPLAY_WINDOW_MS = 2 * 60_000L;
     private static final long OPERATION_NONCE_WINDOW_MS = 2 * 60_000L;
+    private static final ConcurrentMap<String, Long> SEEN_APP_REQUESTS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Long> SEEN_ORDER_REQUESTS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Long> SEEN_PAYMENT_REQUESTS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, OperationNonce> ISSUED_OPERATION_NONCES = new ConcurrentHashMap<>();
@@ -218,7 +220,7 @@ public class ClientHandler implements Runnable {
                 if (msg.isEmpty()) continue;
                 LOG.info("[{}] << {}", clientId, msg);
 
-                Response response = processRequest(msg);
+                Response response = wrapHybridResponseIfRequested(null, processRequest(msg));
                 String   jsonOut  = GSON.toJson(response);
                 out.println(jsonOut);
                 LOG.info("[TLS] Response sent to {}: success={}", clientIp, response.isSuccess());
@@ -294,9 +296,15 @@ public class ClientHandler implements Runnable {
             LOG.warn("[HYBRID] Impossible de dechiffrer la requete action={}: {}", action, e.getMessage(), e);
             return Response.error("Impossible de dechiffrer la requete hybride.");
         }
-        if (MessageProtocol.ACTION_PAYMENT.equals(action) && currentHybridAesKey == null) {
-            LOG.warn("[HYBRID] Paiement refuse sans enveloppe AES/RSA.");
-            return invalidInput("Les donnees de paiement doivent etre chiffrees avec AES/RSA.");
+        if (isHybridRequiredAction(action) && currentHybridAesKey == null) {
+            LOG.warn("[HYBRID] Requete applicative refusee sans enveloppe AES/RSA: {}", action);
+            return invalidInput("La requete applicative doit etre chiffree avec AES/RSA.");
+        }
+        if (isHybridRequiredAction(action)) {
+            Response replayValidation = validateReplayProtectedApplicationRequest(req, action);
+            if (replayValidation != null) {
+                return replayValidation;
+            }
         }
 
         try {
@@ -313,7 +321,7 @@ public class ClientHandler implements Runnable {
             // ── Auth (no token required) ──────────────────────────────────
             case MessageProtocol.ACTION_LOGIN:
                 if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
-                return wrapHybridResponseIfRequested(req, handleLogin(req));
+                return handleLogin(req);
             case MessageProtocol.ACTION_REGISTER:
                 if (isIpBlocked()) return Response.error("Votre adresse IP est bloquee pour securite. Contactez l'administrateur.");
                 return handleRegister(req);
@@ -345,7 +353,7 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_ADMIN_CHALLENGE_REQUEST:
                 return handleAdminChallengeRequest(req);
             case MessageProtocol.ACTION_ADMIN_CHALLENGE_VERIFY:
-                return wrapHybridResponseIfRequested(req, handleAdminChallengeVerify(req));
+                return handleAdminChallengeVerify(req);
 
             // ── Auth (token required) ─────────────────────────────────────
             case MessageProtocol.ACTION_LOGOUT:
@@ -395,7 +403,13 @@ public class ClientHandler implements Runnable {
                 return handlePlaceOrder(req);
             case MessageProtocol.ACTION_PAYMENT:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
-                return wrapHybridResponseIfRequested(req, handlePayment(req));
+                return handlePayment(req);
+            case MessageProtocol.ACTION_LIST_PAYMENT_CARDS:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleListPaymentCards(req);
+            case MessageProtocol.ACTION_DELETE_PAYMENT_CARD:
+                if (!requireValidToken(req)) return Response.error("Invalid or expired session");
+                return handleDeletePaymentCard(req);
             case MessageProtocol.ACTION_GET_ORDERS:
                 if (!requireValidToken(req)) return Response.error("Invalid or expired session");
                 return handleGetOrders(req);
@@ -551,6 +565,58 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private boolean isHybridRequiredAction(String action) {
+        return switch (action) {
+            case MessageProtocol.ACTION_LOGIN,
+                 MessageProtocol.ACTION_REGISTER,
+                 MessageProtocol.ACTION_LOGOUT,
+                 MessageProtocol.ACTION_ADMIN_CHALLENGE_REQUEST,
+                 MessageProtocol.ACTION_ADMIN_CHALLENGE_VERIFY,
+                 MessageProtocol.ACTION_VERIFY_EMAIL,
+                 MessageProtocol.ACTION_RESEND_VERIFICATION_EMAIL,
+                 MessageProtocol.ACTION_VERIFY_LOGIN_IP,
+                 MessageProtocol.ACTION_RESEND_LOGIN_IP_VERIFICATION,
+                 MessageProtocol.ACTION_FORGOT_PASSWORD,
+                 MessageProtocol.ACTION_RESET_PASSWORD,
+                 MessageProtocol.ACTION_GET_LOGIN_CAPTCHA,
+                 MessageProtocol.ACTION_GET_LOGIN_SECURITY_STATE,
+                 MessageProtocol.ACTION_GET_PRODUCTS,
+                 MessageProtocol.ACTION_GET_PRODUCT,
+                 MessageProtocol.ACTION_GET_CATEGORIES,
+                 MessageProtocol.ACTION_GET_TOP_SELLING_PRODUCTS,
+                 MessageProtocol.ACTION_GET_RECENT_PRODUCTS,
+                 MessageProtocol.ACTION_GET_OPERATION_NONCE,
+                 MessageProtocol.ACTION_GET_CART,
+                 MessageProtocol.ACTION_ADD_TO_CART,
+                 MessageProtocol.ACTION_UPDATE_CART_ITEM,
+                 MessageProtocol.ACTION_REMOVE_FROM_CART,
+                 MessageProtocol.ACTION_CLEAR_CART,
+                 MessageProtocol.ACTION_PLACE_ORDER,
+                 MessageProtocol.ACTION_PAYMENT,
+                 MessageProtocol.ACTION_LIST_PAYMENT_CARDS,
+                 MessageProtocol.ACTION_DELETE_PAYMENT_CARD,
+                 MessageProtocol.ACTION_GET_ORDERS,
+                 MessageProtocol.ACTION_GET_ORDER_DETAILS,
+                 MessageProtocol.ACTION_UPDATE_ORDER_STATUS,
+                 MessageProtocol.ACTION_UPDATE_PROFILE,
+                 MessageProtocol.ACTION_CHANGE_PASSWORD,
+                 MessageProtocol.ACTION_ACTIVATE_ADMIN_ACCESS,
+                 MessageProtocol.ACTION_GET_NOTIFICATIONS,
+                 MessageProtocol.ACTION_MARK_NOTIFICATION_READ,
+                 MessageProtocol.ACTION_ADMIN_CREATE_PRODUCT,
+                 MessageProtocol.ACTION_ADMIN_UPDATE_PRODUCT,
+                 MessageProtocol.ACTION_ADMIN_DELETE_PRODUCT,
+                 MessageProtocol.ACTION_ADMIN_LIST_USERS,
+                 MessageProtocol.ACTION_ADMIN_UPDATE_USER_ROLE,
+                 MessageProtocol.ACTION_ADMIN_SET_USER_SUSPENDED,
+                 MessageProtocol.ACTION_ADMIN_LIST_ORDERS,
+                 MessageProtocol.ACTION_ADMIN_ADD_CATEGORY,
+                 MessageProtocol.ACTION_ADMIN_UPDATE_CATEGORY,
+                 MessageProtocol.ACTION_ADMIN_DELETE_CATEGORY -> true;
+            default -> false;
+        };
+    }
+
     /**
      * Si la requete contient une cle AES chiffree, dechiffre cette cle et chiffre
      * le payload de la reponse en AES-GCM. Le client recoit alors :
@@ -574,9 +640,6 @@ public class ClientHandler implements Runnable {
         if (aesKey == null) {
             return response;
         }
-        if (!response.isSuccess()) {
-            return response;
-        }
         try {
             String plainPayloadJson = GSON.toJson(response.getPayload());
             AESUtil.Sealed sealed = AESUtil.encrypt(aesKey, plainPayloadJson);
@@ -584,7 +647,7 @@ public class ClientHandler implements Runnable {
             hybridPayload.put(MessageProtocol.KEY_ENCRYPTED_PAYLOAD, sealed.cipherTextBase64());
             hybridPayload.put(MessageProtocol.KEY_AES_IV, sealed.ivBase64());
             hybridPayload.put("hybrid", true);
-            return new Response(true, response.getMessage(), hybridPayload, response.getToken());
+            return new Response(response.isSuccess(), response.getMessage(), hybridPayload, response.getToken());
         } catch (Exception e) {
             LOG.warn("[HYBRID] Impossible de chiffrer la reponse: {}", e.getMessage(), e);
             return Response.error("Erreur de chiffrement de la reponse hybride.");
@@ -626,6 +689,43 @@ public class ClientHandler implements Runnable {
             return;
         }
         LOG.warn("[AUDIT] action={} status=ERROR userId={} details={}", action, userId, details);
+    }
+
+    private Response validateReplayProtectedApplicationRequest(Request req, String action) {
+        String requestId = req.getRequestId();
+        Long timestamp = req.getTimestamp();
+        long now = System.currentTimeMillis();
+
+        if (requestId == null || requestId.isBlank()) {
+            logActionError("APP_REPLAY_CHECK", connectedUserId > 0 ? connectedUserId : null,
+                    "Missing requestId for action=" + action);
+            return Response.error("Requete invalide: requestId manquant.");
+        }
+        if (timestamp == null || timestamp <= 0L) {
+            logActionError("APP_REPLAY_CHECK", connectedUserId > 0 ? connectedUserId : null,
+                    "Missing timestamp for action=" + action);
+            return Response.error("Requete invalide: timestamp manquant.");
+        }
+
+        cleanupSeenRequests(SEEN_APP_REQUESTS, now, APP_REPLAY_WINDOW_MS);
+
+        long drift = Math.abs(now - timestamp);
+        if (drift > APP_REPLAY_WINDOW_MS) {
+            logActionError("APP_REPLAY_CHECK", connectedUserId > 0 ? connectedUserId : null,
+                    "Expired request action=" + action + " requestId=" + requestId + " driftMs=" + drift);
+            return Response.error("Requete expiree ou horodatage invalide.");
+        }
+
+        String actor = req.getToken() == null || req.getToken().isBlank() ? getClientIpAddress() : req.getToken();
+        String replayKey = actor + ":" + action + ":" + requestId;
+        Long previous = SEEN_APP_REQUESTS.putIfAbsent(replayKey, now);
+        if (previous != null) {
+            logActionError("APP_REPLAY_CHECK", connectedUserId > 0 ? connectedUserId : null,
+                    "Replay detected action=" + action + " requestId=" + requestId);
+            return Response.error("Requete dupliquee detectee.");
+        }
+
+        return null;
     }
 
     private Response validateReplayProtectedPayment(Request req, Integer userId, Integer orderId) {
@@ -1384,12 +1484,20 @@ public class ClientHandler implements Runnable {
                     getPayloadString(req, "expiry"),
                     getPayloadString(req, "expiryMmYy"));
             String cvv = payloadValueAsString(req, "cvv");
+            Integer savedCardId = firstNonBlankInt(
+                    req.getPayloadInt("card_id"),
+                    req.getPayloadInt("cardId"));
+            boolean saveCard = Boolean.TRUE.equals(req.getPayload().get("save_card"))
+                    || Boolean.TRUE.equals(req.getPayload().get("saveCard"))
+                    || "true".equalsIgnoreCase(payloadValueAsString(req, "save_card"))
+                    || "true".equalsIgnoreCase(payloadValueAsString(req, "saveCard"));
 
-            if (orderId == null || orderId <= 0
-                    || cardNumber == null || cardNumber.isBlank()
-                    || expiry == null || expiry.isBlank()
-                    || cvv == null || cvv.isBlank()) {
-                return Response.error("Champs requis : order_id, card_number, expiry (MM/YY), cvv.");
+            if (orderId == null || orderId <= 0 || cvv == null || cvv.isBlank()) {
+                return Response.error("Champs requis : order_id et cvv.");
+            }
+            if (savedCardId == null && (cardNumber == null || cardNumber.isBlank()
+                    || expiry == null || expiry.isBlank())) {
+                return Response.error("Champs requis : card_number et expiry, ou card_id pour une carte enregistree.");
             }
 
             Response nonceValidation = validateOperationNonce(req, userId, MessageProtocol.ACTION_PAYMENT, String.valueOf(orderId));
@@ -1402,8 +1510,9 @@ public class ClientHandler implements Runnable {
                 return replayValidation;
             }
 
-            Map<String, Object> result = paymentService.processSimulatedCardPayment(
-                    userId, orderId, cardNumber, expiry, cvv);
+            Map<String, Object> result = savedCardId != null
+                    ? paymentService.processPaymentWithSavedCard(userId, orderId, savedCardId, cvv)
+                    : paymentService.processSimulatedCardPayment(userId, orderId, cardNumber, expiry, cvv, saveCard);
 
             if (Boolean.TRUE.equals(result.get("success"))) {
                 sendUdpNotification(
@@ -1422,6 +1531,44 @@ public class ClientHandler implements Runnable {
         } catch (RuntimeException e) {
             LOG.warn("[PAYMENT] Unexpected error: {}", e.getMessage(), e);
             return Response.error("Erreur serveur lors du paiement.");
+        }
+    }
+
+    private Response handleListPaymentCards(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("cards", paymentService.listSavedCards(userId));
+            return Response.ok("PAYMENT_CARDS_READY", payload);
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.warn("[PAYMENT_CARD] Unexpected error: {}", e.getMessage(), e);
+            return Response.error("Erreur serveur lors du chargement des cartes.");
+        }
+    }
+
+    private Response handleDeletePaymentCard(Request req) {
+        try {
+            int userId = sessionManager.getUserFromToken(req.getToken())
+                    .map(User::getUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable."));
+            Integer cardId = firstNonBlankInt(req.getPayloadInt("card_id"), req.getPayloadInt("cardId"));
+            if (cardId == null || cardId <= 0) {
+                return Response.error("card_id manquant.");
+            }
+            boolean deleted = paymentService.deleteSavedCard(userId, cardId);
+            if (!deleted) {
+                return Response.error("Carte enregistree introuvable.");
+            }
+            return Response.ok("PAYMENT_CARD_DELETED", Map.of("cardId", cardId));
+        } catch (IllegalArgumentException e) {
+            return Response.error(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.warn("[PAYMENT_CARD] Unexpected error: {}", e.getMessage(), e);
+            return Response.error("Erreur serveur lors de la suppression de la carte.");
         }
     }
 
@@ -1782,11 +1929,23 @@ public class ClientHandler implements Runnable {
             case MessageProtocol.ACTION_PAYMENT: {
                 Integer orderId = firstNonBlankInt(req.getPayloadInt("order_id"), req.getPayloadInt("orderId"));
                 InputValidator.validatePositiveInt(orderId, "order_id", 1, 1_000_000_000);
-                InputValidator.sanitize(firstNonBlank(getPayloadString(req, "card_number"), getPayloadString(req, "cardNumber")), "card_number");
-                InputValidator.sanitize(firstNonBlank(getPayloadString(req, "expiry"), getPayloadString(req, "expiryMmYy")), "expiry");
+                Integer cardId = firstNonBlankInt(req.getPayloadInt("card_id"), req.getPayloadInt("cardId"));
+                if (cardId != null) {
+                    InputValidator.validatePositiveInt(cardId, "card_id", 1, 1_000_000_000);
+                } else {
+                    InputValidator.sanitize(firstNonBlank(getPayloadString(req, "card_number"), getPayloadString(req, "cardNumber")), "card_number");
+                    InputValidator.sanitize(firstNonBlank(getPayloadString(req, "expiry"), getPayloadString(req, "expiryMmYy")), "expiry");
+                }
                 InputValidator.sanitize(payloadValueAsString(req, "cvv"), "cvv");
                 break;
             }
+            case MessageProtocol.ACTION_LIST_PAYMENT_CARDS:
+                break;
+            case MessageProtocol.ACTION_DELETE_PAYMENT_CARD:
+                InputValidator.validatePositiveInt(
+                        firstNonBlankInt(req.getPayloadInt("card_id"), req.getPayloadInt("cardId")),
+                        "card_id", 1, 1_000_000_000);
+                break;
             case MessageProtocol.ACTION_PLACE_ORDER: {
                 String rawOrderId = firstNonBlank(
                         payloadValueAsString(req, "order_id"),

@@ -212,7 +212,7 @@ public class Client {
             if (!isConnected()) {
                 connectWithRetry();
             }
-            return sendOnce(request);
+            return sendHybrid(request);
         } catch (SocketTimeoutException e) {
             disconnect();
             throw new IOException("Delai d'attente depasse - le serveur ne repond pas.", e);
@@ -260,7 +260,7 @@ public class Client {
     }
 
     /**
-     * Envoi hybride RSA -> AES :
+     * Envoi hybride RSA -> AES utilise automatiquement par {@link #send(Request)} :
      * <ol>
      *   <li>Genere une cle AES-256 fraiche (module AES "Achraf").</li>
      *   <li>Chiffre cette cle avec la cle publique RSA du serveur (recue via HELLO).</li>
@@ -294,8 +294,8 @@ public class Client {
             encryptedRequest.setTimestamp(request.getTimestamp());
             encryptedRequest.setOperationNonce(request.getOperationNonce());
 
-            Response response = send(encryptedRequest);
-            if (response == null || !response.isSuccess()) return response;
+            Response response = sendOnce(encryptedRequest);
+            if (response == null) return null;
 
             JSONObject payload = response.getPayloadAsJsonObject();
             String encrypted = payload.optString(MessageProtocol.KEY_ENCRYPTED_PAYLOAD, null);
@@ -315,7 +315,7 @@ public class Client {
                 decryptedPayload = trimmed;
             }
             LOG.info("[HYBRID] Payload AES-GCM dechiffre avec succes ({} octets clair)", plainJson.length());
-            return new Response(true, response.getMessage(), decryptedPayload, response.getToken());
+            return new Response(response.isSuccess(), response.getMessage(), decryptedPayload, response.getToken());
         } catch (IOException ioe) {
             throw ioe;
         } catch (Exception e) {
