@@ -264,26 +264,37 @@ public class Client {
      * <ol>
      *   <li>Genere une cle AES-256 fraiche (module AES "Achraf").</li>
      *   <li>Chiffre cette cle avec la cle publique RSA du serveur (recue via HELLO).</li>
-     *   <li>Ajoute {@code encryptedAesKey} au payload, puis envoie la requete via SSLSocket.</li>
+     *   <li>Chiffre le payload en AES-GCM avec un IV unique.</li>
+     *   <li>Construit le JSON {@code { encryptedAesKey, aesIv, encryptedPayload }} et l'envoie via SSLSocket.</li>
      *   <li>Si le serveur repond avec {@code encryptedPayload + aesIv}, dechiffre le payload
      *       en AES-GCM et retourne une nouvelle {@link Response} avec le payload en clair.</li>
      * </ol>
-     *
-     * <p>Sans cle RSA disponible, retombe automatiquement sur {@link #send(Request)}.
      */
     public Response sendHybrid(Request request) throws IOException {
         if (serverRsaPublicKey == null) {
-            LOG.warn("[HYBRID] Cle publique RSA serveur indisponible - bascule sur envoi clair.");
-            return send(request);
+            throw new IOException("Cle publique RSA serveur indisponible pour le chiffrement hybride.");
         }
         try {
             SecretKey aesKey = AESUtil.generateKey();
             String wrappedAesKey = HybridCryptoUtil.wrapAesKey(aesKey, serverRsaPublicKey, HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1);
-            if (request.getPayload() == null) {
-                request.setPayload(new java.util.HashMap<>());
-            }
-            request.getPayload().put(MessageProtocol.KEY_ENCRYPTED_AES_KEY, wrappedAesKey);
-            Response response = send(request);
+            JSONObject plainPayload = request.getPayload() == null
+                    ? new JSONObject()
+                    : new JSONObject(request.getPayload());
+            AESUtil.Sealed sealedRequest = AESUtil.encrypt(aesKey, plainPayload.toString());
+
+            JSONObject encryptedPayload = new JSONObject();
+            encryptedPayload.put(MessageProtocol.KEY_ENCRYPTED_AES_KEY, wrappedAesKey);
+            encryptedPayload.put(MessageProtocol.KEY_AES_IV, sealedRequest.ivBase64());
+            encryptedPayload.put(MessageProtocol.KEY_ENCRYPTED_PAYLOAD, sealedRequest.cipherTextBase64());
+            encryptedPayload.put("hybrid", true);
+            encryptedPayload.put("scheme", "AES-256-GCM+RSA-PKCS1");
+
+            Request encryptedRequest = new Request(request.getAction(), encryptedPayload, request.getToken());
+            encryptedRequest.setRequestId(request.getRequestId());
+            encryptedRequest.setTimestamp(request.getTimestamp());
+            encryptedRequest.setOperationNonce(request.getOperationNonce());
+
+            Response response = send(encryptedRequest);
             if (response == null || !response.isSuccess()) return response;
 
             JSONObject payload = response.getPayloadAsJsonObject();

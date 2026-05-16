@@ -26,6 +26,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -139,6 +140,9 @@ public class ClientHandler implements Runnable {
 
     /** Output writer — kept as a field so helper methods can write responses. */
     private PrintWriter out;
+
+    /** Cle AES de la requete hybride courante, reutilisee pour chiffrer la reponse. */
+    private SecretKey currentHybridAesKey;
 
     /** Indique qu'il faut fermer la connexion TCP apres la prochaine reponse. */
     private boolean disconnectAfterResponse = false;
@@ -265,6 +269,7 @@ public class ClientHandler implements Runnable {
      * appropriate handler method.
      */
     private Response processRequest(String jsonLine) {
+        currentHybridAesKey = null;
         Request req;
         try {
             req = GSON.fromJson(jsonLine, Request.class);
@@ -280,6 +285,20 @@ public class ClientHandler implements Runnable {
         }
 
         String action = req.getAction().trim();
+        try {
+            decryptHybridRequestPayloadIfPresent(req);
+        } catch (IllegalArgumentException e) {
+            LOG.info("[TLS] Request received from {}: action={}", getClientIpAddress(), action);
+            return invalidInput(e.getMessage());
+        } catch (RuntimeException e) {
+            LOG.warn("[HYBRID] Impossible de dechiffrer la requete action={}: {}", action, e.getMessage(), e);
+            return Response.error("Impossible de dechiffrer la requete hybride.");
+        }
+        if (MessageProtocol.ACTION_PAYMENT.equals(action) && currentHybridAesKey == null) {
+            LOG.warn("[HYBRID] Paiement refuse sans enveloppe AES/RSA.");
+            return invalidInput("Les donnees de paiement doivent etre chiffrees avec AES/RSA.");
+        }
+
         try {
             validateRequestInputForAction(action, req);
         } catch (ValidationException e) {
@@ -492,6 +511,46 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private void decryptHybridRequestPayloadIfPresent(Request req) {
+        if (req == null || req.getPayload() == null || req.getPayload().isEmpty()) {
+            return;
+        }
+
+        Object encryptedAesKeyObj = req.getPayload().get(MessageProtocol.KEY_ENCRYPTED_AES_KEY);
+        Object encryptedPayloadObj = req.getPayload().get(MessageProtocol.KEY_ENCRYPTED_PAYLOAD);
+        Object ivObj = req.getPayload().get(MessageProtocol.KEY_AES_IV);
+
+        boolean hasHybridMarker = encryptedAesKeyObj != null || encryptedPayloadObj != null || ivObj != null;
+        if (!hasHybridMarker) {
+            return;
+        }
+        if (sessionRsaKeyPair == null) {
+            throw new IllegalArgumentException("Cle RSA serveur indisponible.");
+        }
+        if (!(encryptedAesKeyObj instanceof String encryptedAesKey) || encryptedAesKey.isBlank()) {
+            throw new IllegalArgumentException("encryptedAesKey manquant.");
+        }
+        if (!(encryptedPayloadObj instanceof String encryptedPayload) || encryptedPayload.isBlank()) {
+            throw new IllegalArgumentException("encryptedPayload manquant.");
+        }
+        if (!(ivObj instanceof String iv) || iv.isBlank()) {
+            throw new IllegalArgumentException("aesIv manquant.");
+        }
+
+        try {
+            SecretKey aesKey = HybridCryptoUtil.unwrapAesKey(encryptedAesKey, sessionRsaKeyPair.getPrivate(), HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1);
+            String plainPayloadJson = AESUtil.decrypt(aesKey, encryptedPayload, iv);
+            JSONObject plainPayload = plainPayloadJson == null || plainPayloadJson.isBlank()
+                    ? new JSONObject()
+                    : new JSONObject(plainPayloadJson);
+            req.setPayload(plainPayload.toMap());
+            currentHybridAesKey = aesKey;
+            LOG.info("[HYBRID] Requete {} dechiffree en AES-GCM", req.getAction());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     /**
      * Si la requete contient une cle AES chiffree, dechiffre cette cle et chiffre
      * le payload de la reponse en AES-GCM. Le client recoit alors :
@@ -500,23 +559,32 @@ public class ClientHandler implements Runnable {
      * </pre>
      */
     private Response wrapHybridResponseIfRequested(Request req, Response response) {
-        if (req == null || req.getPayload() == null) return response;
-        Object encryptedAesKeyObj = req.getPayload().get(MessageProtocol.KEY_ENCRYPTED_AES_KEY);
-        if (!(encryptedAesKeyObj instanceof String) || ((String) encryptedAesKeyObj).isBlank()) {
+        SecretKey aesKey = currentHybridAesKey;
+        if (aesKey == null && req != null && req.getPayload() != null) {
+            Object encryptedAesKeyObj = req.getPayload().get(MessageProtocol.KEY_ENCRYPTED_AES_KEY);
+            if (encryptedAesKeyObj instanceof String encryptedAesKey && !encryptedAesKey.isBlank() && sessionRsaKeyPair != null) {
+                try {
+                    aesKey = HybridCryptoUtil.unwrapAesKey(encryptedAesKey, sessionRsaKeyPair.getPrivate(), HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1);
+                } catch (Exception e) {
+                    LOG.warn("[HYBRID] Impossible de dechiffrer la cle AES pour la reponse: {}", e.getMessage(), e);
+                    return Response.error("Erreur de dechiffrement de la cle AES.");
+                }
+            }
+        }
+        if (aesKey == null) {
             return response;
         }
-        if (!response.isSuccess() || sessionRsaKeyPair == null) {
+        if (!response.isSuccess()) {
             return response;
         }
         try {
-            SecretKey aesKey = HybridCryptoUtil.unwrapAesKey((String) encryptedAesKeyObj, sessionRsaKeyPair.getPrivate(), HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1);
             String plainPayloadJson = GSON.toJson(response.getPayload());
             AESUtil.Sealed sealed = AESUtil.encrypt(aesKey, plainPayloadJson);
             Map<String, Object> hybridPayload = new HashMap<>();
             hybridPayload.put(MessageProtocol.KEY_ENCRYPTED_PAYLOAD, sealed.cipherTextBase64());
             hybridPayload.put(MessageProtocol.KEY_AES_IV, sealed.ivBase64());
             hybridPayload.put("hybrid", true);
-            return new Response(true, response.getMessage(), hybridPayload, null);
+            return new Response(true, response.getMessage(), hybridPayload, response.getToken());
         } catch (Exception e) {
             LOG.warn("[HYBRID] Impossible de chiffrer la reponse: {}", e.getMessage(), e);
             return Response.error("Erreur de chiffrement de la reponse hybride.");

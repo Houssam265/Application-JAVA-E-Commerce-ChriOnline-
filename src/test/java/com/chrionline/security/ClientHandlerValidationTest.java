@@ -1,6 +1,7 @@
 package com.chrionline.security;
 
 import com.chrionline.dao.UserDAO;
+import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Response;
 import com.chrionline.server.ClientHandler;
 import com.chrionline.server.SessionManager;
@@ -13,13 +14,17 @@ import com.chrionline.service.OrderService;
 import com.chrionline.service.PaymentService;
 import com.chrionline.service.ProductService;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.json.JSONObject;
 
+import javax.crypto.SecretKey;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.security.KeyPair;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -30,6 +35,7 @@ class ClientHandlerValidationTest {
 
     private ClientHandler handler;
     private Method processRequestMethod;
+    private KeyPair serverKeyPair;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -39,6 +45,8 @@ class ClientHandlerValidationTest {
                 return InetAddress.getLoopbackAddress();
             }
         };
+
+        serverKeyPair = com.chrionline.security.RSAUtil.generateKeyPair();
 
         handler = new ClientHandler(
                 socket,
@@ -52,7 +60,7 @@ class ClientHandlerValidationTest {
                 mock(AdminService.class),
                 mock(UDPNotificationService.class),
                 mock(AdminAuthService.class),
-                com.chrionline.security.RSAUtil.generateKeyPair()
+                serverKeyPair
         );
 
         processRequestMethod = ClientHandler.class.getDeclaredMethod("processRequest", String.class);
@@ -61,6 +69,18 @@ class ClientHandlerValidationTest {
 
     private Response invoke(String json) throws Exception {
         return (Response) processRequestMethod.invoke(handler, json);
+    }
+
+    private String encryptedRequestJson(String action, JSONObject plainPayload, String token) throws Exception {
+        SecretKey aesKey = AESUtil.generateKey();
+        AESUtil.Sealed sealed = AESUtil.encrypt(aesKey, plainPayload.toString());
+        Map<String, Object> encryptedPayload = new HashMap<>();
+        encryptedPayload.put(MessageProtocol.KEY_ENCRYPTED_AES_KEY,
+                HybridCryptoUtil.wrapAesKey(aesKey, serverKeyPair.getPublic(), HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1));
+        encryptedPayload.put(MessageProtocol.KEY_AES_IV, sealed.ivBase64());
+        encryptedPayload.put(MessageProtocol.KEY_ENCRYPTED_PAYLOAD, sealed.cipherTextBase64());
+        encryptedPayload.put("hybrid", true);
+        return new com.chrionline.protocol.Request(action, encryptedPayload, token).toJson();
     }
 
     @Nested
@@ -119,6 +139,38 @@ class ClientHandlerValidationTest {
         void updateProfile_withInvalidEmail_returnsInvalidInput() throws Exception {
             Response r = invoke("{\"action\":\"UPDATE_PROFILE\",\"payload\":{\"username\":\"alice\",\"email\":\"notanemail\"},\"token\":\"t\"}");
             assertTrue(r.getMessage().contains("INVALID_INPUT"));
+        }
+
+        @Test
+        void paymentWithPlainPayload_returnsInvalidInput() throws Exception {
+            Response r = invoke("{\"action\":\"PAYMENT\",\"payload\":{\"order_id\":1,\"card_number\":\"4111111111111111\",\"expiry\":\"12/30\",\"cvv\":\"123\"},\"token\":\"t\"}");
+            assertFalse(r.isSuccess());
+            assertTrue(r.getMessage().contains("INVALID_INPUT"));
+            assertTrue(r.getMessage().contains("AES/RSA"));
+        }
+
+        @Test
+        void encryptedLoginPayload_isDecryptedBeforeValidation() throws Exception {
+            Response r = invoke(encryptedRequestJson(
+                    "LOGIN",
+                    new JSONObject().put("email", "notanemail").put("password", "Password1!"),
+                    null));
+            assertFalse(r.isSuccess());
+            assertTrue(r.getMessage().contains("INVALID_INPUT"));
+            assertTrue(r.getMessage().contains("email format"));
+        }
+
+        @Test
+        void malformedHybridPayload_returnsInvalidInput() throws Exception {
+            SecretKey aesKey = AESUtil.generateKey();
+            Map<String, Object> encryptedPayload = new HashMap<>();
+            encryptedPayload.put(MessageProtocol.KEY_ENCRYPTED_AES_KEY,
+                    HybridCryptoUtil.wrapAesKey(aesKey, serverKeyPair.getPublic(), HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1));
+            encryptedPayload.put(MessageProtocol.KEY_ENCRYPTED_PAYLOAD, "abc");
+            Response r = invoke(new com.chrionline.protocol.Request("LOGIN", encryptedPayload, null).toJson());
+            assertFalse(r.isSuccess());
+            assertTrue(r.getMessage().contains("INVALID_INPUT"));
+            assertTrue(r.getMessage().contains("aesIv"));
         }
     }
 
