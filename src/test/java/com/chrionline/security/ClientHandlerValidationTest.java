@@ -146,7 +146,7 @@ class ClientHandlerValidationTest {
             Response r = invoke("{\"action\":\"PAYMENT\",\"payload\":{\"order_id\":1,\"card_number\":\"4111111111111111\",\"expiry\":\"12/30\",\"cvv\":\"123\"},\"token\":\"t\"}");
             assertFalse(r.isSuccess());
             assertTrue(r.getMessage().contains("INVALID_INPUT"));
-            assertTrue(r.getMessage().contains("AES/RSA"));
+            assertTrue(r.getMessage().contains("canal TLS paiement"));
         }
 
         @Test

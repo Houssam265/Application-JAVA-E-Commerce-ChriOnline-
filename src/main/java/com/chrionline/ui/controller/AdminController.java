@@ -8,6 +8,7 @@ import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.ErrorHandler;
+import com.chrionline.ui.ImageCache;
 import com.chrionline.ui.SceneManager;
 import javafx.application.Platform;
 import javafx.animation.PauseTransition;
@@ -998,7 +999,7 @@ public class AdminController {
         }
 
         try {
-            prodImagePreview.setImage(new Image(normalized, true));
+            prodImagePreview.setImage(ImageCache.get(normalized));
             prodImagePreviewPlaceholderLabel.setVisible(false);
             prodImagePreviewPlaceholderLabel.setManaged(false);
         } catch (Exception ex) {

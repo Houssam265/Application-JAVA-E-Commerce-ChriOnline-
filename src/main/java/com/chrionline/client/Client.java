@@ -16,6 +16,7 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +48,7 @@ public class Client {
     // ── Configuration ────────────────────────────────────────────────────────
     private static final String HOST            = "localhost";
     private static final int    PORT            = 8080;
+    private static final int    PAYMENT_TLS_PORT = 8443;
     private static final int    TIMEOUT_MS      = 15_000; // 15 secondes
     private static final int    RECONNECT_ATTEMPTS = 3;
     private static final int    RECONNECT_BACKOFF_MS = 300;
@@ -117,15 +119,13 @@ public class Client {
     }
 
     private void connectOnce() throws IOException {
-        try {
-            socket = TlsSupport.createClientSocket(HOST, PORT, TIMEOUT_MS);
-        } catch (GeneralSecurityException e) {
-            throw new IOException("Impossible d'etablir la connexion TLS avec le serveur.", e);
-        }
+        socket = new Socket();
+        socket.connect(new InetSocketAddress(HOST, PORT), TIMEOUT_MS);
+        socket.setSoTimeout(TIMEOUT_MS);
 
         writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
         reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-        LOG.info("Connexion client etablie vers {}:{} avec {}", HOST, PORT, TlsSupport.describeClientConfiguration());
+        LOG.info("Connexion client applicative etablie vers {}:{} en TCP", HOST, PORT);
 
         readHelloFrame();
 
@@ -138,7 +138,11 @@ public class Client {
      * utilisee plus tard pour le handshake hybride RSA -> AES.
      */
     private void readHelloFrame() throws IOException {
-        String helloLine = reader.readLine();
+        this.serverRsaPublicKey = readHelloPublicKey(reader);
+    }
+
+    private PublicKey readHelloPublicKey(BufferedReader helloReader) throws IOException {
+        String helloLine = helloReader.readLine();
         if (helloLine == null || helloLine.isBlank()) {
             throw new IOException("Le serveur n'a pas envoye de message HELLO.");
         }
@@ -152,8 +156,9 @@ public class Client {
             if (publicKeyB64 == null || publicKeyB64.isBlank()) {
                 throw new IOException("Cle publique RSA absente du HELLO.");
             }
-            this.serverRsaPublicKey = RSAUtil.decodePublicKey(publicKeyB64);
+            PublicKey publicKey = RSAUtil.decodePublicKey(publicKeyB64);
             LOG.info("[HELLO] Cle publique RSA serveur recue ({} bits)", payload.optInt("keySize", 2048));
+            return publicKey;
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
@@ -209,6 +214,9 @@ public class Client {
      */
     public Response send(Request request) throws IOException {
         try {
+            if (request != null && MessageProtocol.ACTION_PAYMENT.equals(request.getAction())) {
+                return sendPaymentOverTls(request);
+            }
             if (!isConnected()) {
                 connectWithRetry();
             }
@@ -252,6 +260,35 @@ public class Client {
         return response;
     }
 
+    private Response sendPaymentOverTls(Request request) throws IOException {
+        int paymentPort = resolvePaymentTlsPort();
+        try (Socket paymentSocket = TlsSupport.createClientSocket(HOST, paymentPort, TIMEOUT_MS);
+             BufferedWriter paymentWriter = new BufferedWriter(new OutputStreamWriter(paymentSocket.getOutputStream(), StandardCharsets.UTF_8));
+             BufferedReader paymentReader = new BufferedReader(new InputStreamReader(paymentSocket.getInputStream(), StandardCharsets.UTF_8))) {
+            LOG.info("Connexion TLS paiement etablie vers {}:{} avec {}", HOST, paymentPort, TlsSupport.describeClientConfiguration());
+            PublicKey paymentServerKey = readHelloPublicKey(paymentReader);
+            return sendHybridOnConnection(request, paymentServerKey, paymentWriter, paymentReader);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Impossible d'etablir la connexion TLS paiement avec le serveur.", e);
+        }
+    }
+
+    private int resolvePaymentTlsPort() {
+        String value = System.getProperty("CHRIONLINE_PAYMENT_TLS_PORT");
+        if (value == null || value.isBlank()) {
+            value = System.getenv("CHRIONLINE_PAYMENT_TLS_PORT");
+        }
+        if (value == null || value.isBlank()) {
+            return PAYMENT_TLS_PORT;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            LOG.warn("Port TLS paiement invalide '{}', utilisation de {}", value, PAYMENT_TLS_PORT);
+            return PAYMENT_TLS_PORT;
+        }
+    }
+
     // ── Hybride RSA -> AES (Task 2) ───────────────────────────────────────────
 
     /** @return la cle publique RSA recue lors du HELLO, ou {@code null} si non connecte. */
@@ -274,9 +311,16 @@ public class Client {
         if (serverRsaPublicKey == null) {
             throw new IOException("Cle publique RSA serveur indisponible pour le chiffrement hybride.");
         }
+        return sendHybridOnConnection(request, serverRsaPublicKey, writer, reader);
+    }
+
+    private Response sendHybridOnConnection(Request request,
+                                            PublicKey rsaPublicKey,
+                                            BufferedWriter connectionWriter,
+                                            BufferedReader connectionReader) throws IOException {
         try {
             SecretKey aesKey = AESUtil.generateKey();
-            String wrappedAesKey = HybridCryptoUtil.wrapAesKey(aesKey, serverRsaPublicKey, HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1);
+            String wrappedAesKey = HybridCryptoUtil.wrapAesKey(aesKey, rsaPublicKey, HybridCryptoUtil.RSA_TRANSFORMATION_PKCS1);
             JSONObject plainPayload = request.getPayload() == null
                     ? new JSONObject()
                     : new JSONObject(request.getPayload());
@@ -294,7 +338,7 @@ public class Client {
             encryptedRequest.setTimestamp(request.getTimestamp());
             encryptedRequest.setOperationNonce(request.getOperationNonce());
 
-            Response response = sendOnce(encryptedRequest);
+            Response response = sendOnceOnConnection(encryptedRequest, connectionWriter, connectionReader);
             if (response == null) return null;
 
             JSONObject payload = response.getPayloadAsJsonObject();
@@ -321,6 +365,24 @@ public class Client {
         } catch (Exception e) {
             throw new IOException("Echec du chiffrement hybride RSA->AES: " + e.getMessage(), e);
         }
+    }
+
+    private Response sendOnceOnConnection(Request request,
+                                          BufferedWriter connectionWriter,
+                                          BufferedReader connectionReader) throws IOException {
+        connectionWriter.write(request.toJson());
+        connectionWriter.flush();
+
+        String responseLine = connectionReader.readLine();
+        if (responseLine == null) {
+            throw new IOException("Le serveur a ferme la connexion.");
+        }
+
+        Response response = Response.fromJson(responseLine);
+        if (response.isSuccess() && response.getToken() != null) {
+            this.sessionToken = response.getToken();
+        }
+        return response;
     }
 
     /**

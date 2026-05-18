@@ -7,6 +7,7 @@ import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.ErrorHandler;
+import com.chrionline.ui.ImageCache;
 import com.chrionline.ui.SceneManager;
 import javafx.animation.Interpolator;
 import javafx.animation.KeyFrame;
@@ -376,7 +377,7 @@ public class LandingController {
         if (url != null && !url.isBlank() && !"null".equalsIgnoreCase(url)) {
             try {
                 String normalized = normalizeImageUrlForLocalFiles(url);
-                Image image = new Image(normalized, true);
+                Image image = ImageCache.get(normalized);
                 img.setImage(image);
                 image.progressProperty().addListener((obs, ov, nv) -> {
                     if (nv != null && nv.doubleValue() >= 1.0) {

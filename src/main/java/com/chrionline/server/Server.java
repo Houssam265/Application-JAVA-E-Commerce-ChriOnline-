@@ -51,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 public class Server {
 
     public static final int PORT = 8080;
+    public static final int PAYMENT_TLS_PORT = 8443;
     private static final Logger LOG = LogManager.getLogger(Server.class);
 
     public static void main(String[] args) {
@@ -103,68 +104,113 @@ public class Server {
         int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
         ExecutorService pool = Executors.newFixedThreadPool(poolSize);
 
-        try (ServerSocket serverSocket = TlsSupport.createServerSocket(port)) {
-            LOG.info("Serveur TCP securise demarre sur le port {} (pool={} threads)", port, poolSize);
-            LOG.info("{}", TlsSupport.describeServerConfiguration());
+        int paymentTlsPort = resolvePaymentTlsPort();
+        try (ServerSocket serverSocket = new ServerSocket(port);
+             ServerSocket paymentTlsSocket = TlsSupport.createServerSocket(paymentTlsPort)) {
+            LOG.info("Serveur TCP applicatif demarre sur le port {} (pool={} threads)", port, poolSize);
+            LOG.info("Serveur TLS paiement demarre sur le port {} ({})", paymentTlsPort, TlsSupport.describeServerConfiguration());
 
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> shutdown(serverSocket, pool)));
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                shutdown(serverSocket, pool);
+                shutdown(paymentTlsSocket, null);
+            }));
 
-            while (!serverSocket.isClosed()) {
-                try {
-                    Socket clientSocket = serverSocket.accept();
-                    // Protection SYN Flood / DoS simple
-                    if (!securityMonitor.isSafeToAccept(clientSocket)) {
-                        try {
-                            clientSocket.close();
-                        } catch (IOException ignored) {
-                        }
-                        continue;
-                    }
-                    // Verification basique de l'adresse IP source (IP spoofing / cas anormaux)
-                    if (IpSpoofingDetector.isSuspicious(clientSocket)) {
-                        try {
-                            clientSocket.close();
-                        } catch (IOException ignored) {
-                        }
-                        continue;
-                    }
-                    // Keep idle client connections alive longer to avoid frequent read timeouts.
-                    clientSocket.setSoTimeout(300_000);
+            Thread paymentTlsThread = new Thread(() -> acceptLoop(
+                    paymentTlsSocket, pool, securityMonitor, userDAO, authService, sessionManager,
+                    productService, cartService, orderService, paymentService, adminService,
+                    udpNotificationService, adminAuthService, sessionRsaKeyPair, true),
+                    "chrionline-payment-tls-acceptor");
+            paymentTlsThread.setDaemon(true);
+            paymentTlsThread.start();
 
-                    // Handshake TLS immédiat : rejette les clients invalides avant le pool (T2 robustesse).
-                    if (clientSocket instanceof SSLSocket sslSocket) {
-                        try {
-                            sslSocket.startHandshake();
-                        } catch (SSLHandshakeException e) {
-                            String ip = safeRemoteIp(clientSocket);
-                            SecurityAuditLogger.logTlsHandshakeFailure(ip, e.getMessage());
-                            LOG.warn("[TLS] SSLHandshakeException from {}: {}", ip, e.getMessage(), e);
-                            try {
-                                clientSocket.close();
-                            } catch (IOException ignored) {
-                            }
-                            continue;
-                        }
-                    }
-
-                    pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager, productService, cartService, orderService, paymentService, adminService, udpNotificationService, adminAuthService, sessionRsaKeyPair));
-                } catch (SocketTimeoutException e) {
-                    if (serverSocket.isClosed()) break;
-                    LOG.debug("accept() timeout (normal si SO_TIMEOUT configure): {}", e.getMessage());
-                } catch (SocketException e) {
-                    if (serverSocket.isClosed()) break;
-                    LOG.info("SocketException pendant accept(): {}", e.getMessage(), e);
-                } catch (IOException e) {
-                    if (serverSocket.isClosed()) break;
-                    LOG.warn("Erreur lors de accept()", e);
-                }
-            }
-
+            acceptLoop(serverSocket, pool, securityMonitor, userDAO, authService, sessionManager,
+                    productService, cartService, orderService, paymentService, adminService,
+                    udpNotificationService, adminAuthService, sessionRsaKeyPair, false);
         } catch (IOException | GeneralSecurityException e) {
             LOG.error("Impossible de demarrer le serveur", e);
         } finally {
             udpNotificationService.close();
             shutdown(null, pool);
+        }
+    }
+
+    private static int resolvePaymentTlsPort() {
+        String value = System.getProperty("CHRIONLINE_PAYMENT_TLS_PORT");
+        if (value == null || value.isBlank()) {
+            value = System.getenv("CHRIONLINE_PAYMENT_TLS_PORT");
+        }
+        if (value == null || value.isBlank()) {
+            return PAYMENT_TLS_PORT;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            LOG.warn("Port TLS paiement invalide '{}', utilisation de {}", value, PAYMENT_TLS_PORT);
+            return PAYMENT_TLS_PORT;
+        }
+    }
+
+    private static void acceptLoop(ServerSocket serverSocket,
+                                   ExecutorService pool,
+                                   SecurityMonitor securityMonitor,
+                                   UserDAO userDAO,
+                                   AuthService authService,
+                                   SessionManager sessionManager,
+                                   ProductService productService,
+                                   CartService cartService,
+                                   OrderService orderService,
+                                   PaymentService paymentService,
+                                   AdminService adminService,
+                                   UDPNotificationService udpNotificationService,
+                                   AdminAuthService adminAuthService,
+                                   KeyPair sessionRsaKeyPair,
+                                   boolean paymentTlsOnly) {
+        while (!serverSocket.isClosed()) {
+            try {
+                Socket clientSocket = serverSocket.accept();
+                if (!securityMonitor.isSafeToAccept(clientSocket)) {
+                    closeQuietly(clientSocket);
+                    continue;
+                }
+                if (IpSpoofingDetector.isSuspicious(clientSocket)) {
+                    closeQuietly(clientSocket);
+                    continue;
+                }
+                clientSocket.setSoTimeout(paymentTlsOnly ? 120_000 : 300_000);
+
+                if (clientSocket instanceof SSLSocket sslSocket) {
+                    try {
+                        sslSocket.startHandshake();
+                    } catch (SSLHandshakeException e) {
+                        String ip = safeRemoteIp(clientSocket);
+                        SecurityAuditLogger.logTlsHandshakeFailure(ip, e.getMessage());
+                        LOG.warn("[TLS] SSLHandshakeException from {}: {}", ip, e.getMessage(), e);
+                        closeQuietly(clientSocket);
+                        continue;
+                    }
+                }
+
+                pool.execute(new ClientHandler(clientSocket, userDAO, authService, sessionManager,
+                        productService, cartService, orderService, paymentService, adminService,
+                        udpNotificationService, adminAuthService, sessionRsaKeyPair, paymentTlsOnly));
+            } catch (SocketTimeoutException e) {
+                if (serverSocket.isClosed()) break;
+                LOG.debug("accept() timeout: {}", e.getMessage());
+            } catch (SocketException e) {
+                if (serverSocket.isClosed()) break;
+                LOG.info("SocketException pendant accept(): {}", e.getMessage(), e);
+            } catch (IOException e) {
+                if (serverSocket.isClosed()) break;
+                LOG.warn("Erreur lors de accept()", e);
+            }
+        }
+    }
+
+    private static void closeQuietly(Socket socket) {
+        if (socket == null) return;
+        try {
+            socket.close();
+        } catch (IOException ignored) {
         }
     }
 

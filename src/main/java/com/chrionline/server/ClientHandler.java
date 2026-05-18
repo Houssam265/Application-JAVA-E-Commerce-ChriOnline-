@@ -130,6 +130,9 @@ public class ClientHandler implements Runnable {
     /** Cle RSA serveur (partagee entre tous les threads) - utilisee pour le handshake hybride RSA -> AES. */
     private final KeyPair sessionRsaKeyPair;
 
+    /** True when this handler is attached to the dedicated TLS payment port. */
+    private final boolean paymentTlsOnly;
+
     // ── Per-connection state ──────────────────────────────────────────────────
     private final Socket socket;
     private final InetAddress clientAddress;
@@ -148,6 +151,10 @@ public class ClientHandler implements Runnable {
 
     /** Indique qu'il faut fermer la connexion TCP apres la prochaine reponse. */
     private boolean disconnectAfterResponse = false;
+
+    private String channelLabel() {
+        return paymentTlsOnly ? "TLS-PAYMENT" : "TCP";
+    }
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -169,6 +176,24 @@ public class ClientHandler implements Runnable {
                          UDPNotificationService udpNotificationService,
                          AdminAuthService adminAuthService,
                          KeyPair sessionRsaKeyPair) {
+        this(socket, userDAO, authService, sessionManager, productService, cartService,
+                orderService, paymentService, adminService, udpNotificationService,
+                adminAuthService, sessionRsaKeyPair, false);
+    }
+
+    public ClientHandler(Socket socket,
+                         UserDAO userDAO,
+                         AuthService authService,
+                         SessionManager sessionManager,
+                         ProductService productService,
+                         CartService cartService,
+                         OrderService orderService,
+                         PaymentService paymentService,
+                         AdminService adminService,
+                         UDPNotificationService udpNotificationService,
+                         AdminAuthService adminAuthService,
+                         KeyPair sessionRsaKeyPair,
+                         boolean paymentTlsOnly) {
         this.socket         = socket;
         this.clientAddress  = socket.getInetAddress();
         this.userDAO        = userDAO;
@@ -182,6 +207,7 @@ public class ClientHandler implements Runnable {
         this.udpNotificationService = udpNotificationService;
         this.adminAuthService = adminAuthService;
         this.sessionRsaKeyPair = sessionRsaKeyPair;
+        this.paymentTlsOnly = paymentTlsOnly;
     }
 
     // ── Runnable ──────────────────────────────────────────────────────────────
@@ -205,10 +231,10 @@ public class ClientHandler implements Runnable {
                 SSLSession sess = sslSocket.getSession();
                 String proto = sess != null ? sess.getProtocol() : "?";
                 String cipher = sess != null ? sess.getCipherSuite() : "?";
-                LOG.info("[TLS] New client connected: {} via TLS {} {}", clientIp, proto, cipher);
+                LOG.info("[{}] New client connected: {} via TLS {} {}", channelLabel(), clientIp, proto, cipher);
                 SecurityAuditLogger.logTlsClientConnected(clientIp, proto, cipher);
             } else {
-                LOG.info("[TLS] New client connected: {} via TLS (plain socket — unexpected)", clientIp);
+                LOG.info("[{}] New client connected: {} via plain TCP", channelLabel(), clientIp);
                 SecurityAuditLogger.logTlsClientConnected(clientIp, "NONE", "NONE");
             }
 
@@ -223,7 +249,7 @@ public class ClientHandler implements Runnable {
                 Response response = wrapHybridResponseIfRequested(null, processRequest(msg));
                 String   jsonOut  = GSON.toJson(response);
                 out.println(jsonOut);
-                LOG.info("[TLS] Response sent to {}: success={}", clientIp, response.isSuccess());
+                LOG.info("[{}] Response sent to {}: success={}", channelLabel(), clientIp, response.isSuccess());
                 LOG.info("[{}] >> {}", clientId, jsonOut);
 
                 if (disconnectAfterResponse) {
@@ -239,7 +265,7 @@ public class ClientHandler implements Runnable {
         } catch (SocketTimeoutException e) {
             disconnectReason = "timeout";
             LOG.info("Connexion terminee avec {}: {}", clientId, e.getMessage());
-            LOG.info("[TLS] Client disconnected: {} — reason: {}", clientIp, disconnectReason);
+            LOG.info("[{}] Client disconnected: {} — reason: {}", channelLabel(), clientIp, disconnectReason);
             SecurityAuditLogger.logTlsClientDisconnected(clientIp, disconnectReason);
         } catch (SocketException e) {
             disconnectReason = "normal";
@@ -252,12 +278,12 @@ public class ClientHandler implements Runnable {
             // Do not invalidate server session on transient socket disconnects.
             // Session must end on explicit LOGOUT or natural expiration.
             connectionToken = null;
-            if (connectedUserId > 0) {
+            if (!paymentTlsOnly && connectedUserId > 0) {
                 ClientRegistry.getInstance().unregister(connectedUserId);
                 connectedUserId = 0;
             }
             if (!"timeout".equals(disconnectReason)) {
-                LOG.info("[TLS] Client disconnected: {} — reason: {}", clientIp, disconnectReason);
+                LOG.info("[{}] Client disconnected: {} — reason: {}", channelLabel(), clientIp, disconnectReason);
                 SecurityAuditLogger.logTlsClientDisconnected(clientIp, disconnectReason);
             }
             LOG.info("Client deconnecte: {}", clientId);
@@ -277,20 +303,29 @@ public class ClientHandler implements Runnable {
             req = GSON.fromJson(jsonLine, Request.class);
         } catch (JsonSyntaxException e) {
             LOG.warn("Invalid JSON received: {}", e.getMessage());
-            LOG.info("[TLS] Request received from {}: action=<invalid_json>", getClientIpAddress());
+            LOG.info("[{}] Request received from {}: action=<invalid_json>", channelLabel(), getClientIpAddress());
             return Response.error("Invalid JSON");
         }
 
         if (req == null || req.getAction() == null || req.getAction().isBlank()) {
-            LOG.info("[TLS] Request received from {}: action=<missing>", getClientIpAddress());
+            LOG.info("[{}] Request received from {}: action=<missing>", channelLabel(), getClientIpAddress());
             return Response.error("INVALID_INPUT: action is required.");
         }
 
         String action = req.getAction().trim();
+        if (paymentTlsOnly && !MessageProtocol.ACTION_PAYMENT.equals(action)) {
+            LOG.warn("[TLS-PAYMENT] Action refusee sur le canal paiement TLS: {}", action);
+            return invalidInput("Ce canal TLS accepte uniquement la requete PAYMENT.");
+        }
+        if (!paymentTlsOnly && MessageProtocol.ACTION_PAYMENT.equals(action)) {
+            LOG.warn("[PAYMENT] Requete PAYMENT refusee sur le canal applicatif non TLS.");
+            return invalidInput("La requete PAYMENT doit passer par le canal TLS paiement.");
+        }
+
         try {
             decryptHybridRequestPayloadIfPresent(req);
         } catch (IllegalArgumentException e) {
-            LOG.info("[TLS] Request received from {}: action={}", getClientIpAddress(), action);
+            LOG.info("[{}] Request received from {}: action={}", channelLabel(), getClientIpAddress(), action);
             return invalidInput(e.getMessage());
         } catch (RuntimeException e) {
             LOG.warn("[HYBRID] Impossible de dechiffrer la requete action={}: {}", action, e.getMessage(), e);
@@ -310,11 +345,11 @@ public class ClientHandler implements Runnable {
         try {
             validateRequestInputForAction(action, req);
         } catch (ValidationException e) {
-            LOG.info("[TLS] Request received from {}: action={}", getClientIpAddress(), action);
+            LOG.info("[{}] Request received from {}: action={}", channelLabel(), getClientIpAddress(), action);
             return invalidInput(e.getMessage());
         }
 
-        LOG.info("[TLS] Request received from {}: action={}", getClientIpAddress(), action);
+        LOG.info("[{}] Request received from {}: action={}", channelLabel(), getClientIpAddress(), action);
 
         switch (action) {
 
@@ -485,7 +520,9 @@ public class ClientHandler implements Runnable {
         // Register this client's IP so order-status notifications can reach it
         sessionManager.getUserFromToken(token).ifPresent(u -> {
             connectedUserId = u.getUserId();
-            ClientRegistry.getInstance().register(u.getUserId(), clientAddress);
+            if (!paymentTlsOnly) {
+                ClientRegistry.getInstance().register(u.getUserId(), clientAddress);
+            }
         });
 
         return true;

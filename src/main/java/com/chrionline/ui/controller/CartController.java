@@ -6,6 +6,7 @@ import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.ErrorHandler;
+import com.chrionline.ui.ImageCache;
 import com.chrionline.ui.SceneManager;
 import com.chrionline.ui.notifications.AppNotification;
 import com.chrionline.ui.notifications.NotificationCenter;
@@ -404,7 +405,7 @@ public class CartController {
         if (url != null && !url.isBlank() && !"null".equalsIgnoreCase(url)) {
             try {
                 String normalized = normalizeImageUrlForLocalFiles(url);
-                Image im = new Image(normalized, true);
+                Image im = ImageCache.get(normalized);
                 imgView.setImage(im);
                 imgPh.setVisible(false);
                 imgPh.setManaged(false);

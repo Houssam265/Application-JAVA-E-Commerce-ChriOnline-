@@ -596,7 +596,7 @@ public class CheckoutController {
                 }
                 Request request = new Request(MessageProtocol.ACTION_PAYMENT, payload, client.getSessionToken());
                 request.setOperationNonce(operationNonce);
-                return client.sendHybrid(request);
+                return client.send(request);
             }
         };
 

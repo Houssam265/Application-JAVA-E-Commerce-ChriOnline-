@@ -6,6 +6,7 @@ import com.chrionline.protocol.MessageProtocol;
 import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
+import com.chrionline.ui.ImageCache;
 import com.chrionline.ui.SceneManager;
 import com.chrionline.ui.notifications.AppNotification;
 import com.chrionline.ui.notifications.NotificationCenter;
@@ -503,7 +504,7 @@ public class ProductDetailController {
             try {
                 String normalized = normalizeImageUrlForLocalFiles(url);
                 if (normalized != null) {
-                    thumb.setImage(new Image(normalized, true));
+                    thumb.setImage(ImageCache.get(normalized));
                 }
             } catch (Exception ignored) {
             }
@@ -566,7 +567,7 @@ public class ProductDetailController {
         }
         try {
             String normalized = normalizeImageUrlForLocalFiles(url);
-            Image image = new Image(normalized, true);
+            Image image = ImageCache.get(normalized);
             productImageView.setImage(image);
             image.progressProperty().addListener((obs, ov, nv) -> {
                 if (nv != null && nv.doubleValue() >= 1.0) {
