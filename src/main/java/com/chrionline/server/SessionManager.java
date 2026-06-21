@@ -49,6 +49,9 @@ public class SessionManager {
     /** Keyed by token string. Accessed from multiple threads — all methods are synchronized. */
     private final HashMap<String, Session> activeSessions = new HashMap<>();
 
+    /** IP d'origine associee a chaque token de session (en memoire uniquement). */
+    private final HashMap<String, String> sessionIpByToken = new HashMap<>();
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     /**
@@ -79,7 +82,10 @@ public class SessionManager {
         LocalDateTime now       = LocalDateTime.now();
         LocalDateTime expiresAt = now.plusMinutes(SESSION_DURATION_MINUTES);
 
-        Session session = new Session(sessionId, user.getUserId(), user.getRole(), token, now, expiresAt, true);
+        Session.Role sessionRole = user.getRole() == User.Role.ADMIN_PENDING
+                ? Session.Role.ADMIN_PENDING
+                : Session.Role.CLIENT;
+        Session session = new Session(sessionId, user.getUserId(), sessionRole, token, now, expiresAt, true);
 
         // 1. Persist to DB (source of truth)
         insertSessionToDb(session);
@@ -88,6 +94,30 @@ public class SessionManager {
         activeSessions.put(token, session);
 
         LOG.info("[SESSION] Created for userId={} -> token={}", user.getUserId(), token);
+        return session;
+    }
+
+    public synchronized Session createPrivilegedSession(User user) {
+        String        sessionId = UUID.randomUUID().toString();
+        String        token     = UUID.randomUUID().toString();
+        LocalDateTime now       = LocalDateTime.now();
+        LocalDateTime expiresAt = now.plusMinutes(SESSION_DURATION_MINUTES);
+
+        Session.Role role = switch (user.getRole()) {
+            case SUPER_ADMIN -> Session.Role.SUPER_ADMIN;
+            case ADMIN -> Session.Role.ADMIN;
+            default -> throw new IllegalArgumentException("User is not privileged.");
+        };
+
+        Session session = new Session(sessionId, user.getUserId(), role, token, now, expiresAt, true);
+
+        // 1. Persist to DB (source of truth)
+        insertSessionToDb(session);
+
+        // 2. Put in runtime cache
+        activeSessions.put(token, session);
+
+        LOG.info("[SESSION] Created privileged session for userId={} role={} -> token={}", user.getUserId(), role, token);
         return session;
     }
 
@@ -182,9 +212,33 @@ public class SessionManager {
             LOG.warn("[SESSION] invalidateSession DB update failed: {}", e.getMessage(), e);
         }
 
-        // 2. Remove from cache
+        // 2. Remove from caches
         activeSessions.remove(token);
+        sessionIpByToken.remove(token);
         LOG.info("[SESSION] Invalidated token={}", token);
+    }
+
+    public synchronized void invalidateSessionsForUser(int userId) {
+        if (userId <= 0) {
+            return;
+        }
+
+        final String sql = "UPDATE sessions SET is_active = FALSE WHERE user_id = ?";
+        try (PreparedStatement ps = conn().prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.warn("[SESSION] invalidateSessionsForUser DB update failed: {}", e.getMessage(), e);
+        }
+
+        activeSessions.entrySet().removeIf(entry -> {
+            Session session = entry.getValue();
+            boolean matches = session.getUserId() != null && session.getUserId() == userId;
+            if (matches) {
+                sessionIpByToken.remove(entry.getKey());
+            }
+            return matches;
+        });
     }
 
     /**
@@ -226,7 +280,53 @@ public class SessionManager {
      */
     public synchronized Optional<User> getUserFromToken(String token) {
         return getSession(token)
+                .filter(s -> s.getUserId() != null)
                 .flatMap(session -> userDAO.findById(session.getUserId()));
+    }
+
+    /**
+     * Associe l'adresse IP initiale a un token de session, si aucune IP
+     * n'est encore enregistree pour ce token.
+     *
+     * @param token    token de session
+     * @param clientIp IP courante du socket
+     */
+    public synchronized void bindSessionIpIfAbsent(String token, String clientIp) {
+        if (token == null || token.isBlank() || clientIp == null || clientIp.isBlank()) {
+            return;
+        }
+        sessionIpByToken.putIfAbsent(token, clientIp);
+    }
+
+    /**
+     * Verifie la coherence entre l'IP actuelle et l'IP d'origine pour ce token.
+     *
+     * @param token       token de session
+     * @param currentIp   IP courante du socket
+     * @return true si aucune IP n'etait enregistree (desormais liee) ou si elle correspond,
+     *         false si une IP differente est detectee.
+     */
+    public synchronized boolean isSessionIpConsistent(String token, String currentIp) {
+        if (token == null || token.isBlank() || currentIp == null || currentIp.isBlank()) {
+            return true;
+        }
+        String stored = sessionIpByToken.get(token);
+        if (stored == null) {
+            sessionIpByToken.put(token, currentIp);
+            return true;
+        }
+        return stored.equals(currentIp);
+    }
+
+    /**
+     * Retourne l'IP d'origine enregistree pour ce token, ou {@code null}
+     * si aucune IP n'est connue.
+     */
+    public synchronized String getSessionIp(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        return sessionIpByToken.get(token);
     }
 
     /**
@@ -257,20 +357,25 @@ public class SessionManager {
     /** Inserts a new session row into the {@code sessions} table. */
     private void insertSessionToDb(Session session) {
         final String sql =
-                "INSERT INTO sessions (session_id, user_id, token, created_at, expires_at, is_active) " +
-                        "VALUES (?, ?, ?, ?, ?, ?)";
+                "INSERT INTO sessions (session_id, user_id, role, token, created_at, expires_at, is_active) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
             ps.setString   (1, session.getSessionId());
-            ps.setInt      (2, session.getUserId());
-            ps.setString   (3, session.getToken());
-            ps.setTimestamp(4, Timestamp.valueOf(session.getCreatedAt()));
-            ps.setTimestamp(5, Timestamp.valueOf(session.getExpiresAt()));
-            ps.setBoolean  (6, session.isActive());
+            if (session.getUserId() != null) {
+                ps.setInt(2, session.getUserId());
+            } else {
+                ps.setNull(2, Types.INTEGER);
+            }
+            ps.setString   (3, session.getRole().name());
+            ps.setString   (4, session.getToken());
+            ps.setTimestamp(5, Timestamp.valueOf(session.getCreatedAt()));
+            ps.setTimestamp(6, Timestamp.valueOf(session.getExpiresAt()));
+            ps.setBoolean  (7, session.isActive());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(
-                    "[SESSION] insertSessionToDb failed for userId=" + session.getUserId()
+                    "[SESSION] insertSessionToDb failed for sessionId=" + session.getSessionId()
                             + ": " + e.getMessage(), e);
         }
     }
@@ -281,7 +386,7 @@ public class SessionManager {
      */
     private Optional<Session> findSessionInDb(String token) {
         final String sql =
-                "SELECT session_id, user_id, token, created_at, expires_at, is_active " +
+                "SELECT session_id, user_id, role, token, created_at, expires_at, is_active " +
                         "FROM sessions WHERE token = ? LIMIT 1";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
@@ -292,7 +397,15 @@ public class SessionManager {
                 }
                 Session s = new Session();
                 s.setSessionId(rs.getString  ("session_id"));
-                s.setUserId   (rs.getInt     ("user_id"));
+                
+                int userId = rs.getInt("user_id");
+                if (!rs.wasNull()) s.setUserId(userId);
+
+                String roleStr = rs.getString("role");
+                if (roleStr != null) {
+                    s.setRole(Session.Role.valueOf(roleStr));
+                }
+
                 s.setToken    (rs.getString  ("token"));
 
                 Timestamp createdAt = rs.getTimestamp("created_at");
@@ -302,7 +415,6 @@ public class SessionManager {
                 s.setExpiresAt(expiresAt != null ? expiresAt.toLocalDateTime() : null);
 
                 s.setActive(rs.getBoolean("is_active"));
-                userDAO.findById(s.getUserId()).ifPresent(user -> s.setRole(user.getRole()));
                 return Optional.of(s);
             }
         } catch (SQLException e) {

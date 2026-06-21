@@ -52,7 +52,6 @@ public class OrderHistoryController {
     // Navbar active state
     @FXML private Button navHomeBtn;
     @FXML private Button navCatalogueBtn;
-    @FXML private Button adminButton;
     @FXML private TextField headerSearchField;
     @FXML private MenuButton accountMenuButton;
     @FXML private MenuItem accountProfileItem;
@@ -91,10 +90,6 @@ public class OrderHistoryController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
         configureAccountMenu(session);
         setupFilter();
         bindNotifications();

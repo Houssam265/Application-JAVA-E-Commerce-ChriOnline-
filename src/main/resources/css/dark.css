@@ -123,6 +123,15 @@
     -fx-text-fill: #bbf7d0;
 }
 
+.role-change-dialog {
+    -fx-background-color: linear-gradient(to bottom right, rgba(17,24,39,0.98), rgba(30,41,59,0.98));
+    -fx-border-color: rgba(255, 122, 69, 0.35);
+}
+
+.role-change-dialog .content.label {
+    -fx-text-fill: rgba(234,240,255,0.86);
+}
+
 /* Toast + drawer */
 .toast-card {
     -fx-background-color: rgba(10, 14, 30, 0.86);

@@ -25,6 +25,10 @@ public final class SceneManager {
         loadScene("/fxml/Login.fxml", "ChriOnline - Connexion");
     }
 
+    public static void showAdminLogin() {
+        loadScene("/fxml/AdminLogin.fxml", "ChriOnline - Admin Connexion (RSA)");
+    }
+
     public static void showRegister() {
         loadScene("/fxml/Register.fxml", "ChriOnline - Inscription");
     }

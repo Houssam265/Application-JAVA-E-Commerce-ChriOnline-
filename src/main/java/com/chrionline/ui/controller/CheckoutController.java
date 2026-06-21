@@ -58,6 +58,9 @@ public class CheckoutController {
     @FXML private Label globalMessage;
     @FXML private StackPane cardBrandContainer;
     @FXML private Canvas cardBrandCanvas;
+    @FXML private ComboBox<SavedCardOption> savedCardCombo;
+    @FXML private Button deleteSavedCardButton;
+    @FXML private CheckBox saveCardCheckBox;
 
     // Notifications UI (KAN-31)
     @FXML private Button bellButton;
@@ -72,8 +75,6 @@ public class CheckoutController {
     @FXML private MenuItem accountOrdersItem;
     @FXML private MenuItem accountAdminItem;
     @FXML private MenuItem accountLogoutItem;
-    @FXML private Button adminButton;
-
     // Navbar buttons
     @FXML private Button navHomeBtn;
     @FXML private Button navCatalogueBtn;
@@ -95,10 +96,6 @@ public class CheckoutController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
         configureAccountMenu(session);
 
         orderId = ClientSession.getInstance().getCurrentOrderId();
@@ -110,7 +107,9 @@ public class CheckoutController {
         setActiveNav();
         renderCardBrand(CardBrand.GENERIC, false);
         setupPaymentFormatters();
+        setupSavedCardsUi();
         loadOrderSummaryFromServer();
+        loadSavedPaymentCards();
         updatePayButtonState();
     }
 
@@ -271,6 +270,83 @@ public class CheckoutController {
         cardNumberField.focusedProperty().addListener((obs, ov, focused) -> { if (!focused) validateCard(true); });
         expiryField.focusedProperty().addListener((obs, ov, focused) -> { if (!focused) validateExpiry(true); });
         cvvField.focusedProperty().addListener((obs, ov, focused) -> { if (!focused) validateCvv(true); });
+    }
+
+    private void setupSavedCardsUi() {
+        if (savedCardCombo == null) return;
+        savedCardCombo.getSelectionModel().selectedItemProperty().addListener((obs, oldV, newV) -> {
+            boolean useSaved = newV != null && newV.cardId > 0;
+            if (cardNumberField != null) {
+                cardNumberField.setDisable(useSaved);
+                cardNumberField.setText(useSaved ? "**** **** **** " + newV.last4 : "");
+            }
+            if (expiryField != null) {
+                expiryField.setDisable(useSaved);
+                expiryField.setText(useSaved ? newV.expiry : "");
+            }
+            if (saveCardCheckBox != null) {
+                saveCardCheckBox.setDisable(useSaved);
+                saveCardCheckBox.setSelected(false);
+            }
+            if (deleteSavedCardButton != null) {
+                deleteSavedCardButton.setDisable(!useSaved);
+            }
+            updatePayButtonState();
+        });
+        if (deleteSavedCardButton != null) {
+            deleteSavedCardButton.setDisable(true);
+        }
+    }
+
+    private void loadSavedPaymentCards() {
+        if (savedCardCombo == null) return;
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                return client.send(new Request(MessageProtocol.ACTION_LIST_PAYMENT_CARDS, new JSONObject(), client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> {
+            Response r = t.getValue();
+            if (r == null || !r.isSuccess()) return;
+            List<SavedCardOption> options = new ArrayList<>();
+            options.add(SavedCardOption.newCard());
+            try {
+                JSONArray cards = r.getPayloadAsJsonObject().optJSONArray("cards");
+                if (cards != null) {
+                    for (int i = 0; i < cards.length(); i++) {
+                        JSONObject c = cards.getJSONObject(i);
+                        options.add(new SavedCardOption(
+                                c.optInt("cardId", 0),
+                                c.optString("brand", "CARD"),
+                                c.optString("last4", ""),
+                                c.optString("expiry", ""),
+                                c.optString("label", "")));
+                    }
+                }
+            } catch (Exception ignored) {}
+            savedCardCombo.getItems().setAll(options);
+            savedCardCombo.getSelectionModel().selectFirst();
+        });
+        runTask(t);
+    }
+
+    @FXML
+    private void handleDeleteSavedCard() {
+        if (savedCardCombo == null) return;
+        SavedCardOption selected = savedCardCombo.getSelectionModel().getSelectedItem();
+        if (selected == null || selected.cardId <= 0) return;
+        Task<Response> t = new Task<>() {
+            @Override protected Response call() throws Exception {
+                Client client = Client.getInstance();
+                client.connect();
+                JSONObject payload = new JSONObject().put("card_id", selected.cardId);
+                return client.send(new Request(MessageProtocol.ACTION_DELETE_PAYMENT_CARD, payload, client.getSessionToken()));
+            }
+        };
+        t.setOnSucceeded(e -> loadSavedPaymentCards());
+        runTask(t);
     }
 
     @FXML
@@ -476,7 +552,9 @@ public class CheckoutController {
         ErrorHandler.clearFieldError(cvvError);
         setGlobalMessage(null, false);
 
-        boolean ok = validateCard(true) & validateExpiry(true) & validateCvv(true);
+        SavedCardOption selectedCard = savedCardCombo != null ? savedCardCombo.getSelectionModel().getSelectedItem() : null;
+        boolean useSavedCard = selectedCard != null && selectedCard.cardId > 0;
+        boolean ok = (useSavedCard || (validateCard(true) & validateExpiry(true))) & validateCvv(true);
         if (!ok) return;
         if (orderId == null || orderId.isBlank()) {
             setGlobalMessage("OrderId manquant.", true);
@@ -488,6 +566,7 @@ public class CheckoutController {
         String cardNumber = cardNumberField.getText().trim();
         String expiry = expiryField.getText().trim();
         String cvv = cvvField.getText().trim();
+        boolean saveCard = saveCardCheckBox != null && saveCardCheckBox.isSelected() && !useSavedCard;
 
         Task<Response> t = new Task<>() {
             @Override protected Response call() throws Exception {
@@ -498,8 +577,13 @@ public class CheckoutController {
 
                 JSONObject payload = new JSONObject();
                 payload.put("order_id", orderId);
-                payload.put("card_number", cardNumber);
-                payload.put("expiry", expiry);
+                if (useSavedCard) {
+                    payload.put("card_id", selectedCard.cardId);
+                } else {
+                    payload.put("card_number", cardNumber);
+                    payload.put("expiry", expiry);
+                    payload.put("save_card", saveCard);
+                }
                 payload.put("cvv", cvv);
                 Response nonceResponse = client.requestOperationNonce(MessageProtocol.ACTION_PAYMENT, nonceRequestPayload);
                 if (!nonceResponse.isSuccess()) {
@@ -520,7 +604,20 @@ public class CheckoutController {
             payButton.setDisable(false);
             Response r = t.getValue();
             if (r.isSuccess()) {
-                showResultOverlay(true, "Paiement accepté", "Merci ! Votre paiement a été validé et la commande a été mise à jour.");
+                String txId = "";
+                String amount = "";
+                try {
+                    JSONObject confirmation = r.getPayloadAsJsonObject();
+                    txId = confirmation.optString("transactionId", "");
+                    if (confirmation.has("amount")) {
+                        amount = String.format(Locale.US, "%.2f Dhs", confirmation.optDouble("amount", 0.0));
+                    }
+                } catch (Exception ignored) {}
+                StringBuilder body = new StringBuilder("Confirmation chiffrée déchiffrée avec succès via AES-GCM.");
+                if (!txId.isBlank()) body.append("\nTransaction : ").append(txId);
+                if (!amount.isBlank()) body.append("\nMontant débité : ").append(amount);
+                showResultOverlay(true, "Paiement accepté", body.toString());
+                if (saveCard) loadSavedPaymentCards();
             } else {
                 String msg = r.getMessage() == null ? "" : r.getMessage();
                 if (msg.toLowerCase().contains("stock insuffisant")) {
@@ -880,12 +977,38 @@ public class CheckoutController {
     }
 
     private void updatePayButtonState() {
-        boolean ready = cardNumberField != null && expiryField != null && cvvField != null
+        SavedCardOption selected = savedCardCombo != null ? savedCardCombo.getSelectionModel().getSelectedItem() : null;
+        boolean useSavedCard = selected != null && selected.cardId > 0;
+        boolean ready = cvvField != null && !cvvField.getText().trim().isEmpty()
+                && (useSavedCard || (cardNumberField != null && expiryField != null
                 && !cardNumberField.getText().trim().isEmpty()
-                && !expiryField.getText().trim().isEmpty()
-                && !cvvField.getText().trim().isEmpty();
+                && !expiryField.getText().trim().isEmpty()));
         if (payButton != null && (globalMessage == null || !globalMessage.isVisible())) {
             payButton.setDisable(!ready);
+        }
+    }
+
+    private static final class SavedCardOption {
+        final int cardId;
+        final String brand;
+        final String last4;
+        final String expiry;
+        final String label;
+
+        SavedCardOption(int cardId, String brand, String last4, String expiry, String label) {
+            this.cardId = cardId;
+            this.brand = brand;
+            this.last4 = last4;
+            this.expiry = expiry;
+            this.label = label == null || label.isBlank() ? brand + " **** " + last4 + " - " + expiry : label;
+        }
+
+        static SavedCardOption newCard() {
+            return new SavedCardOption(0, "Nouvelle", "", "", "Nouvelle carte");
+        }
+
+        @Override public String toString() {
+            return label;
         }
     }
 

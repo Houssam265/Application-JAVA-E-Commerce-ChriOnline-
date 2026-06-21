@@ -230,7 +230,8 @@ public class EmailVerificationController {
             session.setUsername(payload.optString("username", ""));
             session.setEmail(payload.optString("email", ""));
             String role = payload.optString("role", "CLIENT");
-            session.setRole(User.Role.valueOf(role));
+            session.setRole(com.chrionline.model.Session.Role.valueOf(role));
+            session.setAdminAccessGranted(false);
         } catch (Exception ignored) {
         }
     }

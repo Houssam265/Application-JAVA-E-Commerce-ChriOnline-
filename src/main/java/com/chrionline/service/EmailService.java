@@ -105,6 +105,25 @@ public class EmailService {
         }
     }
 
+    public void sendAdminPendingActivationEmail(User user) {
+        ensureConfigured();
+
+        String subject = "Votre acces admin ChriOnline est en attente d'activation";
+        String html = buildAdminPendingActivationHtmlBody(user);
+
+        try {
+            Session session = buildSession();
+            MimeMessage message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(user.getEmail(), false));
+            message.setSubject(subject, "UTF-8");
+            message.setContent(html, "text/html; charset=UTF-8");
+            Transport.send(message);
+        } catch (MessagingException e) {
+            throw new RuntimeException("Impossible d'envoyer l'email d'activation admin: " + e.getMessage(), e);
+        }
+    }
+
     public boolean isConfigured() {
         return host != null && !host.isBlank()
                 && from != null && !from.isBlank()
@@ -215,6 +234,21 @@ public class EmailService {
                 failures,
                 escapeHtml(clientIp == null || clientIp.isBlank() ? "inconnue" : clientIp)
         );
+    }
+
+    private String buildAdminPendingActivationHtmlBody(User user) {
+        return """
+            <html>
+              <body style="font-family: Arial, sans-serif; color: #0f172a;">
+                <h2 style="margin-bottom: 8px;">Acces administrateur en attente</h2>
+                <p>Bonjour %s,</p>
+                <p>Votre compte ChriOnline vient d'etre autorise a devenir administrateur.</p>
+                <p>Pour finaliser la demarche, connectez-vous a l'application puis ouvrez votre profil.</p>
+                <p>Vous y trouverez la section d'activation admin pour generer votre paire de cles RSA, sauvegarder votre cle privee localement et transmettre uniquement la cle publique au serveur.</p>
+                <p>Tant que cette etape n'est pas terminee, l'acces admin ne sera pas actif.</p>
+              </body>
+            </html>
+            """.formatted(escapeHtml(user.getUsername()));
     }
 
     private String escapeHtml(String value) {

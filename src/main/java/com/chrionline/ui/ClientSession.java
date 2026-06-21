@@ -1,6 +1,8 @@
 package com.chrionline.ui;
 
 import com.chrionline.model.User;
+import com.chrionline.model.Session;
+import com.chrionline.ui.notifications.NotificationCenter;
 
 /**
  * Client-side session cache for the JavaFX app.
@@ -24,7 +26,9 @@ public final class ClientSession {
     private Integer userId;
     private String username;
     private String email;
-    private User.Role role;
+    private Session.Role role;
+    private boolean adminAccessGranted;
+    private boolean pendingAdminNotificationShown;
     /** Last order created from cart (used by Checkout screen). */
     private String currentOrderId;
 
@@ -35,6 +39,8 @@ public final class ClientSession {
         this.username = null;
         this.email = null;
         this.role = null;
+        this.adminAccessGranted = false;
+        this.pendingAdminNotificationShown = false;
         this.currentOrderId = null;
     }
 
@@ -43,7 +49,15 @@ public final class ClientSession {
     }
 
     public boolean isAdmin() {
-        return role == User.Role.ADMIN;
+        return adminAccessGranted && role != null && role.isPrivileged();
+    }
+
+    public boolean isSuperAdmin() {
+        return adminAccessGranted && role == Session.Role.SUPER_ADMIN;
+    }
+
+    public boolean isAdminPending() {
+        return role == Session.Role.ADMIN_PENDING;
     }
 
     public Integer getUserId() {
@@ -70,12 +84,27 @@ public final class ClientSession {
         this.email = email;
     }
 
-    public User.Role getRole() {
+    public Session.Role getRole() {
         return role;
     }
 
-    public void setRole(User.Role role) {
+    public void setRole(Session.Role role) {
         this.role = role;
+        if (role == Session.Role.ADMIN_PENDING && !pendingAdminNotificationShown) {
+            pendingAdminNotificationShown = true;
+            NotificationCenter.getInstance().addNotification(
+                    "Votre compte peut devenir administrateur. Ouvrez votre profil pour completer l'activation RSA.");
+        } else if (role != Session.Role.ADMIN_PENDING) {
+            pendingAdminNotificationShown = false;
+        }
+    }
+
+    public boolean isAdminAccessGranted() {
+        return adminAccessGranted;
+    }
+
+    public void setAdminAccessGranted(boolean adminAccessGranted) {
+        this.adminAccessGranted = adminAccessGranted;
     }
 
     public String getCurrentOrderId() {

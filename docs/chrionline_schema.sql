@@ -29,7 +29,8 @@ CREATE TABLE users (
     username      VARCHAR(50)   NOT NULL UNIQUE,
     email         VARCHAR(150)  NOT NULL UNIQUE,
     password_hash VARCHAR(255)  NOT NULL,
-    role          ENUM('CLIENT','ADMIN') NOT NULL DEFAULT 'CLIENT',
+    role          ENUM('CLIENT','ADMIN_PENDING','ADMIN','SUPER_ADMIN') NOT NULL DEFAULT 'CLIENT',
+    public_key    TEXT NULL,
     is_suspended  BOOLEAN       NOT NULL DEFAULT FALSE,
     is_email_verified BOOLEAN   NOT NULL DEFAULT FALSE,
     email_verification_code VARCHAR(16),
@@ -56,6 +57,7 @@ CREATE TABLE users (
 CREATE TABLE sessions (
     session_id  VARCHAR(36)   NOT NULL,           -- plain UUID (java.util.UUID)
     user_id     INT           NOT NULL,
+    role        ENUM('CLIENT','ADMIN_PENDING','ADMIN','SUPER_ADMIN') NOT NULL DEFAULT 'CLIENT',
     token       VARCHAR(255)  NOT NULL UNIQUE,
     created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at  DATETIME      NOT NULL,
@@ -70,6 +72,7 @@ CREATE TABLE sessions (
 -- Fast token lookup — called on every single TCP request via isTokenValid()
 CREATE INDEX idx_session_token  ON sessions(token);
 CREATE INDEX idx_session_user   ON sessions(user_id);
+CREATE INDEX idx_session_role   ON sessions(role);
 
 -- ─────────────────────────────────────────
 --  4. PRODUCTS
@@ -210,6 +213,24 @@ CREATE TABLE payments (
         FOREIGN KEY (order_id) REFERENCES orders(order_id)
         ON DELETE CASCADE
     -- NOTE: UNIQUE on order_id already acts as an index
+);
+
+CREATE TABLE payment_cards (
+    card_id               INT          NOT NULL AUTO_INCREMENT,
+    user_id               INT          NOT NULL,
+    brand                 VARCHAR(30)  NOT NULL,
+    last4                 CHAR(4)      NOT NULL,
+    expiry                CHAR(5)      NOT NULL,
+    encrypted_card_number TEXT         NOT NULL,
+    card_iv               VARCHAR(64)  NOT NULL,
+    created_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (card_id),
+    UNIQUE KEY uq_payment_card_user_last4_expiry (user_id, last4, expiry),
+    INDEX idx_payment_cards_user (user_id),
+    CONSTRAINT fk_payment_card_user
+        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        ON DELETE CASCADE
 );
 
 -- ─────────────────────────────────────────

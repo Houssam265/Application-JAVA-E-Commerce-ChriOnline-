@@ -90,14 +90,6 @@
                             </HBox>
                         </graphic>
                     </Button>
-                    <Button fx:id="adminButton" onAction="#handleOpenAdmin" styleClass="btn-outline" visible="false" managed="false">
-                        <graphic>
-                            <HBox alignment="CENTER" spacing="6">
-                                <FontIcon iconLiteral="fas-user-shield" iconSize="14" styleClass="ikonli-muted"/>
-                                <Label text="Admin" style="-fx-text-fill: #64748b; -fx-font-weight: 600;"/>
-                            </HBox>
-                        </graphic>
-                    </Button>
                 </HBox>
             </HBox>
         </HBox>
@@ -176,6 +168,17 @@
                 </VBox>
 
                 <Label fx:id="globalMessage" text="" visible="false" managed="false" wrapText="true"/>
+            </VBox>
+
+            <VBox fx:id="adminActivationCard" styleClass="auth-card" spacing="12" maxWidth="Infinity" visible="false" managed="false">
+                <padding><Insets top="18" right="20" bottom="18" left="20"/></padding>
+                <Label text="Activation admin" styleClass="field-label" style="-fx-font-size: 15px;"/>
+                <Label fx:id="adminActivationInfoLabel"
+                       text="Votre compte est en attente d'activation admin. Generez votre paire RSA ici, sauvegardez la cle privee localement, puis l'application enverra uniquement votre cle publique au serveur."
+                       wrapText="true"
+                       styleClass="body-text"/>
+                <Button fx:id="activateAdminButton" text="Activer mon acces admin" onAction="#handleActivateAdminAccess" styleClass="btn-primary" maxWidth="Infinity" prefHeight="48"/>
+                <Label fx:id="adminActivationMessage" text="" visible="false" managed="false" wrapText="true"/>
             </VBox>
 
             <!-- Shortcut -->

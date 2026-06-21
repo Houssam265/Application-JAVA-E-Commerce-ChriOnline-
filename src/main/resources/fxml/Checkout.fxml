@@ -15,7 +15,7 @@
            styleClass="root-pane">
 
     <!-- Main layout -->
-    <VBox spacing="0" StackPane.alignment="TOP_LEFT">
+    <VBox spacing="0" StackPane.alignment="TOP_CENTER" alignment="TOP_CENTER">
         <!-- NAVBAR -->
         <HBox alignment="CENTER" styleClass="navbar" prefHeight="84">
             <HBox alignment="CENTER_LEFT" spacing="18" maxWidth="1380" HBox.hgrow="ALWAYS" style="-fx-padding: 0 28px;">
@@ -98,21 +98,13 @@
                             </HBox>
                         </graphic>
                     </Button>
-                    <Button fx:id="adminButton" onAction="#handleOpenAdmin" styleClass="btn-outline" visible="false" managed="false">
-                        <graphic>
-                            <HBox alignment="CENTER" spacing="6">
-                                <FontIcon iconLiteral="fas-user-shield" iconSize="14" styleClass="ikonli-muted"/>
-                                <Label text="Admin" style="-fx-text-fill: #64748b; -fx-font-weight: 600;"/>
-                            </HBox>
-                        </graphic>
-                    </Button>
                 </HBox>
             </HBox>
         </HBox>
 
         <!-- CONTENT -->
-        <VBox maxWidth="1200" spacing="18" style="-fx-padding: 28px 40px 40px 40px;" VBox.vgrow="ALWAYS" alignment="TOP_CENTER">
-            <HBox maxWidth="1200" spacing="22" alignment="TOP_LEFT">
+        <VBox maxWidth="1400" spacing="18" style="-fx-padding: 28px 40px 40px 40px;" VBox.vgrow="ALWAYS" alignment="TOP_CENTER">
+            <HBox maxWidth="1400" spacing="22" alignment="TOP_CENTER">
                 <!-- LEFT: Order summary -->
                 <VBox styleClass="auth-card" spacing="14" HBox.hgrow="ALWAYS">
                     <padding><Insets top="22" right="22" bottom="22" left="22"/></padding>
@@ -158,6 +150,18 @@
                     </HBox>
 
                     <VBox spacing="8">
+                        <Label text="Saved cards" styleClass="field-label"/>
+                        <HBox spacing="8" alignment="CENTER_LEFT">
+                            <ComboBox fx:id="savedCardCombo" promptText="Nouvelle carte" maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                            <Button fx:id="deleteSavedCardButton" onAction="#handleDeleteSavedCard" prefWidth="44" prefHeight="38">
+                                <graphic>
+                                    <FontIcon iconLiteral="fas-trash" iconSize="13"/>
+                                </graphic>
+                            </Button>
+                        </HBox>
+                    </VBox>
+
+                    <VBox spacing="8">
                         <Label text="Card number" styleClass="field-label"/>
                         <StackPane alignment="CENTER_RIGHT">
                             <TextField fx:id="cardNumberField" promptText="1234 5678 9012 3456" styleClass="auth-field" onKeyReleased="#handleCardNumberKeyTyped" style="-fx-padding: 0 96px 0 16px;"/>
@@ -182,6 +186,8 @@
                         </VBox>
                     </HBox>
 
+                    <CheckBox fx:id="saveCardCheckBox" text="Enregistrer cette carte chiffrée pour mes prochains paiements"/>
+
                     <Region prefHeight="8"/>
 
                     <Button fx:id="payButton" onAction="#handlePay" styleClass="btn-primary" maxWidth="Infinity" prefHeight="52">
@@ -192,6 +198,12 @@
                             </HBox>
                         </graphic>
                     </Button>
+
+                    <HBox alignment="CENTER" spacing="6" style="-fx-padding: 4 0 0 0;">
+                        <FontIcon iconLiteral="fas-shield-alt" iconSize="11" iconColor="#16a34a"/>
+                        <Label text="TLS + RSA 2048 → AES-GCM 256 (handshake hybride)"
+                               style="-fx-text-fill: #16a34a; -fx-font-size: 10.5px; -fx-font-weight: 600;"/>
+                    </HBox>
 
                     <Label fx:id="globalMessage" text="" visible="false" managed="false" wrapText="true"/>
                 </VBox>
@@ -227,9 +239,9 @@
             <FontIcon fx:id="resultIcon" iconLiteral="fas-check-circle" iconSize="64" iconColor="#22c55e"/>
             <Label fx:id="resultTitle" text="Payment successful" styleClass="section-title"/>
             <Label fx:id="resultBody" text="" styleClass="body-text" wrapText="true" maxWidth="420"/>
-            <HBox spacing="12" alignment="CENTER">
-                <Button fx:id="invoiceButton" text="Facture PDF" onAction="#downloadInvoice" styleClass="btn-outline" prefWidth="160" visible="false" managed="false"/>
-                <Button text="Continuer" onAction="#closeResultOverlay" styleClass="btn-primary" prefWidth="220"/>
+            <HBox spacing="14" alignment="CENTER">
+                <Button fx:id="invoiceButton" text="Facture PDF" onAction="#downloadInvoice" styleClass="btn-outline" prefWidth="190" minWidth="190" prefHeight="52" minHeight="52" visible="false" managed="false"/>
+                <Button text="Continuer" onAction="#closeResultOverlay" styleClass="btn-primary" prefWidth="190" minWidth="190" prefHeight="52" minHeight="52"/>
             </HBox>
         </VBox>
     </StackPane>

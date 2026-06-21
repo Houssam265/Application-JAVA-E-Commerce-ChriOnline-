@@ -1,5 +1,6 @@
 package com.chrionline.ui.invoice;
 
+import com.chrionline.security.InputValidator;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -9,11 +10,17 @@ import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
 
 import java.awt.Color;
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.UUID;
 
 public final class InvoicePdfGenerator {
+
+    private static final Path FIXED_INVOICE_DIR = Paths.get("invoices").toAbsolutePath().normalize();
 
     private InvoicePdfGenerator() {}
 
@@ -43,6 +50,10 @@ public final class InvoicePdfGenerator {
                                 double total) throws Exception {
 
         if (outFile == null) throw new IllegalArgumentException("outFile is null");
+        Path parent = outFile.toPath().toAbsolutePath().normalize().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
 
         try (PDDocument doc = new PDDocument()) {
             PDPage page = new PDPage(PDRectangle.A4);
@@ -83,7 +94,7 @@ public final class InvoicePdfGenerator {
                 cs.beginText();
                 cs.setFont(PDType1Font.HELVETICA, 10);
                 cs.newLineAtOffset(x, y);
-                cs.showText("Order ID: " + (orderId == null ? "—" : orderId));
+                cs.showText("Order ID: " + (orderId == null ? "—" : safeText(orderId)));
                 cs.endText();
 
                 // Client card
@@ -106,14 +117,14 @@ public final class InvoicePdfGenerator {
                 cs.beginText();
                 cs.setFont(PDType1Font.HELVETICA, 10);
                 cs.newLineAtOffset(x + 10, y - 4);
-                cs.showText((customerName == null || customerName.isBlank()) ? "—" : customerName);
+                cs.showText((customerName == null || customerName.isBlank()) ? "—" : safeText(customerName));
                 cs.endText();
 
                 y -= 12;
                 cs.beginText();
                 cs.setFont(PDType1Font.HELVETICA, 10);
                 cs.newLineAtOffset(x + 10, y - 4);
-                cs.showText((customerEmail == null || customerEmail.isBlank()) ? "—" : customerEmail);
+                cs.showText((customerEmail == null || customerEmail.isBlank()) ? "—" : safeText(customerEmail));
                 cs.endText();
 
                 // Table header
@@ -244,6 +255,23 @@ public final class InvoicePdfGenerator {
         }
     }
 
+    /**
+     * Server-safe generation path: fixed output directory + random UUID filename.
+     * This avoids any client-controlled filesystem path.
+     */
+    public static File generateServerManaged(String orderId,
+                                             String customerName,
+                                             String customerEmail,
+                                             LocalDateTime issuedAt,
+                                             List<InvoiceLine> lines,
+                                             double tax,
+                                             double total) throws Exception {
+        Files.createDirectories(FIXED_INVOICE_DIR);
+        File outFile = FIXED_INVOICE_DIR.resolve(UUID.randomUUID() + ".pdf").toFile();
+        generate(outFile, orderId, customerName, customerEmail, issuedAt, lines, tax, total);
+        return outFile;
+    }
+
     private static String money(double v) {
         return String.format(java.util.Locale.US, "%.2f Dhs", v);
     }
@@ -253,6 +281,17 @@ public final class InvoicePdfGenerator {
         String t = s.trim();
         if (t.length() <= max) return t;
         return t.substring(0, Math.max(0, max - 1)) + "…";
+    }
+
+    private static String safeText(String value) {
+        if (value == null) {
+            return "";
+        }
+        try {
+            return InputValidator.sanitize(value, "invoice_text");
+        } catch (RuntimeException e) {
+            return "";
+        }
     }
 }
 

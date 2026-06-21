@@ -63,7 +63,7 @@
                 <HBox spacing="10" alignment="CENTER_RIGHT">
                     <Button fx:id="addProductButton" text="Add" onAction="#handleAddProduct" styleClass="btn-primary" prefWidth="120"/>
                     <Button fx:id="updateProductButton" text="Update" onAction="#handleUpdateProduct" styleClass="btn-outline" prefWidth="120"/>
-                    <Button fx:id="deleteProductButton" text="Delete" onAction="#handleDeleteProduct" styleClass="btn-secondary" prefWidth="120"/>
+                    <Button fx:id="deleteProductButton" text="Disable" onAction="#handleDeleteProduct" styleClass="btn-secondary" prefWidth="120"/>
                     <Button fx:id="clearProductButton" text="Clear" onAction="#handleClearProductSelection" styleClass="btn-secondary"/>
                 </HBox>
             </VBox>

@@ -1,8 +1,0 @@
-2026-04-09 22:13:50.128 [com.chrionline.server.Server.main()] INFO  c.c.s.EnvFileLoader - [ENV] Loaded configuration from C:\ENSA\2eme_annee\S2\Securite reseau\Mini_Projet1\Application-JAVA-E-Commerce-ChriOnline-\.env
-[ERROR] Failed to execute goal org.codehaus.mojo:exec-maven-plugin:3.1.0:java (default-cli) on project ChriOnline: An exception occurred while executing the Java class. [DB] Unable to connect to the database at jdbc:mysql://localhost:3306/chrionline?sslMode=REQUIRED&tlsVersions=TLSv1.2,TLSv1.3&serverTimezone=UTC&characterEncoding=utf8&allowPublicKeyRetrieval=false. Check credentials, MySQL availability, and TLS settings: SSL Connection required, but not provided by server. -> [Help 1]
-[ERROR] 
-[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
-[ERROR] Re-run Maven using the -X switch to enable full debug logging.
-[ERROR] 
-[ERROR] For more information about the errors and possible solutions, please read the following articles:
-[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

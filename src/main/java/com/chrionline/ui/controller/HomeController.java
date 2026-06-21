@@ -7,6 +7,7 @@ import com.chrionline.protocol.Request;
 import com.chrionline.protocol.Response;
 import com.chrionline.ui.ClientSession;
 import com.chrionline.ui.ErrorHandler;
+import com.chrionline.ui.ImageCache;
 import com.chrionline.ui.SceneManager;
 import javafx.animation.*;
 import javafx.application.Platform;
@@ -56,7 +57,6 @@ public class HomeController {
     @FXML private MenuItem accountOrdersItem;
     @FXML private MenuItem accountAdminItem;
     @FXML private MenuItem accountLogoutItem;
-    @FXML private Button adminButton;
     @FXML private Button bellButton;
     @FXML private Button navHomeBtn;
     @FXML private Button navCatalogueBtn;
@@ -77,11 +77,6 @@ public class HomeController {
     @FXML
     public void initialize() {
         ClientSession session = ClientSession.getInstance();
-        if (session.isAdmin() && adminButton != null) {
-            adminButton.setVisible(true);
-            adminButton.setManaged(true);
-        }
-
         allProducts = new ArrayList<>();
 
         searchField.textProperty().addListener((observable, oldValue, newValue) -> filterProducts());
@@ -646,7 +641,7 @@ public class HomeController {
         if (url != null && !url.isBlank() && !"null".equalsIgnoreCase(url)) {
             try {
                 String normalized = normalizeImageUrlForLocalFiles(url);
-                Image image = new Image(normalized, true);
+                Image image = ImageCache.get(normalized);
                 img.setImage(image);
                 image.progressProperty().addListener((obs, ov, nv) -> {
                     if (nv != null && nv.doubleValue() >= 1.0) {

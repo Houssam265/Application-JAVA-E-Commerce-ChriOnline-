@@ -209,14 +209,15 @@ public class ProductDAO {
 
     // ── DELETE ───────────────────────────────────────────────────────────────
 
-    public void delete(int productId) {
-        final String sql = "DELETE FROM products WHERE product_id = ?";
+    public void updateAvailability(int productId, boolean available) {
+        final String sql = "UPDATE products SET is_available = ? WHERE product_id = ?";
 
         try (PreparedStatement ps = conn().prepareStatement(sql)) {
-            ps.setInt(1, productId);
+            ps.setBoolean(1, available);
+            ps.setInt(2, productId);
             ps.executeUpdate();
         } catch (SQLException e) {
-            throw new RuntimeException("ProductDAO.delete failed for productId=" + productId + ": " + e.getMessage(), e);
+            throw new RuntimeException("ProductDAO.updateAvailability failed for productId=" + productId + ": " + e.getMessage(), e);
         }
     }
 
